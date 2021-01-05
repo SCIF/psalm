@@ -18,6 +18,7 @@ use Psalm\Issue\ArgumentTypeCoercion;
 use Psalm\Issue\UndefinedFunction;
 use Psalm\IssueBuffer;
 use Psalm\Storage\ClassLikeStorage;
+use Psalm\Storage\PropertyStorage;
 use Psalm\Type;
 use Psalm\Type\Atomic\TNamedObject;
 use function strtolower;
@@ -677,6 +678,39 @@ class CallAnalyzer
                 $assertion_var_id = $assertion->var_id;
             } elseif (isset($context->vars_in_scope[$assertion->var_id])) {
                 $assertion_var_id = $assertion->var_id;
+            } elseif (str_contains($assertion->var_id, '->')) {
+                [$var_id, $property] = explode('->', $assertion->var_id);
+
+                if (!is_numeric($var_id) || !isset($args[$var_id])) {
+                    continue; // any chance to report malformed/not supported assertion?
+                }
+
+                $arg_value = $args[$var_id]->value;
+
+                $arg_var_id = ExpressionIdentifier::getArrayVarId($arg_value, null, $statements_analyzer); // $c
+
+                if (!$arg_var_id) {
+                    continue;
+                }
+
+                foreach ($context->vars_in_scope[$arg_var_id]->getAtomicTypes() as $type) {
+                    if (!$type instanceof TNamedObject) {
+                        continue 2;
+                    }
+
+                    $class_definition = $statements_analyzer->getCodebase()->classlike_storage_provider->get($type->value);
+                    $property_definition = $class_definition->properties[$property] ?? null;
+
+                    if (!$property_definition instanceof PropertyStorage) {
+                        continue 2; // incorrect/not-existing property mentioned in assert-annotation
+                    }
+
+                    if (!$property_definition->readonly) {
+                        continue 2;
+                    }
+                }
+
+                $assertion_var_id = str_replace($var_id, $arg_var_id, $assertion->var_id);
             }
 
             if ($assertion_var_id) {

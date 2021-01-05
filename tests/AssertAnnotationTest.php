@@ -1414,6 +1414,27 @@ class AssertAnnotationTest extends TestCase
                     }
                 ?>'
             ],
+            'assertOnPropertyOfImmutableArgument' => [
+                '<?php
+                    /** @psalm-immutable */
+                    class Aclass {
+                        public ?string $b;
+                        public function __construct(?string $b) {
+                            $this->b = $b;
+                        }
+                    }
+
+                    /** @psalm-assert !null $item->b */
+                    function c(\Aclass $item): void {
+                        if (null === $item->b) {
+                            throw new \InvalidArgumentException("");
+                        }
+                    }
+
+                    /** @var \Aclass $a */
+                    c($a);
+                    echo strlen($a->b);',
+            ],
         ];
     }
 
@@ -1655,6 +1676,27 @@ class AssertAnnotationTest extends TestCase
                         public static function foo($value);
                     }',
                 'error_message' => 'InvalidDocblock',
+            ],
+            'assertOnPropertyOfMutableArgument' => [
+                '<?php
+                    class Aclass {
+                        public ?string $b;
+                        public function __construct(?string $b) {
+                            $this->b = $b;
+                        }
+                    }
+
+                    /** @psalm-assert !null $item->b */
+                    function c(\Aclass $item): void {
+                        if (null === $item->b) {
+                            throw new \InvalidArgumentException("");
+                        }
+                    }
+
+                    /** @var \Aclass $a */
+                    c($a);
+                    echo strlen($a->b);',
+                'error_message' => 'PossiblyNullArgument',
             ],
         ];
     }
