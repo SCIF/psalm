@@ -1090,7 +1090,7 @@ class FunctionLikeDocblockScanner
 
                     if (strpos($assertion['param_name'], $param->name.'->') === 0) {
                         $storage->assertions[] = new \Psalm\Storage\Assertion(
-                            str_replace($param->name, $i, $assertion['param_name']),
+                            str_replace($param->name, (string) $i, $assertion['param_name']),
                             [$assertion_type_parts]
                         );
                         continue 2;

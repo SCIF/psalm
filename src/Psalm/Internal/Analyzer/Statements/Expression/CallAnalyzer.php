@@ -681,7 +681,9 @@ class CallAnalyzer
             } elseif (str_contains($assertion->var_id, '->')) {
                 [$var_id, $property] = explode('->', $assertion->var_id);
 
-                if (!is_numeric($var_id) || !isset($args[$var_id])) {
+                $var_id = is_numeric($var_id) ? (int) $var_id : $var_id;
+
+                if (!is_int($var_id) || !isset($args[$var_id])) {
                     continue; // any chance to report malformed/not supported assertion?
                 }
 
@@ -710,7 +712,7 @@ class CallAnalyzer
                     }
                 }
 
-                $assertion_var_id = str_replace($var_id, $arg_var_id, $assertion->var_id);
+                $assertion_var_id = str_replace((string) $var_id, $arg_var_id, $assertion->var_id);
             }
 
             if ($assertion_var_id) {
