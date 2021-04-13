@@ -5,6 +5,9 @@ use PhpParser;
 use Psalm\Internal\Analyzer\Statements\ExpressionAnalyzer;
 use Psalm\Internal\Analyzer\StatementsAnalyzer;
 use Psalm\Context;
+use Psalm\Node\Expr\VirtualIsset;
+use Psalm\Node\Expr\VirtualTernary;
+use Psalm\Node\Expr\VirtualVariable;
 use Psalm\Type;
 use function substr;
 
@@ -32,6 +35,8 @@ class CoalesceAnalyzer
             || $root_expr instanceof PhpParser\Node\Expr\MethodCall
             || $root_expr instanceof PhpParser\Node\Expr\StaticCall
             || $root_expr instanceof PhpParser\Node\Expr\Cast
+            || $root_expr instanceof PhpParser\Node\Expr\NullsafePropertyFetch
+            || $root_expr instanceof PhpParser\Node\Expr\NullsafeMethodCall
         ) {
             $left_var_id = '$<tmp coalesce var>' . (int) $left_expr->getAttribute('startFilePos');
 
@@ -48,14 +53,14 @@ class CoalesceAnalyzer
 
             $context->vars_in_scope[$left_var_id] = $condition_type;
 
-            $left_expr = new PhpParser\Node\Expr\Variable(
+            $left_expr = new VirtualVariable(
                 substr($left_var_id, 1),
                 $left_expr->getAttributes()
             );
         }
 
-        $ternary = new PhpParser\Node\Expr\Ternary(
-            new PhpParser\Node\Expr\Isset_(
+        $ternary = new VirtualTernary(
+            new VirtualIsset(
                 [$left_expr],
                 $stmt->left->getAttributes()
             ),

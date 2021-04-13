@@ -39,11 +39,16 @@ use Psalm\Issue\PossiblyUndefinedArrayOffset;
 use Psalm\Issue\ReferenceConstraintViolation;
 use Psalm\Issue\UnnecessaryVarAnnotation;
 use Psalm\IssueBuffer;
+use Psalm\Node\Expr\BinaryOp\VirtualCoalesce;
+use Psalm\Plugin\EventHandler\Event\AddRemoveTaintsEvent;
 use Psalm\Type;
 use function is_string;
 use function strpos;
 use function strtolower;
 use function substr;
+use function array_merge;
+use function count;
+use function reset;
 
 /**
  * @internal
@@ -246,6 +251,7 @@ class AssignmentAnalyzer
             if ($assign_value_type) {
                 $assign_value_type = clone $assign_value_type;
                 $assign_value_type->from_property = false;
+                $assign_value_type->from_static_property = false;
                 $assign_value_type->ignore_isset = false;
             } else {
                 $assign_value_type = Type::getMixed();
@@ -337,12 +343,34 @@ class AssignmentAnalyzer
                 && !$comment_type
                 && substr($var_id ?? '', 0, 2) !== '$_'
             ) {
+                $origin_locations = [];
+
+                if ($statements_analyzer->data_flow_graph instanceof VariableUseGraph) {
+                    foreach ($assign_value_type->parent_nodes as $parent_node) {
+                        $origin_locations = array_merge(
+                            $origin_locations,
+                            $statements_analyzer->data_flow_graph->getOriginLocations($parent_node)
+                        );
+                    }
+                }
+
+                $origin_location = count($origin_locations) === 1 ? reset($origin_locations) : null;
+
+                $message = $var_id
+                    ? 'Unable to determine the type that ' . $var_id . ' is being assigned to'
+                    : 'Unable to determine the type of this assignment';
+
+                $issue_location = new CodeLocation($statements_analyzer->getSource(), $assign_var);
+
+                if ($origin_location && $origin_location->getHash() === $issue_location->getHash()) {
+                    $origin_location = null;
+                }
+
                 if (IssueBuffer::accepts(
                     new MixedAssignment(
-                        $var_id
-                            ? 'Unable to determine the type that ' . $var_id . ' is being assigned to'
-                            : 'Unable to determine the type of this assignment',
-                        new CodeLocation($statements_analyzer->getSource(), $assign_var)
+                        $message,
+                        $issue_location,
+                        $origin_location
                     ),
                     $statements_analyzer->getSuppressedIssues()
                 )) {
@@ -531,12 +559,21 @@ class AssignmentAnalyzer
                     } else {
                         $var_location = new CodeLocation($statements_analyzer->getSource(), $assign_var);
 
+                        $event = new AddRemoveTaintsEvent($assign_var, $context, $statements_analyzer, $codebase);
+
+                        $added_taints = $codebase->config->eventDispatcher->dispatchAddTaints($event);
+                        $removed_taints = \array_merge(
+                            $removed_taints,
+                            $codebase->config->eventDispatcher->dispatchRemoveTaints($event)
+                        );
+
                         self::taintAssignment(
                             $context->vars_in_scope[$var_id],
                             $data_flow_graph,
                             $var_id,
                             $var_location,
-                            $removed_taints
+                            $removed_taints,
+                            $added_taints
                         );
                     }
                 }
@@ -662,13 +699,15 @@ class AssignmentAnalyzer
 
     /**
      * @param  array<string> $removed_taints
+     * @param  array<string> $added_taints
      */
     private static function taintAssignment(
         Type\Union $type,
         \Psalm\Internal\Codebase\DataFlowGraph $data_flow_graph,
         string $var_id,
         CodeLocation $var_location,
-        array $removed_taints
+        array $removed_taints,
+        array $added_taints
     ) : void {
         $parent_nodes = $type->parent_nodes;
 
@@ -698,7 +737,7 @@ class AssignmentAnalyzer
                 $parent_node,
                 $new_parent_node,
                 '=',
-                [],
+                $added_taints,
                 $removed_taints
             );
         }
@@ -713,7 +752,7 @@ class AssignmentAnalyzer
                     $parent_node,
                     $new_parent_node,
                     '=',
-                    [],
+                    $added_taints,
                     $removed_taints
                 );
             }
@@ -738,7 +777,7 @@ class AssignmentAnalyzer
 
             $statements_analyzer->node_data = clone $statements_analyzer->node_data;
 
-            $fake_coalesce_expr = new PhpParser\Node\Expr\BinaryOp\Coalesce(
+            $fake_coalesce_expr = new VirtualCoalesce(
                 $stmt->var,
                 $stmt->expr,
                 $stmt->getAttributes()
@@ -1698,12 +1737,21 @@ class AssignmentAnalyzer
                             ) {
                                 $context->vars_in_scope[$list_var_id]->parent_nodes = [];
                             } else {
+                                $event = new AddRemoveTaintsEvent($var, $context, $statements_analyzer, $codebase);
+
+                                $added_taints = $codebase->config->eventDispatcher->dispatchAddTaints($event);
+                                $removed_taints = \array_merge(
+                                    $removed_taints,
+                                    $codebase->config->eventDispatcher->dispatchRemoveTaints($event)
+                                );
+
                                 self::taintAssignment(
                                     $context->vars_in_scope[$list_var_id],
                                     $data_flow_graph,
                                     $list_var_id,
                                     $var_location,
-                                    $removed_taints
+                                    $removed_taints,
+                                    $added_taints
                                 );
                             }
                         }

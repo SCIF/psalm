@@ -22,7 +22,7 @@ abstract class FunctionLikeStorage
     public $stmt_location;
 
     /**
-     * @var array<int, FunctionLikeParameter>
+     * @var list<FunctionLikeParameter>
      */
     public $params = [];
 
@@ -226,6 +226,11 @@ abstract class FunctionLikeStorage
      * @var list<array{fqn: string, params: array<int>, return: bool}>|null
      */
     public $proxy_calls = [];
+
+    /**
+     * @var ?string
+     */
+    public $description;
 
     public function __toString(): string
     {

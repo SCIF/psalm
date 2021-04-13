@@ -5,6 +5,7 @@ namespace Psalm\Tests;
 use DOMDocument;
 use Psalm\Context;
 use Psalm\Internal\Analyzer\ProjectAnalyzer;
+use Psalm\Internal\ExecutionEnvironment\BuildInfoCollector;
 use Psalm\Internal\RuntimeCaches;
 use Psalm\IssueBuffer;
 use Psalm\Report;
@@ -68,13 +69,13 @@ class ReportOutputTest extends TestCase
     public function analyzeTaintFlowFilesForReport() : void
     {
         $vulnerable_file_contents = '<?php
- 
+
 function addPrefixToInput($prefix, $input): string {
     return $prefix . $input;
 }
 
 $prefixedData = addPrefixToInput(\'myprefix\', $_POST[\'cmd\']);
-        
+
 shell_exec($prefixedData);
 
 echo "Successfully executed the command: " . $prefixedData;';
@@ -529,7 +530,8 @@ echo $a;';
                 'error_level' => -1,
                 'shortcode' => 24,
                 'link' => 'https://psalm.dev/024',
-                'taint_trace' => null
+                'taint_trace' => null,
+                'other_references' => null,
             ],
             [
                 'severity' => 'error',
@@ -550,7 +552,8 @@ echo $a;';
                 'error_level' => 1,
                 'shortcode' => 138,
                 'link' => 'https://psalm.dev/138',
-                'taint_trace' => null
+                'taint_trace' => null,
+                'other_references' => null,
             ],
             [
                 'severity' => 'error',
@@ -571,7 +574,8 @@ echo $a;';
                 'error_level' => 1,
                 'shortcode' => 47,
                 'link' => 'https://psalm.dev/047',
-                'taint_trace' => null
+                'taint_trace' => null,
+                'other_references' => null,
             ],
             [
                 'severity' => 'error',
@@ -592,7 +596,8 @@ echo $a;';
                 'error_level' => -1,
                 'shortcode' => 20,
                 'link' => 'https://psalm.dev/020',
-                'taint_trace' => null
+                'taint_trace' => null,
+                'other_references' => null,
             ],
             [
                 'severity' => 'info',
@@ -613,7 +618,8 @@ echo $a;';
                 'error_level' => 3,
                 'shortcode' => 126,
                 'link' => 'https://psalm.dev/126',
-                'taint_trace' => null
+                'taint_trace' => null,
+                'other_references' => null,
             ],
         ];
 

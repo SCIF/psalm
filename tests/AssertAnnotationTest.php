@@ -1244,7 +1244,7 @@ class AssertAnnotationTest extends TestCase
             'convertConstStringType' => [
                 '<?php
                     class A {
-                        const T1  = 1;
+                        const T1 = 1;
                         const T2 = 2;
 
                         /**
@@ -1259,7 +1259,6 @@ class AssertAnnotationTest extends TestCase
                             return in_array($t, [self::T1, self::T2], true);
                         }
                     }
-
 
                     function takesA(int $a) : void {
                         if (A::isValid($a)) {
@@ -1414,6 +1413,102 @@ class AssertAnnotationTest extends TestCase
                     }
                 ?>'
             ],
+            'implicitComplexAssertionNoCrash' => [
+                '<?php
+                    class Foo {
+                        private string $status = "";
+
+                        public function assertValidStatusTransition(string $status): void
+                        {
+                            if (
+                                ("canceled" === $this->status && "complete" === $status)
+                                || ("canceled" === $this->status && "pending" === $status)
+                                || ("complete" === $this->status && "canceled" === $status)
+                                || ("complete" === $this->status && "pending" === $status)
+                            ) {
+                                throw new \LogicException();
+                            }
+                        }
+                    }'
+            ],
+            'assertArrayIteratorIsIterableOfStrings' => [
+                '<?php
+                    /**
+                     * @psalm-assert iterable<string> $value
+                     * @param mixed $value
+                     *
+                     * @return void
+                     */
+                    function assertAllString($value) : void {
+                        throw new \Exception(\var_export($value, true));
+                    }
+
+                    /**
+                     * @param ArrayIterator<string, mixed> $value
+                     *
+                     * @return ArrayIterator<string, string>
+                     */
+                    function preserveContainerAllArrayIterator($value) {
+                        assertAllString($value);
+                        return $value;
+                    }'
+            ],
+            'implicitReflectionParameterAssertion' => [
+                '<?php
+                    $method = new ReflectionMethod(stdClass::class);
+                    $parameters = $method->getParameters();
+                    foreach ($parameters as $parameter) {
+                        if ($parameter->hasType()) {
+                            $parameter->getType()->__toString();
+                        }
+                    }',
+            ],
+            'withHasTypeCall' => [
+                '<?php
+                    /**
+                     * @psalm-immutable
+                     */
+                    class Param {
+                        /**
+                         * @psalm-assert-if-true ReflectionType $this->getType()
+                         */
+                        public function hasType() : bool {
+                            return true;
+                        }
+
+                        public function getType() : ?ReflectionType {
+                            return null;
+                        }
+                    }
+
+                    function takesParam(Param $p) : void {
+                        if ($p->hasType()) {
+                            echo $p->getType()->__toString();
+                        }
+                    }',
+            ],
+            'assertTemplatedIterable' => [
+                '<?php
+                    class Foo{}
+
+                    /**
+                     * @param array<Foo> $foos
+                     * @return array<Foo>
+                     */
+                    function foo(array $foos) : array {
+                        allIsInstanceOf($foos, Foo::class);
+                        return $foos;
+                    }
+
+                    /**
+                     * @template ExpectedType of object
+                     *
+                     * @param mixed $value
+                     * @param class-string<ExpectedType> $class
+                     * @psalm-assert iterable<ExpectedType> $value
+                     */
+                    function allIsInstanceOf($value, $class): void {}'
+            ],
             'assertOnPropertyOfImmutableArgument' => [
                 '<?php
                     /** @psalm-immutable */
@@ -1439,7 +1534,7 @@ class AssertAnnotationTest extends TestCase
     }
 
     /**
-     * @return iterable<string,array{string,error_message:string,2?:string[],3?:bool,4?:string}>
+     * @return iterable<string,array{string,error_message:string,1?:string[],2?:bool,3?:string}>
      */
     public function providerInvalidCodeParse(): iterable
     {
@@ -1676,6 +1771,29 @@ class AssertAnnotationTest extends TestCase
                         public static function foo($value);
                     }',
                 'error_message' => 'InvalidDocblock',
+            ],
+            'assertNotEmptyOnBool' => [
+                '<?php
+                    /**
+                     * @param mixed $value
+                     * @psalm-assert !empty $value
+                     */
+                    function assertNotEmpty($value) : void {}
+
+                    function foo(bool $bar) : void {
+                        assertNotEmpty($bar);
+                        if ($bar) {}
+                    }',
+                'error_message' => 'RedundantConditionGivenDocblockType',
+            ],
+            'withoutHasTypeCall' => [
+                '<?php
+                    $method = new ReflectionMethod(stdClass::class);
+                    $parameters = $method->getParameters();
+                    foreach ($parameters as $parameter) {
+                        $parameter->getType()->__toString();
+                    }',
+                'error_message' => 'PossiblyNullReference',
             ],
             'assertOnPropertyOfMutableArgument' => [
                 '<?php

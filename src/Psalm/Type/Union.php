@@ -2,23 +2,18 @@
 namespace Psalm\Type;
 
 use function array_filter;
-use function array_merge;
-use function array_shift;
 use function array_values;
 use function count;
 use function get_class;
 use function implode;
 use Psalm\Codebase;
 use Psalm\CodeLocation;
-use Psalm\Internal\Type\Comparator\UnionTypeComparator;
-use Psalm\Internal\Type\TemplateResult;
 use Psalm\Internal\Type\TypeCombiner;
 use Psalm\StatementsSource;
 use Psalm\Storage\FileStorage;
 use Psalm\Type;
 use Psalm\Type\Atomic\TFloat;
 use Psalm\Type\Atomic\TInt;
-use Psalm\Type\Atomic\TIterable;
 use Psalm\Type\Atomic\TLiteralFloat;
 use Psalm\Type\Atomic\TLiteralInt;
 use Psalm\Type\Atomic\TLiteralString;
@@ -29,7 +24,6 @@ use function reset;
 use function sort;
 use function strpos;
 use function strval;
-use function substr;
 use function array_unique;
 
 class Union implements TypeNode
@@ -61,6 +55,16 @@ class Union implements TypeNode
      * @var bool
      */
     public $from_property = false;
+
+    /**
+     * Whether the type originated from *static* property
+     *
+     * Unlike non-static properties, static properties have no prescribed place
+     * like __construct() to be initialized in
+     *
+     * @var bool
+     */
+    public $from_static_property = false;
 
     /**
      * Whether the property that this type has been derived from has been initialized in a constructor
@@ -403,10 +407,10 @@ class Union implements TypeNode
         return $id;
     }
 
-    public function getAssertionString(): string
+    public function getAssertionString(bool $exact = false): string
     {
         foreach ($this->types as $type) {
-            return $type->getAssertionString();
+            return $type->getAssertionString($exact);
         }
 
         throw new \UnexpectedValueException('Should only be one type per assertion');
@@ -586,6 +590,11 @@ class Union implements TypeNode
         return isset($this->types['array']);
     }
 
+    public function hasIterable(): bool
+    {
+        return isset($this->types['iterable']);
+    }
+
     public function hasList(): bool
     {
         return isset($this->types['array']) && $this->types['array'] instanceof Atomic\TList;
@@ -634,7 +643,7 @@ class Union implements TypeNode
     /**
      * @return array<string, Atomic\TCallable>
      */
-    private function getCallableTypes(): array
+    public function getCallableTypes(): array
     {
         return array_filter(
             $this->types,
@@ -763,6 +772,7 @@ class Union implements TypeNode
             || isset($this->types['trait-string'])
             || isset($this->types['numeric-string'])
             || isset($this->types['callable-string'])
+            || isset($this->types['array-key'])
             || $this->literal_string_types
             || $this->typed_class_strings;
     }
@@ -804,6 +814,7 @@ class Union implements TypeNode
         return isset($this->types['int'])
             || isset($this->types['float'])
             || isset($this->types['numeric-string'])
+            || isset($this->types['numeric'])
             || ($include_literal_int && $this->literal_int_types)
             || $this->literal_float_types;
     }

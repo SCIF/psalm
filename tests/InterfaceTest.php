@@ -701,11 +701,25 @@ class InterfaceTest extends TestCase
                         return $a;
                     }'
             ],
+            'interfaceAssertionOnClassInterfaceUnion' => [
+                '<?php
+                    class SomeClass {}
+
+                    interface SomeInterface {
+                        public function doStuff(): void;
+                    }
+
+                    function takesAorB(SomeClass|SomeInterface $some): void {
+                        if ($some instanceof SomeInterface) {
+                            $some->doStuff();
+                        }
+                    }'
+            ],
         ];
     }
 
     /**
-     * @return iterable<string,array{string,error_message:string,2?:string[],3?:bool,4?:string}>
+     * @return iterable<string,array{string,error_message:string,1?:string[],2?:bool,3?:string}>
      */
     public function providerInvalidCodeParse(): iterable
     {
@@ -940,6 +954,40 @@ class InterfaceTest extends TestCase
                         public function withoutAnyReturnType($s) : void;
                     }',
                 'error_message' => 'MissingParamType'
+            ],
+            'reconcileAfterClassInstanceof' => [
+                '<?php
+                    interface Base {}
+
+                    class E implements Base {
+                        public function bar() : void {}
+                    }
+
+                    function foobar(Base $foo) : void {
+                        if ($foo instanceof E) {
+                            $foo->bar();
+                        }
+
+                        $foo->bar();
+                    }',
+                'error_message' => 'UndefinedInterfaceMethod - src' . \DIRECTORY_SEPARATOR . 'somefile.php:13:31',
+            ],
+            'reconcileAfterInterfaceInstanceof' => [
+                '<?php
+                    interface Base {}
+
+                    interface E extends Base {
+                        public function bar() : void;
+                    }
+
+                    function foobar(Base $foo) : void {
+                        if ($foo instanceof E) {
+                            $foo->bar();
+                        }
+
+                        $foo->bar();
+                    }',
+                'error_message' => 'UndefinedInterfaceMethod - src' . \DIRECTORY_SEPARATOR . 'somefile.php:13:31',
             ],
         ];
     }

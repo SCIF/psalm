@@ -14,11 +14,12 @@ use Psalm\Internal\Type\Comparator\CallableTypeComparator;
 use Psalm\Internal\Type\Comparator\UnionTypeComparator;
 use Psalm\Internal\DataFlow\DataFlowNode;
 use Psalm\Internal\Codebase\TaintFlowGraph;
+use Psalm\Internal\Codebase\VariableUseGraph;
 use Psalm\Internal\MethodIdentifier;
+use Psalm\Internal\Scanner\UnresolvedConstantComponent;
 use Psalm\Internal\Type\TemplateBound;
 use Psalm\Internal\Type\TemplateResult;
 use Psalm\Internal\Type\TemplateStandinTypeReplacer;
-use Psalm\Internal\Type\TemplateInferredTypeReplacer;
 use Psalm\CodeLocation;
 use Psalm\Context;
 use Psalm\Issue\ImplicitToStringCast;
@@ -33,17 +34,22 @@ use Psalm\Issue\PossiblyFalseArgument;
 use Psalm\Issue\PossiblyInvalidArgument;
 use Psalm\Issue\PossiblyNullArgument;
 use Psalm\Issue\ArgumentTypeCoercion;
+use Psalm\Issue\NamedArgumentNotAllowed;
 use Psalm\IssueBuffer;
+use Psalm\Plugin\EventHandler\Event\AddRemoveTaintsEvent;
 use Psalm\Storage\FunctionLikeParameter;
 use Psalm\Type;
 use Psalm\Type\Atomic\TArray;
 use Psalm\Type\Atomic\TClassString;
 use Psalm\Type\Atomic\TCallable;
 use Psalm\Type\Atomic\TList;
+
 use function strtolower;
 use function strpos;
 use function explode;
 use function count;
+use function array_merge;
+use function reset;
 
 /**
  * @internal
@@ -253,7 +259,8 @@ class ArgumentAnalyzer
             $parent_class,
             true,
             false,
-            $static_classlike_storage ? $static_classlike_storage->final : false
+            $static_classlike_storage ? $static_classlike_storage->final : false,
+            true
         );
 
         if ($class_generic_params) {
@@ -379,7 +386,8 @@ class ArgumentAnalyzer
                 $parent_class,
                 true,
                 false,
-                $static_classlike_storage ? $static_classlike_storage->final : false
+                $static_classlike_storage ? $static_classlike_storage->final : false,
+                true
             );
         }
 
@@ -410,7 +418,7 @@ class ArgumentAnalyzer
                 if (IssueBuffer::accepts(
                     new MixedArgument(
                         'Argument ' . ($argument_offset + 1) . ' of ' . $cased_method_id
-                            . ' cannot be ' . $arg_type->getId() . ', expecting array',
+                            . ' cannot unpack ' . $arg_type->getId() . ', expecting iterable',
                         new CodeLocation($statements_analyzer->getSource(), $arg->value),
                         $cased_method_id
                     ),
@@ -446,8 +454,13 @@ class ArgumentAnalyzer
                  * @var Type\Atomic\TArray|Type\Atomic\TList|Type\Atomic\TKeyedArray
                  */
                 $unpacked_atomic_array = $arg_type->getAtomicTypes()['array'];
+                $arg_key_allowed = true;
 
                 if ($unpacked_atomic_array instanceof Type\Atomic\TKeyedArray) {
+                    if (!$allow_named_args && !$unpacked_atomic_array->getGenericKeyType()->isInt()) {
+                        $arg_key_allowed = false;
+                    }
+
                     if ($function_param->is_variadic) {
                         $arg_type = $unpacked_atomic_array->getGenericValueType();
                     } elseif ($codebase->php_major_version >= 8
@@ -459,21 +472,105 @@ class ArgumentAnalyzer
                         && isset($unpacked_atomic_array->properties[$unpacked_argument_offset])
                     ) {
                         $arg_type = clone $unpacked_atomic_array->properties[$unpacked_argument_offset];
+                    } elseif ($function_param->is_optional && $function_param->default_type) {
+                        if ($function_param->default_type instanceof Type\Union) {
+                            $arg_type = $function_param->default_type;
+                        } else {
+                            $arg_type_atomic = \Psalm\Internal\Codebase\ConstantTypeResolver::resolve(
+                                $codebase->classlikes,
+                                $function_param->default_type,
+                                $statements_analyzer
+                            );
+
+                            $arg_type = new Type\Union([$arg_type_atomic]);
+                        }
                     } else {
                         $arg_type = Type::getMixed();
                     }
                 } elseif ($unpacked_atomic_array instanceof Type\Atomic\TList) {
                     $arg_type = $unpacked_atomic_array->type_param;
                 } else {
+                    if (!$allow_named_args && !$unpacked_atomic_array->type_params[0]->isInt()) {
+                        $arg_key_allowed = false;
+                    }
                     $arg_type = $unpacked_atomic_array->type_params[1];
                 }
+
+                if (!$arg_key_allowed) {
+                    if (IssueBuffer::accepts(
+                        new NamedArgumentNotAllowed(
+                            'Method ' . $cased_method_id
+                                . ' called with named unpacked array ' . $unpacked_atomic_array->getId()
+                                . ' (array with string keys)',
+                            new CodeLocation($statements_analyzer->getSource(), $arg->value),
+                            $cased_method_id
+                        ),
+                        $statements_analyzer->getSuppressedIssues()
+                    )) {
+                        // fall through
+                    }
+                }
             } else {
+                $non_iterable = false;
+                $invalid_key = false;
+                $invalid_string_key = false;
+                $possibly_matches = false;
                 foreach ($arg_type->getAtomicTypes() as $atomic_type) {
                     if (!$atomic_type->isIterable($codebase)) {
+                        $non_iterable = true;
+                    } else {
+                        $key_type = $codebase->getKeyValueParamsForTraversableObject($atomic_type)[0];
+                        if (!UnionTypeComparator::isContainedBy(
+                            $codebase,
+                            $key_type,
+                            Type::getArrayKey()
+                        )) {
+                            $invalid_key = true;
+
+                            continue;
+                        }
+                        if (($codebase->php_major_version < 8 || !$allow_named_args) && !$key_type->isInt()) {
+                            $invalid_string_key = true;
+
+                            continue;
+                        }
+                        $possibly_matches = true;
+                    }
+                }
+
+                $issue_type = $possibly_matches ? PossiblyInvalidArgument::class : InvalidArgument::class;
+                if ($non_iterable) {
+                    if (IssueBuffer::accepts(
+                        new $issue_type(
+                            'Tried to unpack non-iterable ' . $arg_type->getId(),
+                            new CodeLocation($statements_analyzer->getSource(), $arg->value),
+                            $cased_method_id
+                        ),
+                        $statements_analyzer->getSuppressedIssues()
+                    )) {
+                        // fall through
+                    }
+                }
+                if ($invalid_key) {
+                    if (IssueBuffer::accepts(
+                        new $issue_type(
+                            'Method ' . $cased_method_id
+                                . ' called with unpacked iterable ' . $arg_type->getId()
+                                . ' with invalid key (must be '
+                                . ($codebase->php_major_version < 8 ? 'int' : 'int|string') . ')',
+                            new CodeLocation($statements_analyzer->getSource(), $arg->value),
+                            $cased_method_id
+                        ),
+                        $statements_analyzer->getSuppressedIssues()
+                    )) {
+                        // fall through
+                    }
+                }
+                if ($invalid_string_key) {
+                    if ($codebase->php_major_version < 8) {
                         if (IssueBuffer::accepts(
-                            new InvalidArgument(
-                                'Argument ' . ($argument_offset + 1) . ' of ' . $cased_method_id
-                                    . ' expects array, ' . $atomic_type->getId() . ' provided',
+                            new $issue_type(
+                                'String keys not supported in unpacked arguments',
                                 new CodeLocation($statements_analyzer->getSource(), $arg->value),
                                 $cased_method_id
                             ),
@@ -481,12 +578,36 @@ class ArgumentAnalyzer
                         )) {
                             // fall through
                         }
-
-                        continue;
+                    } else {
+                        if (IssueBuffer::accepts(
+                            new NamedArgumentNotAllowed(
+                                'Method ' . $cased_method_id
+                                    . ' called with named unpacked iterable ' . $arg_type->getId()
+                                    . ' (iterable with string keys)',
+                                new CodeLocation($statements_analyzer->getSource(), $arg->value),
+                                $cased_method_id
+                            ),
+                            $statements_analyzer->getSuppressedIssues()
+                        )) {
+                            // fall through
+                        }
                     }
                 }
 
                 return null;
+            }
+        } else {
+            if (!$allow_named_args && $arg->name !== null) {
+                if (IssueBuffer::accepts(
+                    new NamedArgumentNotAllowed(
+                        'Method ' . $cased_method_id. ' called with named argument ' . $arg->name->name,
+                        new CodeLocation($statements_analyzer->getSource(), $arg->value),
+                        $cased_method_id
+                    ),
+                    $statements_analyzer->getSuppressedIssues()
+                )) {
+                    // fall through
+                }
             }
         }
 
@@ -596,13 +717,31 @@ class ArgumentAnalyzer
                 $codebase->analyzer->incrementMixedCount($statements_analyzer->getFilePath());
             }
 
+            $origin_locations = [];
+
+            if ($statements_analyzer->data_flow_graph instanceof VariableUseGraph) {
+                foreach ($input_type->parent_nodes as $parent_node) {
+                    $origin_locations = array_merge(
+                        $origin_locations,
+                        $statements_analyzer->data_flow_graph->getOriginLocations($parent_node)
+                    );
+                }
+            }
+
+            $origin_location = count($origin_locations) === 1 ? reset($origin_locations) : null;
+
+            if ($origin_location && $origin_location->getHash() === $arg_location->getHash()) {
+                $origin_location = null;
+            }
+
             if (IssueBuffer::accepts(
                 new MixedArgument(
                     'Argument ' . ($argument_offset + 1) . $method_identifier
                         . ' cannot be ' . $input_type->getId() . ', expecting ' .
                         $param_type,
                     $arg_location,
-                    $cased_method_id
+                    $cased_method_id,
+                    $origin_location
                 ),
                 $statements_analyzer->getSuppressedIssues()
             )) {
@@ -795,12 +934,30 @@ class ArgumentAnalyzer
 
         if ($union_comparison_results->type_coerced && !$input_type->hasMixed()) {
             if ($union_comparison_results->type_coerced_from_mixed) {
+                $origin_locations = [];
+
+                if ($statements_analyzer->data_flow_graph instanceof VariableUseGraph) {
+                    foreach ($input_type->parent_nodes as $parent_node) {
+                        $origin_locations = array_merge(
+                            $origin_locations,
+                            $statements_analyzer->data_flow_graph->getOriginLocations($parent_node)
+                        );
+                    }
+                }
+
+                $origin_location = count($origin_locations) === 1 ? reset($origin_locations) : null;
+
+                if ($origin_location && $origin_location->getHash() === $arg_location->getHash()) {
+                    $origin_location = null;
+                }
+
                 if (IssueBuffer::accepts(
                     new MixedArgumentTypeCoercion(
                         'Argument ' . ($argument_offset + 1) . $method_identifier . ' expects ' . $param_type->getId() .
                             ', parent type ' . $input_type->getId() . ' provided',
                         $arg_location,
-                        $cased_method_id
+                        $cased_method_id,
+                        $origin_location
                     ),
                     $statements_analyzer->getSuppressedIssues()
                 )) {
@@ -890,168 +1047,15 @@ class ArgumentAnalyzer
             || $input_expr instanceof PhpParser\Node\Expr\Array_
             || $input_expr instanceof PhpParser\Node\Expr\BinaryOp\Concat
         ) {
-            foreach ($param_type->getAtomicTypes() as $param_type_part) {
-                if ($param_type_part instanceof TClassString
-                    && $input_expr instanceof PhpParser\Node\Scalar\String_
-                    && $param_type->isSingle()
-                ) {
-                    if (ClassLikeAnalyzer::checkFullyQualifiedClassLikeName(
-                        $statements_analyzer,
-                        $input_expr->value,
-                        $arg_location,
-                        $context->self,
-                        $context->calling_method_id,
-                        $statements_analyzer->getSuppressedIssues()
-                    ) === false
-                    ) {
-                        return null;
-                    }
-                } elseif ($param_type_part instanceof TArray
-                    && $input_expr instanceof PhpParser\Node\Expr\Array_
-                ) {
-                    foreach ($param_type_part->type_params[1]->getAtomicTypes() as $param_array_type_part) {
-                        if ($param_array_type_part instanceof TClassString) {
-                            foreach ($input_expr->items as $item) {
-                                if ($item && $item->value instanceof PhpParser\Node\Scalar\String_) {
-                                    if (ClassLikeAnalyzer::checkFullyQualifiedClassLikeName(
-                                        $statements_analyzer,
-                                        $item->value->value,
-                                        $arg_location,
-                                        $context->self,
-                                        $context->calling_method_id,
-                                        $statements_analyzer->getSuppressedIssues()
-                                    ) === false
-                                    ) {
-                                        return null;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                } elseif ($param_type_part instanceof TCallable) {
-                    $can_be_callable_like_array = false;
-                    if ($param_type->hasArray()) {
-                        /**
-                         * @psalm-suppress PossiblyUndefinedStringArrayOffset
-                         */
-                        $param_array_type = $param_type->getAtomicTypes()['array'];
+            self::verifyExplicitParam(
+                $statements_analyzer,
+                $param_type,
+                $arg_location,
+                $input_expr,
+                $context
+            );
 
-                        $row_type = null;
-                        if ($param_array_type instanceof TList) {
-                            $row_type = $param_array_type->type_param;
-                        } elseif ($param_array_type instanceof TArray) {
-                            $row_type = $param_array_type->type_params[1];
-                        } elseif ($param_array_type instanceof Type\Atomic\TKeyedArray) {
-                            $row_type = $param_array_type->getGenericArrayType()->type_params[1];
-                        }
-
-                        if ($row_type &&
-                            ($row_type->hasMixed() || $row_type->hasString())
-                        ) {
-                            $can_be_callable_like_array = true;
-                        }
-                    }
-
-                    if (!$can_be_callable_like_array) {
-                        $function_ids = CallAnalyzer::getFunctionIdsFromCallableArg(
-                            $statements_analyzer,
-                            $input_expr
-                        );
-
-                        foreach ($function_ids as $function_id) {
-                            if (strpos($function_id, '::') !== false) {
-                                if ($function_id[0] === '$') {
-                                    $function_id = \substr($function_id, 1);
-                                }
-
-                                $function_id_parts = explode('&', $function_id);
-
-                                $non_existent_method_ids = [];
-                                $has_valid_method = false;
-
-                                foreach ($function_id_parts as $function_id_part) {
-                                    [$callable_fq_class_name, $method_name] = explode('::', $function_id_part);
-
-                                    switch ($callable_fq_class_name) {
-                                        case 'self':
-                                        case 'static':
-                                        case 'parent':
-                                            $container_class = $statements_analyzer->getFQCLN();
-
-                                            if ($callable_fq_class_name === 'parent') {
-                                                $container_class = $statements_analyzer->getParentFQCLN();
-                                            }
-
-                                            if (!$container_class) {
-                                                continue 2;
-                                            }
-
-                                            $callable_fq_class_name = $container_class;
-                                    }
-
-                                    if (ClassLikeAnalyzer::checkFullyQualifiedClassLikeName(
-                                        $statements_analyzer,
-                                        $callable_fq_class_name,
-                                        $arg_location,
-                                        $context->self,
-                                        $context->calling_method_id,
-                                        $statements_analyzer->getSuppressedIssues()
-                                    ) === false
-                                    ) {
-                                        return null;
-                                    }
-
-                                    $function_id_part = new \Psalm\Internal\MethodIdentifier(
-                                        $callable_fq_class_name,
-                                        strtolower($method_name)
-                                    );
-
-                                    $call_method_id = new \Psalm\Internal\MethodIdentifier(
-                                        $callable_fq_class_name,
-                                        '__call'
-                                    );
-
-                                    if (!$codebase->classOrInterfaceExists($callable_fq_class_name)) {
-                                        return null;
-                                    }
-
-                                    if (!$codebase->methods->methodExists($function_id_part)
-                                        && !$codebase->methods->methodExists($call_method_id)
-                                    ) {
-                                        $non_existent_method_ids[] = $function_id_part;
-                                    } else {
-                                        $has_valid_method = true;
-                                    }
-                                }
-
-                                if (!$has_valid_method && !$param_type->hasString() && !$param_type->hasArray()) {
-                                    if (MethodAnalyzer::checkMethodExists(
-                                        $codebase,
-                                        $non_existent_method_ids[0],
-                                        $arg_location,
-                                        $statements_analyzer->getSuppressedIssues()
-                                    ) === false
-                                    ) {
-                                        return null;
-                                    }
-                                }
-                            } else {
-                                if (!$param_type->hasString()
-                                    && !$param_type->hasArray()
-                                    && CallAnalyzer::checkFunctionExists(
-                                        $statements_analyzer,
-                                        $function_id,
-                                        $arg_location,
-                                        false
-                                    ) === false
-                                ) {
-                                    return null;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+            return null;
         }
 
         if (!$param_type->isNullable() && $cased_method_id !== 'echo' && $cased_method_id !== 'print') {
@@ -1126,6 +1130,182 @@ class ArgumentAnalyzer
         }
 
         return null;
+    }
+
+    /**
+     * @param PhpParser\Node\Scalar\String_|PhpParser\Node\Expr\Array_|PhpParser\Node\Expr\BinaryOp\Concat $input_expr
+     */
+    private static function verifyExplicitParam(
+        StatementsAnalyzer $statements_analyzer,
+        Type\Union $param_type,
+        CodeLocation $arg_location,
+        PhpParser\Node\Expr $input_expr,
+        Context $context
+    ) : void {
+        $codebase = $statements_analyzer->getCodebase();
+
+        foreach ($param_type->getAtomicTypes() as $param_type_part) {
+            if ($param_type_part instanceof TClassString
+                && $input_expr instanceof PhpParser\Node\Scalar\String_
+                && $param_type->isSingle()
+            ) {
+                if (ClassLikeAnalyzer::checkFullyQualifiedClassLikeName(
+                    $statements_analyzer,
+                    $input_expr->value,
+                    $arg_location,
+                    $context->self,
+                    $context->calling_method_id,
+                    $statements_analyzer->getSuppressedIssues()
+                ) === false
+                ) {
+                    return;
+                }
+            } elseif ($param_type_part instanceof TArray
+                && $input_expr instanceof PhpParser\Node\Expr\Array_
+            ) {
+                foreach ($param_type_part->type_params[1]->getAtomicTypes() as $param_array_type_part) {
+                    if ($param_array_type_part instanceof TClassString) {
+                        foreach ($input_expr->items as $item) {
+                            if ($item && $item->value instanceof PhpParser\Node\Scalar\String_) {
+                                if (ClassLikeAnalyzer::checkFullyQualifiedClassLikeName(
+                                    $statements_analyzer,
+                                    $item->value->value,
+                                    $arg_location,
+                                    $context->self,
+                                    $context->calling_method_id,
+                                    $statements_analyzer->getSuppressedIssues()
+                                ) === false
+                                ) {
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                }
+            } elseif ($param_type_part instanceof TCallable) {
+                $can_be_callable_like_array = false;
+                if ($param_type->hasArray()) {
+                    /**
+                     * @psalm-suppress PossiblyUndefinedStringArrayOffset
+                     */
+                    $param_array_type = $param_type->getAtomicTypes()['array'];
+
+                    $row_type = null;
+                    if ($param_array_type instanceof TList) {
+                        $row_type = $param_array_type->type_param;
+                    } elseif ($param_array_type instanceof TArray) {
+                        $row_type = $param_array_type->type_params[1];
+                    } elseif ($param_array_type instanceof Type\Atomic\TKeyedArray) {
+                        $row_type = $param_array_type->getGenericArrayType()->type_params[1];
+                    }
+
+                    if ($row_type &&
+                        ($row_type->hasMixed() || $row_type->hasString())
+                    ) {
+                        $can_be_callable_like_array = true;
+                    }
+                }
+
+                if (!$can_be_callable_like_array) {
+                    $function_ids = CallAnalyzer::getFunctionIdsFromCallableArg(
+                        $statements_analyzer,
+                        $input_expr
+                    );
+
+                    foreach ($function_ids as $function_id) {
+                        if (strpos($function_id, '::') !== false) {
+                            if ($function_id[0] === '$') {
+                                $function_id = \substr($function_id, 1);
+                            }
+
+                            $function_id_parts = explode('&', $function_id);
+
+                            $non_existent_method_ids = [];
+                            $has_valid_method = false;
+
+                            foreach ($function_id_parts as $function_id_part) {
+                                [$callable_fq_class_name, $method_name] = explode('::', $function_id_part);
+
+                                switch ($callable_fq_class_name) {
+                                    case 'self':
+                                    case 'static':
+                                    case 'parent':
+                                        $container_class = $statements_analyzer->getFQCLN();
+
+                                        if ($callable_fq_class_name === 'parent') {
+                                            $container_class = $statements_analyzer->getParentFQCLN();
+                                        }
+
+                                        if (!$container_class) {
+                                            continue 2;
+                                        }
+
+                                        $callable_fq_class_name = $container_class;
+                                }
+
+                                if (ClassLikeAnalyzer::checkFullyQualifiedClassLikeName(
+                                    $statements_analyzer,
+                                    $callable_fq_class_name,
+                                    $arg_location,
+                                    $context->self,
+                                    $context->calling_method_id,
+                                    $statements_analyzer->getSuppressedIssues()
+                                ) === false
+                                ) {
+                                    return;
+                                }
+
+                                $function_id_part = new \Psalm\Internal\MethodIdentifier(
+                                    $callable_fq_class_name,
+                                    strtolower($method_name)
+                                );
+
+                                $call_method_id = new \Psalm\Internal\MethodIdentifier(
+                                    $callable_fq_class_name,
+                                    '__call'
+                                );
+
+                                if (!$codebase->classOrInterfaceExists($callable_fq_class_name)) {
+                                    return;
+                                }
+
+                                if (!$codebase->methods->methodExists($function_id_part)
+                                    && !$codebase->methods->methodExists($call_method_id)
+                                ) {
+                                    $non_existent_method_ids[] = $function_id_part;
+                                } else {
+                                    $has_valid_method = true;
+                                }
+                            }
+
+                            if (!$has_valid_method && !$param_type->hasString() && !$param_type->hasArray()) {
+                                if (MethodAnalyzer::checkMethodExists(
+                                    $codebase,
+                                    $non_existent_method_ids[0],
+                                    $arg_location,
+                                    $statements_analyzer->getSuppressedIssues()
+                                ) === false
+                                ) {
+                                    return;
+                                }
+                            }
+                        } else {
+                            if (!$param_type->hasString()
+                                && !$param_type->hasArray()
+                                && CallAnalyzer::checkFunctionExists(
+                                    $statements_analyzer,
+                                    $function_id,
+                                    $arg_location,
+                                    false
+                                ) === false
+                            ) {
+                                return;
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /**
@@ -1282,6 +1462,11 @@ class ArgumentAnalyzer
             return $input_type;
         }
 
+        $event = new AddRemoveTaintsEvent($expr, $context, $statements_analyzer, $codebase);
+
+        $added_taints = $codebase->config->eventDispatcher->dispatchAddTaints($event);
+        $removed_taints = $codebase->config->eventDispatcher->dispatchRemoveTaints($event);
+
         if ($function_param->type && $function_param->type->isString() && !$input_type->isString()) {
             $cast_type = CastAnalyzer::castStringAttempt(
                 $statements_analyzer,
@@ -1338,7 +1523,13 @@ class ArgumentAnalyzer
                     );
 
                     $statements_analyzer->data_flow_graph->addNode($new_sink);
-                    $statements_analyzer->data_flow_graph->addPath($method_node, $new_sink, 'arg');
+                    $statements_analyzer->data_flow_graph->addPath(
+                        $method_node,
+                        $new_sink,
+                        'arg',
+                        $added_taints,
+                        $removed_taints
+                    );
                 }
             }
         }
@@ -1356,7 +1547,13 @@ class ArgumentAnalyzer
                 );
 
                 $statements_analyzer->data_flow_graph->addNode($new_sink);
-                $statements_analyzer->data_flow_graph->addPath($method_node, $new_sink, 'arg');
+                $statements_analyzer->data_flow_graph->addPath(
+                    $method_node,
+                    $new_sink,
+                    'arg',
+                    $added_taints,
+                    $removed_taints
+                );
             }
         }
 
@@ -1369,11 +1566,23 @@ class ArgumentAnalyzer
 
         $statements_analyzer->data_flow_graph->addNode($argument_value_node);
 
-        $statements_analyzer->data_flow_graph->addPath($argument_value_node, $method_node, 'arg');
+        $statements_analyzer->data_flow_graph->addPath(
+            $argument_value_node,
+            $method_node,
+            'arg',
+            $added_taints,
+            $removed_taints
+        );
 
         foreach ($input_type->parent_nodes as $parent_node) {
             $statements_analyzer->data_flow_graph->addNode($method_node);
-            $statements_analyzer->data_flow_graph->addPath($parent_node, $argument_value_node, 'arg');
+            $statements_analyzer->data_flow_graph->addPath(
+                $parent_node,
+                $argument_value_node,
+                'arg',
+                $added_taints,
+                $removed_taints
+            );
         }
 
         if ($function_param->assert_untainted) {

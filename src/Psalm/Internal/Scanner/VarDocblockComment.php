@@ -77,4 +77,14 @@ class VarDocblockComment
      * @var list<string>
      */
     public $removed_taints = [];
+
+    /**
+     * @var array<int, string>
+     */
+    public $suppressed_issues = [];
+
+    /**
+     * @var ?string
+     */
+    public $description;
 }

@@ -165,6 +165,12 @@ class VariableFetchAnalyzer
             $context->vars_in_scope[$var_name] = clone $type;
             $context->vars_possibly_in_scope[$var_name] = true;
 
+            $codebase->analyzer->addNodeReference(
+                $statements_analyzer->getFilePath(),
+                $stmt,
+                $var_name
+            );
+
             return true;
         }
 
@@ -419,7 +425,8 @@ class VariableFetchAnalyzer
             && ($context->inside_call
                 || $context->inside_conditional
                 || $context->inside_use
-                || $context->inside_isset)
+                || $context->inside_isset
+                || $context->inside_throw)
         ) {
             if (!$stmt_type->parent_nodes) {
                 $assignment_node = DataFlowNode::getForAssignment(

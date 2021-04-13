@@ -13,6 +13,7 @@ use Psalm\Internal\DataFlow\DataFlowNode;
 use Psalm\Internal\Codebase\TaintFlowGraph;
 use Psalm\Internal\Type\TypeExpander;
 use Psalm\Internal\Type\TemplateInferredTypeReplacer;
+use Psalm\Plugin\EventHandler\Event\AfterFunctionCallAnalysisEvent;
 use Psalm\Storage\FunctionLikeStorage;
 use Psalm\Type;
 use Psalm\Type\Atomic\TCallable;
@@ -21,6 +22,8 @@ use function strtolower;
 use function strpos;
 use Psalm\Internal\Type\TemplateBound;
 use Psalm\Internal\Type\TemplateResult;
+use Psalm\Plugin\EventHandler\Event\AddRemoveTaintsEvent;
+
 use function explode;
 
 /**
@@ -117,32 +120,33 @@ class FunctionCallReturnTypeFetcher
                             $return_type,
                             null,
                             null,
-                            null
+                            null,
+                            true,
+                            false,
+                            false,
+                            true
                         );
 
                         $return_type_location = $function_storage->return_type_location;
 
-                        if ($config->after_function_checks) {
-                            $file_manipulations = [];
+                        $event = new AfterFunctionCallAnalysisEvent(
+                            $stmt,
+                            $function_id,
+                            $context,
+                            $statements_analyzer->getSource(),
+                            $codebase,
+                            $return_type,
+                            []
+                        );
 
-                            foreach ($config->after_function_checks as $plugin_fq_class_name) {
-                                $plugin_fq_class_name::afterFunctionCallAnalysis(
-                                    $stmt,
-                                    $function_id,
-                                    $context,
-                                    $statements_analyzer->getSource(),
-                                    $codebase,
-                                    $return_type,
-                                    $file_manipulations
-                                );
-                            }
+                        $config->eventDispatcher->dispatchAfterFunctionCallAnalysis($event);
+                        $file_manipulations = $event->getFileReplacements();
 
-                            if ($file_manipulations) {
-                                FileManipulationBuffer::add(
-                                    $statements_analyzer->getFilePath(),
-                                    $file_manipulations
-                                );
-                            }
+                        if ($file_manipulations) {
+                            FileManipulationBuffer::add(
+                                $statements_analyzer->getFilePath(),
+                                $file_manipulations
+                            );
                         }
 
                         $stmt_type = $return_type;
@@ -188,7 +192,7 @@ class FunctionCallReturnTypeFetcher
             $stmt_type = Type::getMixed();
         }
 
-        if (!$statements_analyzer->data_flow_graph instanceof TaintFlowGraph || !$function_storage) {
+        if (!$statements_analyzer->data_flow_graph || !$function_storage) {
             return $stmt_type;
         }
 
@@ -198,7 +202,8 @@ class FunctionCallReturnTypeFetcher
             $function_id,
             $function_storage,
             $stmt_type,
-            $template_result
+            $template_result,
+            $context
         );
 
         if ($function_storage->proxy_calls !== null) {
@@ -302,7 +307,7 @@ class FunctionCallReturnTypeFetcher
                                     return new Type\Union([
                                         $atomic_types['array']->count !== null
                                             ? new Type\Atomic\TLiteralInt($atomic_types['array']->count)
-                                            : new Type\Atomic\TInt
+                                            : new Type\Atomic\TPositiveInt
                                     ]);
                                 }
 
@@ -310,7 +315,7 @@ class FunctionCallReturnTypeFetcher
                                     return new Type\Union([
                                         $atomic_types['array']->count !== null
                                             ? new Type\Atomic\TLiteralInt($atomic_types['array']->count)
-                                            : new Type\Atomic\TInt
+                                            : new Type\Atomic\TPositiveInt
                                     ]);
                                 }
 
@@ -321,6 +326,11 @@ class FunctionCallReturnTypeFetcher
                                         new Type\Atomic\TLiteralInt(count($atomic_types['array']->properties))
                                     ]);
                                 }
+
+                                return new Type\Union([
+                                    new Type\Atomic\TLiteralInt(0),
+                                    new Type\Atomic\TPositiveInt
+                                ]);
                             }
                         }
                     }
@@ -470,20 +480,33 @@ class FunctionCallReturnTypeFetcher
         string $function_id,
         FunctionLikeStorage $function_storage,
         Type\Union $stmt_type,
-        TemplateResult $template_result
+        TemplateResult $template_result,
+        Context $context
     ) : ?DataFlowNode {
-        if (!$statements_analyzer->data_flow_graph instanceof TaintFlowGraph
-            || \in_array('TaintedInput', $statements_analyzer->getSuppressedIssues())
+        if (!$statements_analyzer->data_flow_graph) {
+            return null;
+        }
+
+        if ($statements_analyzer->data_flow_graph instanceof TaintFlowGraph
+            && \in_array('TaintedInput', $statements_analyzer->getSuppressedIssues())
         ) {
             return null;
         }
+
+        $codebase = $statements_analyzer->getCodebase();
+        $event = new AddRemoveTaintsEvent($stmt, $context, $statements_analyzer, $codebase);
+
+        $added_taints = $codebase->config->eventDispatcher->dispatchAddTaints($event);
+        $removed_taints = $codebase->config->eventDispatcher->dispatchRemoveTaints($event);
 
         $node_location = new CodeLocation($statements_analyzer->getSource(), $stmt);
 
         $function_call_node = DataFlowNode::getForMethodReturn(
             $function_id,
             $function_id,
-            $function_storage->signature_return_type_location ?: $function_storage->location,
+            $statements_analyzer->data_flow_graph instanceof TaintFlowGraph
+                ? ($function_storage->signature_return_type_location ?: $function_storage->location)
+                : ($function_storage->return_type_location ?: $function_storage->location),
             $function_storage->specialize_call ? $node_location : null
         );
 
@@ -530,8 +553,8 @@ class FunctionCallReturnTypeFetcher
                 $function_call_node,
                 $assignment_node,
                 'conditionally-escaped',
-                [],
-                $conditionally_removed_taints
+                $added_taints,
+                \array_merge($removed_taints, $conditionally_removed_taints)
             );
 
             $stmt_type->parent_nodes[$assignment_node->id] = $assignment_node;
@@ -539,7 +562,9 @@ class FunctionCallReturnTypeFetcher
             $stmt_type->parent_nodes[$function_call_node->id] = $function_call_node;
         }
 
-        if ($function_storage->return_source_params) {
+        if ($function_storage->return_source_params
+            && $statements_analyzer->data_flow_graph instanceof TaintFlowGraph
+        ) {
             $removed_taints = $function_storage->removed_taints;
 
             if ($function_id === 'preg_replace' && count($stmt->args) > 2) {
@@ -569,49 +594,28 @@ class FunctionCallReturnTypeFetcher
                 }
             }
 
-            foreach ($function_storage->return_source_params as $i => $path_type) {
-                if (!isset($stmt->args[$i])) {
-                    continue;
-                }
+            $event = new AddRemoveTaintsEvent($stmt, $context, $statements_analyzer, $codebase);
 
-                $current_arg_is_variadic = $function_storage->params[$i]->is_variadic;
-                $taintableArgIndex = [$i];
+            $added_taints = $codebase->config->eventDispatcher->dispatchAddTaints($event);
+            $removed_taints = \array_merge(
+                $removed_taints,
+                $codebase->config->eventDispatcher->dispatchRemoveTaints($event)
+            );
 
-                if ($current_arg_is_variadic) {
-                    $max_params = count($stmt->args) - 1;
-                    for ($arg_index = $i + 1; $arg_index <= $max_params; $arg_index++) {
-                        $taintableArgIndex[] = $arg_index;
-                    }
-                }
-
-                foreach ($taintableArgIndex as $argIndex) {
-                    $arg_location = new CodeLocation(
-                        $statements_analyzer->getSource(),
-                        $stmt->args[$argIndex]->value
-                    );
-
-                    $function_param_sink = DataFlowNode::getForMethodArgument(
-                        $function_id,
-                        $function_id,
-                        $argIndex,
-                        $arg_location,
-                        $function_storage->specialize_call ? $node_location : null
-                    );
-
-                    $statements_analyzer->data_flow_graph->addNode($function_param_sink);
-
-                    $statements_analyzer->data_flow_graph->addPath(
-                        $function_param_sink,
-                        $function_call_node,
-                        $path_type,
-                        $function_storage->added_taints,
-                        $removed_taints
-                    );
-                }
-            }
+            self::taintUsingFlows(
+                $statements_analyzer,
+                $function_storage,
+                $statements_analyzer->data_flow_graph,
+                $function_id,
+                $stmt->args,
+                $node_location,
+                $function_call_node,
+                $removed_taints,
+                $added_taints
+            );
         }
 
-        if ($function_storage->taint_source_types) {
+        if ($function_storage->taint_source_types && $statements_analyzer->data_flow_graph instanceof TaintFlowGraph) {
             $method_node = TaintSource::getForMethodReturn(
                 $function_id,
                 $function_id,
@@ -624,6 +628,64 @@ class FunctionCallReturnTypeFetcher
         }
 
         return $function_call_node;
+    }
+
+    /**
+     * @param  array<PhpParser\Node\Arg>   $args
+     * @param  array<string> $removed_taints
+     * @param  array<string> $added_taints
+     */
+    public static function taintUsingFlows(
+        StatementsAnalyzer $statements_analyzer,
+        FunctionLikeStorage $function_storage,
+        TaintFlowGraph $graph,
+        string $function_id,
+        array $args,
+        CodeLocation $node_location,
+        DataFlowNode $function_call_node,
+        array $removed_taints,
+        array $added_taints = []
+    ) : void {
+        foreach ($function_storage->return_source_params as $i => $path_type) {
+            if (!isset($args[$i])) {
+                continue;
+            }
+
+            $current_arg_is_variadic = $function_storage->params[$i]->is_variadic;
+            $taintable_arg_index = [$i];
+
+            if ($current_arg_is_variadic) {
+                $max_params = count($args) - 1;
+                for ($arg_index = $i + 1; $arg_index <= $max_params; $arg_index++) {
+                    $taintable_arg_index[] = $arg_index;
+                }
+            }
+
+            foreach ($taintable_arg_index as $arg_index) {
+                $arg_location = new CodeLocation(
+                    $statements_analyzer,
+                    $args[$arg_index]->value
+                );
+
+                $function_param_sink = DataFlowNode::getForMethodArgument(
+                    $function_id,
+                    $function_id,
+                    $arg_index,
+                    $arg_location,
+                    $function_storage->specialize_call ? $node_location : null
+                );
+
+                $graph->addNode($function_param_sink);
+
+                $graph->addPath(
+                    $function_param_sink,
+                    $function_call_node,
+                    $path_type,
+                    \array_merge($added_taints, $function_storage->added_taints),
+                    $removed_taints
+                );
+            }
+        }
     }
 
     /**

@@ -39,6 +39,7 @@ use function strlen;
 use function strrpos;
 use function strtolower;
 use function substr;
+use function preg_quote;
 
 /**
  * @internal
@@ -238,14 +239,30 @@ class ClassLikes
             $stub = substr($stub, 1);
         }
 
-        $stub = strtolower($stub);
+        $fully_qualified = false;
+
+        if ($stub[0] === '\\') {
+            $fully_qualified = true;
+            $stub = substr($stub, 1);
+        } else {
+            // for any not-fully-qualified class name the bit we care about comes after a dash
+            [, $stub] = explode('-', $stub);
+        }
+
+        $stub = preg_quote(strtolower($stub));
+
+        if ($fully_qualified) {
+            $stub = '^' . $stub;
+        } else {
+            $stub = '(^|\\\)' . $stub;
+        }
 
         foreach ($this->existing_classes as $fq_classlike_name => $found) {
             if (!$found) {
                 continue;
             }
 
-            if (preg_match('@(^|\\\)' . $stub . '.*@i', $fq_classlike_name)) {
+            if (preg_match('@' . $stub . '.*@i', $fq_classlike_name)) {
                 $matching_classes[] = $fq_classlike_name;
             }
         }
@@ -255,7 +272,7 @@ class ClassLikes
                 continue;
             }
 
-            if (preg_match('@(^|\\\)' . $stub . '.*@i', $fq_classlike_name)) {
+            if (preg_match('@' . $stub . '.*@i', $fq_classlike_name)) {
                 $matching_classes[] = $fq_classlike_name;
             }
         }
@@ -1478,14 +1495,12 @@ class ClassLikes
         }
 
         if ($constant_storage->unresolved_node) {
-            return new Type\Union([
-                ConstantTypeResolver::resolve(
-                    $this,
-                    $constant_storage->unresolved_node,
-                    $statements_analyzer,
-                    $visited_constant_ids
-                )
-            ]);
+            $constant_storage->type = new Type\Union([ConstantTypeResolver::resolve(
+                $this,
+                $constant_storage->unresolved_node,
+                $statements_analyzer,
+                $visited_constant_ids
+            )]);
         }
 
         return $constant_storage->type;
@@ -1807,9 +1822,21 @@ class ClassLikes
                             }
 
                             if ($method_storage->params[$offset]->default_type) {
+                                if ($method_storage->params[$offset]->default_type instanceof Type\Union) {
+                                    $default_type = clone $method_storage->params[$offset]->default_type;
+                                } else {
+                                    $default_type_atomic = \Psalm\Internal\Codebase\ConstantTypeResolver::resolve(
+                                        $codebase->classlikes,
+                                        $method_storage->params[$offset]->default_type,
+                                        null
+                                    );
+
+                                    $default_type = new Type\Union([$default_type_atomic]);
+                                }
+
                                 $possible_type = \Psalm\Type::combineUnionTypes(
                                     $possible_type,
-                                    $method_storage->params[$offset]->default_type
+                                    $default_type
                                 );
                             }
 
@@ -2075,5 +2102,16 @@ class ClassLikes
         $this->existing_interfaces_lc = array_merge($existing_interfaces_lc, $this->existing_interfaces_lc);
         $this->existing_interfaces = array_merge($existing_interfaces, $this->existing_interfaces);
         $this->existing_classes = array_merge($existing_classes, $this->existing_classes);
+    }
+
+    public function getStorageFor(string $fq_class_name): ?ClassLikeStorage
+    {
+        $fq_class_name = $this->getUnAliasedName($fq_class_name);
+
+        try {
+            return $this->classlike_storage_provider->get($fq_class_name);
+        } catch (\InvalidArgumentException $e) {
+            return null;
+        }
     }
 }

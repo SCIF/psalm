@@ -767,11 +767,25 @@ class ClassStringTest extends TestCase
                     echo $beep::$boop;
                 ',
             ],
+            'ClassConstFetchWithTemplate' => [
+                '<?php
+                    /**
+                     * @template T of object
+                     * @psalm-param T $obj
+                     * @return class-string<T>
+                     */
+                    function a($obj) {
+                        $class = $obj::class;
+
+                        return $class;
+                    }
+                ',
+            ],
         ];
     }
 
     /**
-     * @return iterable<string,array{string,error_message:string,2?:string[],3?:bool,4?:string}>
+     * @return iterable<string,array{string,error_message:string,1?:string[],2?:bool,3?:string}>
      */
     public function providerInvalidCodeParse(): iterable
     {

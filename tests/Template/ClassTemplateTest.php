@@ -28,8 +28,8 @@ class ClassTemplateTest extends TestCase
                     $value = $decoratorIterator->current();
                 ',
                 'assertions' => [
-                    '$key' => 'int',
-                    '$value' => 'string',
+                    '$key' => 'int|null',
+                    '$value' => 'null|string',
                     '$next' => 'bool',
                 ],
             ],
@@ -44,8 +44,8 @@ class ClassTemplateTest extends TestCase
                     $value = $decoratorIterator->current();
                 ',
                 'assertions' => [
-                    '$key' => 'int',
-                    '$value' => 'string',
+                    '$key' => 'int|null',
+                    '$value' => 'null|string',
                 ],
             ],
             'limitIterator' => [
@@ -59,8 +59,8 @@ class ClassTemplateTest extends TestCase
                     $value = $decoratorIterator->current();
                 ',
                 'assertions' => [
-                    '$key' => 'int',
-                    '$value' => 'string',
+                    '$key' => 'int|null',
+                    '$value' => 'null|string',
                 ],
             ],
             'callbackFilterIterator' => [
@@ -77,8 +77,8 @@ class ClassTemplateTest extends TestCase
                     $value = $decoratorIterator->current();
                 ',
                 'assertions' => [
-                    '$key' => 'int',
-                    '$value' => 'string',
+                    '$key' => 'int|null',
+                    '$value' => 'null|string',
                 ],
             ],
             'noRewindIterator' => [
@@ -92,8 +92,8 @@ class ClassTemplateTest extends TestCase
                     $value = $decoratorIterator->current();
                 ',
                 'assertions' => [
-                    '$key' => 'int',
-                    '$value' => 'string',
+                    '$key' => 'int|null',
+                    '$value' => 'null|string',
                 ],
             ],
             'classTemplate' => [
@@ -398,6 +398,7 @@ class ClassTemplateTest extends TestCase
                      * @template TKey as array-key
                      * @template TValue
                      * @psalm-consistent-constructor
+                     * @psalm-consistent-templates
                      */
                     class ArrayCollection {
                         /** @var array<TKey,TValue> */
@@ -1045,7 +1046,7 @@ class ClassTemplateTest extends TestCase
 
                     $c = new C();',
                 'assertions' => [
-                    '$c===' => 'C<string(hello)>',
+                    '$c===' => 'C<"hello">',
                 ],
             ],
             'SKIPPED-templateDefaultConstant' => [
@@ -1943,6 +1944,7 @@ class ClassTemplateTest extends TestCase
                     /**
                      * @template T
                      * @psalm-consistent-constructor
+                     * @psalm-consistent-templates
                      */
                     class Foo {
                         /** @var T */
@@ -2024,7 +2026,8 @@ class ClassTemplateTest extends TestCase
             ],
             'yieldFromGenericObjectNotExtendingIterator' => [
                 '<?php
-                    class Foo{}
+                    /** @extends \ArrayObject<int, int> */
+                    class Foo extends \ArrayObject {}
 
                     class A {
                         /**
@@ -2271,6 +2274,7 @@ class ClassTemplateTest extends TestCase
                     /**
                      * @template T
                      * @psalm-consistent-constructor
+                     * @psalm-consistent-templates
                      */
                     class ArrayCollection {
                         /** @var list<T> */
@@ -2296,7 +2300,13 @@ class ClassTemplateTest extends TestCase
                     /** @param ArrayCollection<int> $ints */
                     function takesInts(ArrayCollection $ints) :void {}
 
-                    takesInts((new ArrayCollection([ "a", "bc" ]))->map("strlen"));'
+                    takesInts((new ArrayCollection([ "a", "bc" ]))->map("strlen"));
+
+                    /**
+                     * @template T
+                     * @extends ArrayCollection<T>
+                     */
+                    class LazyArrayCollection extends ArrayCollection {}'
             ],
             'weakReferenceIsTyped' => [
                 '<?php
@@ -3145,6 +3155,7 @@ class ClassTemplateTest extends TestCase
                      * @psalm-template TKey of array-key
                      * @psalm-template T
                      * @psalm-consistent-constructor
+                     * @psalm-consistent-templates
                      */
                     class ArrayCollection
                     {
@@ -3278,11 +3289,134 @@ class ClassTemplateTest extends TestCase
                         }
                     }'
             ],
+            'templatedStaticUnion' => [
+                '<?php
+                    /**
+                     * @template T
+                     * @psalm-consistent-templates
+                     */
+                    abstract class A {
+                        /**
+                          * @var T
+                          */
+                        private $v;
+
+                        /**
+                          * @param T $v
+                          */
+                        final public function __construct($v) {
+                            $this->v = $v;
+                        }
+
+                        /**
+                          * @return static<T>
+                          */
+                        public function foo(): A {
+                            if (rand(0, 1)) {
+                                return new static($this->v);
+                            } else {
+                                return new static($this->v);
+                            }
+                        }
+                    }'
+            ],
+            'templatedTypeWithLimitGoesIntoTemplatedType' => [
+                '<?php
+                    /**
+                     * @template T as object
+                     */
+                    abstract class A {}
+
+                    function takesA(A $a) : void {}
+
+                    function foo(A $a) : void {
+                        takesA($a);
+                    }',
+            ],
+            'templateIsAComplexMultilineType' => [
+                '<?php
+                /**
+                 * @template T of array{
+                 *    a: string,
+                 *    b: int
+                 * }
+                 */
+                class MyContainer {
+                    /** @var T */
+                    private $value;
+                    /** @param T $value */
+                    public function __construct($value) {
+                        $this->value = $value;
+                    }
+                    /** @return T */
+                    public function getValue() {
+                      return $this->value;
+                    }
+                }'
+            ],
+            'newWithoutInferredTemplate' => [
+                '<?php
+                    /**
+                     * @psalm-template T2 of object
+                     */
+                    final class Foo {}
+
+                    $f = new Foo();',
+                [
+                    '$f' => 'Foo<object>'
+                ]
+            ],
+            'PHP80-weakmapIsGeneric' => [
+                '<?php
+                    /** @param WeakMap<Throwable,int> $wm */
+                    function isCountable(WeakMap $wm): int {
+                        return count($wm);
+                    }
+
+                    /**
+                     * @param WeakMap<Throwable,int> $wm
+                     * @return array{Throwable,int}
+                     */
+                    function isTraverable(WeakMap $wm): array {
+                        foreach ($wm as $k => $v) {
+                            return [$k, $v];
+                        }
+                        throw new RuntimeException;
+                    }
+
+                    /**
+                     * @param WeakMap<Throwable,int> $wm
+                     * @return Traversable<Throwable,int>
+                     */
+                    function hasAggregateIterator(WeakMap $wm): Traversable {
+                        return $wm->getIterator();
+                    }
+
+                    /**
+                     * @param WeakMap<Throwable,int> $wm
+                     */
+                    function readsLikeAnArray(WeakMap $wm): int {
+                        $ex = new Exception;
+                        if (isset($wm[$ex])) {
+                            return $wm[$ex];
+                        }
+                        throw new RuntimeException;
+                    }
+
+                    /**
+                     * @param WeakMap<Throwable,int> $wm
+                     */
+                    function writesLikeAnArray(WeakMap $wm): void {
+                        $ex = new Exception;
+                        $wm[$ex] = 42;
+                    }
+                ',
+            ]
         ];
     }
 
     /**
-     * @return iterable<string,array{string,error_message:string,2?:string[],3?:bool,4?:string}>
+     * @return iterable<string,array{string,error_message:string,1?:string[],2?:bool,3?:string}>
      */
     public function providerInvalidCodeParse(): iterable
     {
@@ -3570,7 +3704,7 @@ class ClassTemplateTest extends TestCase
                     $mario = new CharacterRow(["id" => 5, "name" => "Mario", "height" => 3.5]);
 
                     $mario->ame = "Luigi";',
-                'error_message' => 'InvalidArgument - src' . DIRECTORY_SEPARATOR . 'somefile.php:47:29 - Argument 1 of CharacterRow::__set expects string(height)|string(id)|string(name), string(ame) provided',
+                'error_message' => 'InvalidArgument - src' . DIRECTORY_SEPARATOR . 'somefile.php:47:29 - Argument 1 of CharacterRow::__set expects "height"|"id"|"name", "ame" provided',
             ],
             'specialiseTypeBeforeReturning' => [
                 '<?php
@@ -3882,6 +4016,40 @@ class ClassTemplateTest extends TestCase
                         $c->map($fn);
                     }',
                 'error_message' => 'InvalidScalarArgument',
+            ],
+            'limitTemplateTypeWithSameName' => [
+                '<?php
+                    /**
+                     * @template T as object
+                     */
+                    abstract class A {}
+
+                    function takesA(A $a) : void {}
+
+                    /** @param A<stdClass> $a */
+                    function foo(A $a) : void {
+                        takesA($a);
+                    }',
+                'error_message' => 'InvalidArgument',
+            ],
+            'limitTemplateTypeExtended' => [
+                '<?php
+
+                    /**
+                     * @template T as object
+                     */
+                    abstract class A {}
+
+                    /**
+                     * @extends A<stdClass>
+                     */
+                    class AChild extends A {}
+
+                    function takesA(A $a) : void {}
+
+                    $child = new AChild();
+                    takesA($child);',
+                'error_message' => 'InvalidArgument',
             ],
         ];
     }

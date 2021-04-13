@@ -715,11 +715,63 @@ class FunctionTemplateAssertTest extends TestCase
                         return $value;
                     }'
             ],
+            'noCrashOnListKeyAssertion' => [
+                '<?php
+                    /**
+                     * @template T
+                     * @param T $t
+                     * @param mixed $other
+                     * @psalm-assert =T $other
+                     */
+                    function assertSame($t, $other) : void {}
+
+                    /** @param list<int> $list */
+                    function takesList(array $list) : void {
+                        foreach ($list as $i => $l) {
+                            assertSame($i, $l);
+                        }
+                    }'
+            ],
+            'assertSameOnMemoizedMethodCall' => [
+                '<?php
+                    function testValidUsername(): void {
+                        try {
+                            validateUsername("123");
+                            throw new Exception("Failed to throw exception for short username");
+                        } catch (Exception $e) {
+                            assertSame("a", $e->getMessage());
+                        }
+
+                        try {
+                            validateUsername("invalid#1");
+                        } catch (Exception $e) {
+                            assertSame("b", $e->getMessage());
+                        }
+                    }
+
+                    /**
+                     * @psalm-template ExpectedType
+                     * @psalm-param ExpectedType $expected
+                     * @psalm-param mixed $actual
+                     * @psalm-assert =ExpectedType $actual
+                     */
+                    function assertSame($expected, $actual): void {
+                        if ($actual !== $expected) {
+                            throw new Exception("Bad");
+                        }
+                    }
+
+                    function validateUsername(string $username): void {
+                        if (strlen($username) < 5) {
+                            throw new Exception("Username must be at least 5 characters long");
+                        }
+                    }'
+            ],
         ];
     }
 
     /**
-     * @return iterable<string,array{string,error_message:string,2?:string[],3?:bool,4?:string}>
+     * @return iterable<string,array{string,error_message:string,1?:string[],2?:bool,3?:string}>
      */
     public function providerInvalidCodeParse(): iterable
     {
@@ -922,6 +974,26 @@ class FunctionTemplateAssertTest extends TestCase
                         $arr;
                     }',
                 'error_message' => 'string, string',
+            ],
+            'SKIPPED-noCrashWhenOnUnparseableTemplatedAssertion' => [
+                '<?php
+                    /**
+                     * @template TCandidateKey as array-key
+                     * @param array $arr
+                     * @param TCandidateKey $key
+                     * @psalm-assert has-array-key<TCandidateKey> $arr
+                     */
+                    function keyExists(array $arr, $key) : void {
+                        if (!array_key_exists($key, $arr)) {
+                            throw new \Exception("bad");
+                        }
+                    }
+
+                    function fromArray(array $data) : void {
+                        keyExists($data, "id");
+                        if (is_string($data["id"])) {}
+                    }',
+                'error_message' => 'InvalidDocblock',
             ],
         ];
     }

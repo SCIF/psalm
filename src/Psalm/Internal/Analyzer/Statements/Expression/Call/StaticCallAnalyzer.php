@@ -21,6 +21,7 @@ use function strtolower;
 use Psalm\Internal\DataFlow\TaintSource;
 use Psalm\Internal\DataFlow\DataFlowNode;
 use Psalm\Internal\Codebase\TaintFlowGraph;
+use Psalm\Plugin\EventHandler\Event\AddRemoveTaintsEvent;
 
 /**
  * @internal
@@ -242,18 +243,25 @@ class StaticCallAnalyzer extends CallAnalyzer
         string $cased_method_id,
         Type\Union $return_type_candidate,
         ?\Psalm\Storage\MethodStorage $method_storage,
-        ?\Psalm\Internal\Type\TemplateResult $template_result
+        ?\Psalm\Internal\Type\TemplateResult $template_result,
+        ?Context $context = null
     ) : void {
-        if (!$statements_analyzer->data_flow_graph instanceof TaintFlowGraph
-            || \in_array('TaintedInput', $statements_analyzer->getSuppressedIssues())
+        if (!$statements_analyzer->data_flow_graph) {
+            return;
+        }
+
+        if ($statements_analyzer->data_flow_graph instanceof TaintFlowGraph
+            && \in_array('TaintedInput', $statements_analyzer->getSuppressedIssues())
         ) {
             return;
         }
 
-        $code_location = new CodeLocation($statements_analyzer->getSource(), $stmt);
+        $node_location = new CodeLocation($statements_analyzer->getSource(), $stmt);
 
         $method_location = $method_storage
-            ? ($method_storage->signature_return_type_location ?: $method_storage->location)
+            ? ($statements_analyzer->data_flow_graph instanceof TaintFlowGraph
+                ? ($method_storage->signature_return_type_location ?: $method_storage->location)
+                : ($method_storage->return_type_location ?: $method_storage->location))
             : null;
 
         if ($method_storage && $method_storage->specialize_call) {
@@ -261,7 +269,7 @@ class StaticCallAnalyzer extends CallAnalyzer
                 (string) $method_id,
                 $cased_method_id,
                 $method_location,
-                $code_location
+                $node_location
             );
         } else {
             $method_source = DataFlowNode::getForMethodReturn(
@@ -303,6 +311,16 @@ class StaticCallAnalyzer extends CallAnalyzer
             }
         }
 
+        $added_taints = [];
+        $removed_taints = [];
+
+        if ($context) {
+            $event = new AddRemoveTaintsEvent($stmt, $context, $statements_analyzer, $codebase);
+
+            $added_taints = $codebase->config->eventDispatcher->dispatchAddTaints($event);
+            $removed_taints = $codebase->config->eventDispatcher->dispatchRemoveTaints($event);
+        }
+
         if ($conditionally_removed_taints && $method_location) {
             $assignment_node = DataFlowNode::getForAssignment(
                 $method_id . '-escaped',
@@ -314,8 +332,8 @@ class StaticCallAnalyzer extends CallAnalyzer
                 $method_source,
                 $assignment_node,
                 'conditionally-escaped',
-                [],
-                $conditionally_removed_taints
+                $added_taints,
+                \array_merge($conditionally_removed_taints, $removed_taints)
             );
 
             $return_type_candidate->parent_nodes[$assignment_node->id] = $assignment_node;
@@ -323,7 +341,10 @@ class StaticCallAnalyzer extends CallAnalyzer
             $return_type_candidate->parent_nodes = [$method_source->id => $method_source];
         }
 
-        if ($method_storage && $method_storage->taint_source_types) {
+        if ($method_storage
+            && $method_storage->taint_source_types
+            && $statements_analyzer->data_flow_graph instanceof TaintFlowGraph
+        ) {
             $method_node = TaintSource::getForMethodReturn(
                 (string) $method_id,
                 $cased_method_id,
@@ -333,6 +354,20 @@ class StaticCallAnalyzer extends CallAnalyzer
             $method_node->taints = $method_storage->taint_source_types;
 
             $statements_analyzer->data_flow_graph->addSource($method_node);
+        }
+
+        if ($method_storage && $statements_analyzer->data_flow_graph instanceof TaintFlowGraph) {
+            FunctionCallReturnTypeFetcher::taintUsingFlows(
+                $statements_analyzer,
+                $method_storage,
+                $statements_analyzer->data_flow_graph,
+                (string) $method_id,
+                $stmt->args,
+                $node_location,
+                $method_source,
+                \array_merge($method_storage->removed_taints, $removed_taints),
+                $added_taints
+            );
         }
     }
 }

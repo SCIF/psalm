@@ -1,19 +1,22 @@
 <?php
 namespace Psalm\Internal\Type;
 
+use Psalm\Aliases;
+use Psalm\Exception\TypeParseTreeException;
+
+use function array_filter;
 use function array_push;
 use function array_splice;
 use function array_unshift;
+use function array_values;
 use function count;
 use function in_array;
 use function is_numeric;
 use function preg_match;
 use function preg_replace;
-use Psalm\Aliases;
-use Psalm\Exception\TypeParseTreeException;
-use function str_split;
 use function strlen;
 use function strpos;
+use function str_split;
 use function strtolower;
 
 class TypeTokenizer
@@ -34,6 +37,7 @@ class TypeTokenizer
         'array' => true,
         'non-empty-array' => true,
         'non-empty-string' => true,
+        'non-falsy-string' => true,
         'iterable' => true,
         'null' => true,
         'mixed' => true,
@@ -90,6 +94,7 @@ class TypeTokenizer
      * @return list<array{string, int}>
      *
      * @psalm-suppress ComplexMethod
+     * @psalm-suppress PossiblyUndefinedIntArrayOffset
      */
     public static function tokenize(string $string_type, bool $ignore_space = true): array
     {
@@ -132,6 +137,7 @@ class TypeTokenizer
             ) {
                 $type_tokens[++$rtc] = [$char . 's', $i - 1];
                 $type_tokens[++$rtc] = ['', ++$i];
+                $was_char = false;
                 continue;
             } elseif ($was_char) {
                 $type_tokens[++$rtc] = ['', $i];

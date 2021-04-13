@@ -51,6 +51,14 @@ function bat(): string {
 
 There are a number of custom tags that determine how Psalm treats your code.
 
+### `@psalm-consistent-constructor`
+
+See [UnsafeInstantiation](../running_psalm/issues/UnsafeInstantiation.md)
+
+### `@psalm-consistent-templates`
+
+See [UnsafeGenericInstantiation](../running_psalm/issues/UnsafeGenericInstantiation.md)
+
 ### `@param-out`, `@psalm-param-out`
 
 This is used to specify that a by-ref type is different from the one that entered. In the function below the first param can be null, but once the function has executed the by-ref value is not null.
@@ -71,6 +79,30 @@ function addFoo(?string &$s) : void {
 ### `@psalm-var`, `@psalm-param`, `@psalm-return`, `@psalm-property`, `@psalm-property-read`, `@psalm-property-write`, `@psalm-method`
 
 When specifying types in a format not supported by phpDocumentor ([but supported by Psalm](#type-syntax)) you may wish to prepend `@psalm-` to the PHPDoc tag, so as to avoid confusing your IDE. If a `@psalm`-prefixed tag is given, Psalm will use it in place of its non-prefixed counterpart.
+
+### `@psalm-ignore-var`
+
+This annotation is used to ignore the `@var` annotation written in the same docblock. Some IDEs don't fully understand complex types like generics. To take advantage of such IDE's auto-completion, you may sometimes want to use explicit `@var` annotations even when psalm can infer the type just fine. This weakens the effectiveness of type checking in many cases since the explicit `@var` annotation overrides the types inferred by psalm. As psalm ignores the `@var` annotation which is co-located with `@psalm-ignore-var`, IDEs can use the type specified by the `@var` for auto-completion, while psalm can still use its own inferred type for type checking.
+
+```php
+<?php
+/** @return iterable<array-key,\DateTime> $f */
+function getTimes(int $n): iterable {
+    while ($n--) {
+        yield new \DateTime();
+    }
+};
+/**
+ * @var \Datetime[] $times
+ * @psalm-ignore-var
+ */
+$times = getTimes(3);
+// this trace shows "iterable<array-key, DateTime>" instead of "array<array-key, Datetime>"
+/** @psalm-trace $times */
+foreach ($times as $time) {
+    echo $time->format('Y-m-d H:i:s.u') . PHP_EOL;
+}
+```
 
 ### `@psalm-suppress SomeIssueName`
 
@@ -336,8 +368,6 @@ echo Arithmetic::addCumulative(3); // outputs 3
 echo Arithmetic::addCumulative(3); // outputs 6
 ```
 
-### `@pure-callable`
-
 On the other hand, `pure-callable` can be used to denote a callable which needs to be pure.
 
 ```php
@@ -477,9 +507,10 @@ class User {
 
 ### `@psalm-require-extends`
 
-The @psalm-require-extends-annotation allows you to define a requirements that a trait imposes on the using class.
+The `@psalm-require-extends` annotation allows you to define a requirements that a trait imposes on the using class.
 
 ```php
+<?php
 abstract class DatabaseModel {
   // methods, properties, etc.
 }

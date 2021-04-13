@@ -14,6 +14,11 @@ class TGenericObject extends TNamedObject
 {
     use GenericTrait;
 
+    /**
+     * @var non-empty-list<\Psalm\Type\Union>
+     */
+    public $type_params;
+
     /** @var bool if the parameters have been remapped to another class */
     public $remapped_params = false;
 
@@ -85,7 +90,7 @@ class TGenericObject extends TNamedObject
         return true;
     }
 
-    public function getAssertionString(): string
+    public function getAssertionString(bool $exact = false): string
     {
         return $this->value;
     }

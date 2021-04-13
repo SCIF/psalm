@@ -176,7 +176,8 @@ class InstancePropertyFetchAnalyzer
         }
 
         if ($stmt_var_type->isNullable() && !$stmt_var_type->ignore_nullable_issues) {
-            if (!$context->inside_isset) {
+            // we can only be sure that the variable is possibly null if we know the var_id
+            if (!$context->inside_isset && $stmt->name instanceof PhpParser\Node\Identifier) {
                 if (IssueBuffer::accepts(
                     new PossiblyNullPropertyFetch(
                         'Cannot get property on possibly null variable ' . $stmt_var_id . ' of type ' . $stmt_var_type,
@@ -209,7 +210,14 @@ class InstancePropertyFetchAnalyzer
         $invalid_fetch_types = [];
         $has_valid_fetch_type = false;
 
-        foreach ($stmt_var_type->getAtomicTypes() as $lhs_type_part) {
+        $var_atomic_types = $stmt_var_type->getAtomicTypes();
+
+        while ($lhs_type_part = \array_shift($var_atomic_types)) {
+            if ($lhs_type_part instanceof Type\Atomic\TTemplateParam) {
+                $var_atomic_types = \array_merge($var_atomic_types, $lhs_type_part->as->getAtomicTypes());
+                continue;
+            }
+
             AtomicPropertyFetchAnalyzer::analyze(
                 $statements_analyzer,
                 $stmt,

@@ -242,6 +242,10 @@ class ClassLikeStorage
     public $appearing_method_ids = [];
 
     /**
+     * Map from lowercase method name to list of declarations in order from parent, to grandparent, to
+     * great-grandparent, etc **including traits and interfaces**. Ancestors that don't have their own declaration are
+     * skipped.
+     *
      * @var array<lowercase-string, array<string, MethodIdentifier>>
      */
     public $overridden_method_ids = [];
@@ -404,6 +408,11 @@ class ClassLikeStorage
     public $preserve_constructor_signature = false;
 
     /**
+     * @var bool
+     */
+    public $enforce_template_inheritance = false;
+
+    /**
      * @var null|string
      */
     public $extension_requirement;
@@ -417,6 +426,11 @@ class ClassLikeStorage
      * @var list<AttributeStorage>
      */
     public $attributes = [];
+
+    /**
+     * @var ?string
+     */
+    public $description;
 
     public function __construct(string $name)
     {

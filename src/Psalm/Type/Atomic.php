@@ -177,6 +177,9 @@ abstract class Atomic implements TypeNode
             case 'non-empty-string':
                 return new Type\Atomic\TNonEmptyString();
 
+            case 'non-falsy-string':
+                return new Type\Atomic\TNonFalsyString();
+
             case 'lowercase-string':
                 return new Type\Atomic\TLowercaseString();
 
@@ -542,7 +545,7 @@ abstract class Atomic implements TypeNode
         return $this->__toString();
     }
 
-    public function getAssertionString(): string
+    public function getAssertionString(bool $exact = false): string
     {
         return $this->getId();
     }

@@ -50,6 +50,8 @@ class UnusedCodeTest extends TestCase
             $code
         );
 
+        $this->project_analyzer->setPhpVersion('8.0');
+
         foreach ($error_levels as $error_level) {
             $this->project_analyzer->getCodebase()->config->setCustomErrorLevel($error_level, Config::REPORT_SUPPRESS);
         }
@@ -663,7 +665,7 @@ class UnusedCodeTest extends TestCase
                     /** @psalm-suppress UnimplementedInterfaceMethod */
                     class IterableResult implements \Iterator {
                         public function current() {
-                            return $this->current;
+                            return null;
                         }
 
                         public function key() {
@@ -752,6 +754,185 @@ class UnusedCodeTest extends TestCase
                     $test = new Test(1, "ame");
                     echo $test->id;
                     echo $test->name;'
+            ],
+            'unusedNoReturnFunctionCall' => [
+                '<?php
+                    /**
+                     * @return no-return
+                     *
+                     * @pure
+                     *
+                     * @throws RuntimeException
+                     */
+                    function invariant_violation(string $message): void
+                    {
+                        throw new RuntimeException($message);
+                    }
+
+                    /**
+                     * @pure
+                     */
+                    function reverse(string $string): string
+                    {
+                        if ("" === $string) {
+                            invariant_violation("i do not like empty strings.");
+                        }
+
+                        return strrev($string);
+                    }'
+            ],
+            'unusedByReferenceFunctionCall' => [
+                '<?php
+                    /**
+                     * @pure
+                     */
+                    function bar(string &$str): string
+                    {
+                        $str .= "foo";
+
+                        return $str;
+                    }
+
+                    /**
+                     * @pure
+                     */
+                    function baz(): string
+                    {
+                        $f = "foo";
+                        bar($f);
+
+                        return $f;
+                    }'
+            ],
+            'unusedVoidByReferenceFunctionCall' => [
+                '<?php
+                    /**
+                     * @pure
+                     */
+                    function bar(string &$str): void
+                    {
+                        $str .= "foo";
+                    }
+
+                    /**
+                     * @pure
+                     */
+                    function baz(): string
+                    {
+                        $f = "foo";
+                        bar($f);
+
+                        return $f;
+                    }'
+            ],
+            'unusedNamedByReferenceFunctionCall' => [
+                '<?php
+                    /**
+                     * @pure
+                     */
+                    function bar(string $c = "", string &$str = ""): string
+                    {
+                        $c .= $str;
+                        $str .= $c;
+
+                        return $c;
+                    }
+
+                    /**
+                     * @pure
+                     */
+                    function baz(): string
+                    {
+                        $f = "foo";
+                        bar(str: $f);
+
+                        return $f;
+                    }'
+            ],
+            'unusedNamedByReferenceFunctionCallV2' => [
+                '<?php
+                    /**
+                     * @pure
+                     */
+                    function bar(string &$st, string &$str = ""): string
+                    {
+                        $st .= $str;
+
+                        return $st;
+                    }
+
+                    /**
+                     * @pure
+                     */
+                    function baz(): string
+                    {
+                        $f = "foo";
+                        bar(st: $f);
+
+                        return $f;
+                    }',
+            ],
+            'unusedNamedByReferenceFunctionCallV3' => [
+                '<?php
+                    /**
+                     * @pure
+                     */
+                    function bar(string &$st, ?string &$str = ""): string
+                    {
+                        $st .= (string) $str;
+
+                        return $st;
+                    }
+
+                    /**
+                     * @pure
+                     */
+                    function baz(): string
+                    {
+                        $f = "foo";
+                        bar(st: $f, str: $c);
+
+                        return $f;
+                    }',
+            ],
+            'functionCallUsedInThrow' => [
+                '<?php
+                    /**
+                     * @psalm-pure
+                     */
+                    function getException(): \Exception
+                    {
+                        return new \Exception();
+                    }
+
+                    throw getException();'
+            ],
+            'nullableMethodCallIsUsed' => [
+                '<?php
+                    final class Test {
+                        public function test(): void {
+                        }
+                    }
+
+                    final class TestFactory {
+                        /**
+                         * @psalm-pure
+                         */
+                        public function create(bool $returnNull): ?Test {
+                            if ($returnNull) {
+                                return null;
+                            }
+
+                            return new Test();
+                        }
+                    }
+
+                    $factory = new TestFactory();
+                    $factory->create(false)?->test();
+
+                    $exception = new \Exception();
+
+                    throw ($exception->getPrevious() ?? $exception);'
             ],
         ];
     }
@@ -1066,6 +1247,54 @@ class UnusedCodeTest extends TestCase
                         return false;
                     }',
                 'error_message' => 'UnevaluatedCode',
+            ],
+            'UnusedFunctionCallWithOptionalByReferenceParameter' => [
+                '<?php
+                    /**
+                     * @pure
+                     */
+                    function bar(string $c, string &$str = ""): string
+                    {
+                        $c .= $str;
+
+                        return $c;
+                    }
+
+                    /**
+                     * @pure
+                     */
+                    function baz(): string
+                    {
+                        $f = "foo";
+                        bar($f);
+
+                        return $f;
+                    }',
+                'error_message' => 'UnusedFunctionCall',
+            ],
+            'UnusedFunctionCallWithOptionalByReferenceParameterV2' => [
+                '<?php
+                    /**
+                     * @pure
+                     */
+                    function bar(string $st, string &$str = ""): string
+                    {
+                        $st .= $str;
+
+                        return $st;
+                    }
+
+                    /**
+                     * @pure
+                     */
+                    function baz(): string
+                    {
+                        $f = "foo";
+                        bar(st: $f);
+
+                        return $f;
+                    }',
+                'error_message' => 'UnusedFunctionCall',
             ],
         ];
     }

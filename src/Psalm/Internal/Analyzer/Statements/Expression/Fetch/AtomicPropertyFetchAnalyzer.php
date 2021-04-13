@@ -25,6 +25,10 @@ use Psalm\Issue\UndefinedMagicPropertyFetch;
 use Psalm\Issue\UndefinedPropertyFetch;
 use Psalm\Issue\UndefinedThisPropertyFetch;
 use Psalm\IssueBuffer;
+use Psalm\Node\Expr\VirtualMethodCall;
+use Psalm\Node\Scalar\VirtualString;
+use Psalm\Node\VirtualArg;
+use Psalm\Node\VirtualIdentifier;
 use Psalm\Type;
 use Psalm\Storage\ClassLikeStorage;
 use Psalm\Type\Atomic\TGenericObject;
@@ -38,6 +42,7 @@ use function in_array;
 use function array_keys;
 use Psalm\Internal\DataFlow\DataFlowNode;
 use Psalm\Internal\Codebase\TaintFlowGraph;
+use Psalm\Plugin\EventHandler\Event\AddRemoveTaintsEvent;
 
 /**
  * @internal
@@ -62,20 +67,6 @@ class AtomicPropertyFetchAnalyzer
     ) : void {
         if ($lhs_type_part instanceof TNull) {
             return;
-        }
-
-        if ($lhs_type_part instanceof Type\Atomic\TTemplateParam) {
-            $extra_types = $lhs_type_part->extra_types;
-
-            $lhs_type_part = array_values(
-                $lhs_type_part->as->getAtomicTypes()
-            )[0];
-
-            $lhs_type_part->from_docblock = true;
-
-            if ($lhs_type_part instanceof TNamedObject) {
-                $lhs_type_part->extra_types = $extra_types;
-            }
         }
 
         if ($lhs_type_part instanceof Type\Atomic\TMixed) {
@@ -422,7 +413,8 @@ class AtomicPropertyFetchAnalyzer
             $class_property_type,
             $property_id,
             $class_storage,
-            $in_assignment
+            $in_assignment,
+            $context
         );
 
         if ($class_storage->mutation_free) {
@@ -519,7 +511,8 @@ class AtomicPropertyFetchAnalyzer
                     $stmt_type,
                     $property_id,
                     $class_storage,
-                    $in_assignment
+                    $in_assignment,
+                    $context
                 );
 
                 return false;
@@ -531,12 +524,12 @@ class AtomicPropertyFetchAnalyzer
 
             $statements_analyzer->node_data->setType($stmt->var, new Type\Union([$lhs_type_part]));
 
-            $fake_method_call = new PhpParser\Node\Expr\MethodCall(
+            $fake_method_call = new VirtualMethodCall(
                 $stmt->var,
-                new PhpParser\Node\Identifier('__get', $stmt->name->getAttributes()),
+                new VirtualIdentifier('__get', $stmt->name->getAttributes()),
                 [
-                    new PhpParser\Node\Arg(
-                        new PhpParser\Node\Scalar\String_(
+                    new VirtualArg(
+                        new VirtualString(
                             $prop_name,
                             $stmt->name->getAttributes()
                         )
@@ -686,7 +679,8 @@ class AtomicPropertyFetchAnalyzer
         Type\Union $type,
         string $property_id,
         \Psalm\Storage\ClassLikeStorage $class_storage,
-        bool $in_assignment
+        bool $in_assignment,
+        ?Context $context = null
     ) : void {
         if (!$statements_analyzer->data_flow_graph) {
             return;
@@ -696,6 +690,17 @@ class AtomicPropertyFetchAnalyzer
 
         $var_location = new CodeLocation($statements_analyzer->getSource(), $stmt->var);
         $property_location = new CodeLocation($statements_analyzer->getSource(), $stmt);
+
+        $added_taints = [];
+        $removed_taints = [];
+
+        if ($context) {
+            $codebase = $statements_analyzer->getCodebase();
+            $event = new AddRemoveTaintsEvent($stmt, $context, $statements_analyzer, $codebase);
+
+            $added_taints = $codebase->config->eventDispatcher->dispatchAddTaints($event);
+            $removed_taints = $codebase->config->eventDispatcher->dispatchRemoveTaints($event);
+        }
 
         if ($class_storage->specialize_instance) {
             $var_id = ExpressionIdentifier::getArrayVarId(
@@ -739,7 +744,9 @@ class AtomicPropertyFetchAnalyzer
                     $var_node,
                     $property_node,
                     'property-fetch'
-                        . ($stmt->name instanceof PhpParser\Node\Identifier ? '-' . $stmt->name : '')
+                        . ($stmt->name instanceof PhpParser\Node\Identifier ? '-' . $stmt->name : ''),
+                    $added_taints,
+                    $removed_taints
                 );
 
                 if ($var_type && $var_type->parent_nodes) {
@@ -747,7 +754,9 @@ class AtomicPropertyFetchAnalyzer
                         $data_flow_graph->addPath(
                             $parent_node,
                             $var_node,
-                            '='
+                            '=',
+                            $added_taints,
+                            $removed_taints
                         );
                     }
                 }
@@ -779,9 +788,21 @@ class AtomicPropertyFetchAnalyzer
             $data_flow_graph->addNode($property_node);
 
             if ($in_assignment) {
-                $data_flow_graph->addPath($localized_property_node, $property_node, 'property-assignment');
+                $data_flow_graph->addPath(
+                    $localized_property_node,
+                    $property_node,
+                    'property-assignment',
+                    $added_taints,
+                    $removed_taints
+                );
             } else {
-                $data_flow_graph->addPath($property_node, $localized_property_node, 'property-fetch');
+                $data_flow_graph->addPath(
+                    $property_node,
+                    $localized_property_node,
+                    'property-fetch',
+                    $added_taints,
+                    $removed_taints
+                );
             }
 
             $type->parent_nodes = [$localized_property_node->id => $localized_property_node];
@@ -992,7 +1013,8 @@ class AtomicPropertyFetchAnalyzer
                 $stmt_type,
                 $property_id,
                 $class_storage,
-                $in_assignment
+                $in_assignment,
+                $context
             );
 
             return;

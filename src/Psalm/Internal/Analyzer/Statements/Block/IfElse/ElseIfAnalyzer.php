@@ -244,6 +244,17 @@ class ElseIfAnalyzer
                     $elseif_context->clauses,
                     $newly_reconciled_var_ids
                 )[0];
+
+                foreach ($newly_reconciled_var_ids as $changed_var_id => $_) {
+                    foreach ($elseif_context->vars_in_scope as $var_id => $_) {
+                        if (preg_match('/' . preg_quote($changed_var_id, '/') . '[\]\[\-]/', $var_id)
+                            && !\array_key_exists($var_id, $newly_reconciled_var_ids)
+                            && !\array_key_exists($var_id, $cond_referenced_var_ids)
+                        ) {
+                            unset($elseif_context->vars_in_scope[$var_id]);
+                        }
+                    }
+                }
             }
         }
 

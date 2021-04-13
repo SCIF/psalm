@@ -571,6 +571,7 @@ class ConditionalReturnTypeTest extends TestCase
                      * @template E
                      * @implements AInterface<E>
                      * @psalm-consistent-constructor
+                     * @psalm-consistent-templates
                      */
                     class BClass implements AInterface {
                         protected string $type;
@@ -709,6 +710,105 @@ class ConditionalReturnTypeTest extends TestCase
                         }
 
                         return new NullObject();
+                    }'
+            ],
+            'reconcileCallableFunctionTemplateParam' => [
+                '<?php
+                    /**
+                     * @template T
+                     * @template TOptionalClosure as (callable():T)|null
+                     * @param TOptionalClosure $cb
+                     * @return (TOptionalClosure is null ? int : T)
+                     */
+                    function f($cb) {
+                        if (is_callable($cb)) {
+                            return $cb();
+                        }
+
+                        return 1;
+                    }'
+            ],
+            'reconcileCallableClassTemplateParam' => [
+                '<?php
+                    class C {
+                        /**
+                         * @template T
+                         * @template TOptionalClosure as (callable():T)|null
+                         * @param TOptionalClosure $cb
+                         * @return (TOptionalClosure is null ? int : T)
+                         */
+                        public static function f($cb) {
+                            if (is_callable($cb)) {
+                                return $cb();
+                            }
+
+                            return 1;
+                        }
+                    }'
+            ],
+            'classConstantDefault' => [
+                '<?php
+                    class Request {
+                        const SOURCE_GET = "GET";
+                        const SOURCE_POST = "POST";
+                        const SOURCE_BODY = "BODY";
+
+                        private function getBody() : string {
+                            return "";
+                        }
+
+                        /**
+                         * @template TSource as self::SOURCE_*
+                         * @param TSource $source
+                         * @return (TSource is "BODY" ? object|list : array)
+                         * @psalm-taint-source
+                         */
+                        public function getParams(
+                            string $source = self::SOURCE_GET
+                        ) {
+                            if ($source === "GET") {
+                                return $_GET;
+                            }
+
+                            if ($source === "POST") {
+                                throw new \UnexpectedValueException("bad");
+                            }
+
+                            /** @psalm-suppress MixedAssignment */
+                            $decoded = json_decode($this->getBody(), false);
+
+                            if (!is_object($decoded) && !is_array($decoded)) {
+                                throw new \UnexpectedValueException("bad");
+                            }
+
+                            return $decoded;
+                        }
+                    }
+
+                    /** @psalm-suppress MixedArgument */
+                    echo (new Request)->getParams()["a"];
+
+                    /** @psalm-suppress MixedArgument */
+                    echo (new Request)->getParams(Request::SOURCE_GET)["a"];'
+            ],
+            'conditionalArrayValues' => [
+                '<?php
+                    /**
+                     * @template TValue
+                     * @template TIterable of ?iterable<TValue>
+                     * @param TIterable $iterable
+                     * @return (TIterable is null ? null : list<TValue>)
+                     */
+                    function toList(?iterable $iterable): ?array {
+                        if (null === $iterable) {
+                            return null;
+                        }
+
+                        if (is_array($iterable)) {
+                            return array_values($iterable);
+                        }
+
+                        return iterator_to_array($iterable, false);
                     }'
             ],
         ];

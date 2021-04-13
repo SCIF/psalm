@@ -225,7 +225,7 @@ class TryAnalyzer
                         $statements_analyzer->getSuppressedIssues(),
                         false
                     ) === false) {
-                        return false;
+                        // fall through
                     }
                 }
 
@@ -245,7 +245,7 @@ class TryAnalyzer
                         ),
                         $statements_analyzer->getSuppressedIssues()
                     )) {
-                        return false;
+                        // fall through
                     }
                 }
 
@@ -304,6 +304,14 @@ class TryAnalyzer
                         },
                         $fq_catch_classes
                     )
+                );
+
+                // removes dependent vars from $context
+                $catch_context->removeDescendents(
+                    $catch_var_id,
+                    null,
+                    $catch_context->vars_in_scope[$catch_var_id],
+                    $statements_analyzer
                 );
 
                 $catch_context->vars_possibly_in_scope[$catch_var_id] = true;

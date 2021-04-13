@@ -51,20 +51,26 @@ class InstanceofAnalyzer
                         $stmt->class,
                         $codebase->classlikes->classOrInterfaceExists($fq_class_name)
                             ? $fq_class_name
-                            : '*' . implode('\\', $stmt->class->parts)
+                            : '*'
+                                . ($stmt->class instanceof PhpParser\Node\Name\FullyQualified
+                                    ? '\\'
+                                    : $statements_analyzer->getNamespace() . '-')
+                                . implode('\\', $stmt->class->parts)
                     );
                 }
 
-                if (ClassLikeAnalyzer::checkFullyQualifiedClassLikeName(
-                    $statements_analyzer,
-                    $fq_class_name,
-                    new CodeLocation($statements_analyzer->getSource(), $stmt->class),
-                    $context->self,
-                    $context->calling_method_id,
-                    $statements_analyzer->getSuppressedIssues(),
-                    false
-                ) === false) {
-                    return false;
+                if (!isset($context->phantom_classes[strtolower($fq_class_name)])) {
+                    if (ClassLikeAnalyzer::checkFullyQualifiedClassLikeName(
+                        $statements_analyzer,
+                        $fq_class_name,
+                        new CodeLocation($statements_analyzer->getSource(), $stmt->class),
+                        $context->self,
+                        $context->calling_method_id,
+                        $statements_analyzer->getSuppressedIssues(),
+                        false
+                    ) === false) {
+                        return false;
+                    }
                 }
 
                 if ($codebase->alter_code) {

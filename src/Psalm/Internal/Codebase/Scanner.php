@@ -15,11 +15,14 @@ use const PHP_EOL;
 use Psalm\Codebase;
 use Psalm\Config;
 use Psalm\Internal\Analyzer\IssueData;
+use Psalm\Internal\ErrorHandler;
 use Psalm\Internal\Provider\FileProvider;
 use Psalm\Internal\Provider\FileReferenceProvider;
 use Psalm\Internal\Provider\FileStorageProvider;
 use Psalm\Internal\Scanner\FileScanner;
 use Psalm\Progress\Progress;
+use ReflectionClass;
+
 use function realpath;
 use function strtolower;
 use function substr;
@@ -51,7 +54,9 @@ use function substr;
  *     issues:array<string, list<IssueData>>,
  *     changed_members:array<string, array<string, bool>>,
  *     unchanged_signature_members:array<string, array<string, bool>>,
- *     diff_map:array<string, array<int, array{0:int, 1:int, 2:int, 3:int}>>,
+ *     diff_map:array<string, array<int, array{int, int, int, int}>>,
+ *     deletion_ranges:array<string, array<int, array{int, int}>>,
+ *     errors:array<string, bool>,
  *     classlike_storage:array<string, \Psalm\Storage\ClassLikeStorage>,
  *     file_storage:array<lowercase-string, \Psalm\Storage\FileStorage>,
  *     new_file_content_hashes: array<string, string>,
@@ -377,6 +382,8 @@ class Scanner
                         'changed_members' => $statements_provider->getChangedMembers(),
                         'unchanged_signature_members' => $statements_provider->getUnchangedSignatureMembers(),
                         'diff_map' => $statements_provider->getDiffMap(),
+                        'deletion_ranges' => $statements_provider->getDeletionRanges(),
+                        'errors' => $statements_provider->getErrors(),
                         'classlike_storage' => $codebase->classlike_storage_provider->getAll(),
                         'file_storage' => $codebase->file_storage_provider->getAll(),
                         'new_file_content_hashes' => $statements_provider->parser_cache_provider
@@ -405,6 +412,11 @@ class Scanner
                 $this->codebase->statements_provider->addDiffMap(
                     $pool_data['diff_map']
                 );
+                $this->codebase->statements_provider->addDeletionRanges(
+                    $pool_data['deletion_ranges']
+                );
+                $this->codebase->statements_provider->addErrors($pool_data['errors']);
+
                 if ($this->codebase->taint_flow_graph && $pool_data['taint_data']) {
                     $this->codebase->taint_flow_graph->addGraph($pool_data['taint_data']);
                 }
@@ -679,24 +691,29 @@ class Scanner
             return true;
         }
 
-        $old_level = error_reporting();
+        $reflected_class = ErrorHandler::runWithExceptionsSuppressed(
+            function () use ($fq_class_name): ?ReflectionClass {
+                $old_level = error_reporting();
+                $this->progress->setErrorReporting();
 
-        $this->progress->setErrorReporting();
+                try {
+                    $this->progress->debug('Using reflection to locate file for ' . $fq_class_name . "\n");
 
-        try {
-            $this->progress->debug('Using reflection to locate file for ' . $fq_class_name . "\n");
+                    /** @psalm-suppress ArgumentTypeCoercion */
+                    return new ReflectionClass($fq_class_name);
+                } catch (\Throwable $e) {
+                    // do not cache any results here (as case-sensitive filenames can screw things up)
 
-            /** @psalm-suppress ArgumentTypeCoercion */
-            $reflected_class = new \ReflectionClass($fq_class_name);
-        } catch (\Throwable $e) {
-            error_reporting($old_level);
+                    return null;
+                } finally {
+                    error_reporting($old_level);
+                }
+            }
+        );
 
-            // do not cache any results here (as case-sensitive filenames can screw things up)
-
+        if (null === $reflected_class) {
             return false;
         }
-
-        error_reporting($old_level);
 
         $file_path = (string)$reflected_class->getFileName();
 

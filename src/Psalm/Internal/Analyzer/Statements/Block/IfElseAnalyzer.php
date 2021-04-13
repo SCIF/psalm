@@ -10,6 +10,7 @@ use Psalm\Internal\Clause;
 use Psalm\CodeLocation;
 use Psalm\Context;
 use Psalm\Internal\Scope\IfScope;
+use Psalm\Node\Expr\VirtualBooleanNot;
 use Psalm\Type;
 use Psalm\Internal\Algebra;
 use Psalm\Type\Reconciler;
@@ -204,7 +205,7 @@ class IfElseAnalyzer
                 $if_scope->negated_clauses = FormulaGenerator::getFormula(
                     $cond_object_id,
                     $cond_object_id,
-                    new PhpParser\Node\Expr\BooleanNot($stmt->cond),
+                    new VirtualBooleanNot($stmt->cond),
                     $context->self,
                     $statements_analyzer,
                     $codebase,
@@ -289,6 +290,17 @@ class IfElseAnalyzer
 
             if ($changed_var_ids) {
                 $if_context->clauses = Context::removeReconciledClauses($if_context->clauses, $changed_var_ids)[0];
+
+                foreach ($changed_var_ids as $changed_var_id => $_) {
+                    foreach ($if_context->vars_in_scope as $var_id => $_) {
+                        if (preg_match('/' . preg_quote($changed_var_id, '/') . '[\]\[\-]/', $var_id)
+                            && !\array_key_exists($var_id, $changed_var_ids)
+                            && !\array_key_exists($var_id, $cond_referenced_var_ids)
+                        ) {
+                            unset($if_context->vars_in_scope[$var_id]);
+                        }
+                    }
+                }
             }
 
             $if_scope->if_cond_changed_var_ids = $changed_var_ids;

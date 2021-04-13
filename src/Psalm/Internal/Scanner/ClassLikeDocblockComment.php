@@ -125,6 +125,11 @@ class ClassLikeDocblockComment
      */
     public $consistent_constructor = false;
 
+    /**
+     * @var bool
+     */
+    public $consistent_templates = false;
+
     /** @var bool */
     public $stub_override = false;
 
@@ -137,4 +142,9 @@ class ClassLikeDocblockComment
      * @var array<int, string>
      */
     public $implementation_requirements = [];
+
+    /**
+     * @var ?string
+     */
+    public $description;
 }

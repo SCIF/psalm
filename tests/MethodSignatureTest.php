@@ -869,11 +869,79 @@ class MethodSignatureTest extends TestCase
                 [],
                 '7.4'
             ],
+            'extendStaticReturnTypeInFinal' => [
+                '<?php
+                    final class B extends A
+                    {
+                        public static function doCretate1(): self
+                        {
+                            return self::create1();
+                        }
+
+                        public static function doCretate2(): self
+                        {
+                            return self::create2();
+                        }
+                    }
+
+                    abstract class A
+                    {
+                        final private function __construct() {}
+
+                        final protected static function create1(): static
+                        {
+                            return new static();
+                        }
+
+                        /** @return static */
+                        final protected static function create2()
+                        {
+                            return new static();
+                        }
+                    }',
+                [],
+                [],
+                '8.0'
+            ],
+            'notExtendedStaticReturntypeInFinal' => [
+                '<?php
+                    final class X
+                    {
+                        public static function create(): static
+                        {
+                            return new self();
+                        }
+                    }'
+            ],
+            'callParentMethodFromTrait' => [
+                '<?php
+                    class MyParentClass
+                    {
+                        /** @return static */
+                        public function myMethod()
+                        {
+                            return $this;
+                        }
+                    }
+
+                    trait MyTrait
+                    {
+                        final public function myMethod() : self
+                        {
+                            return parent::myMethod();
+                        }
+                    }
+
+                    class MyChildClass extends MyParentClass
+                    {
+                        use MyTrait;
+                    }'
+            ],
         ];
     }
 
     /**
-     * @return iterable<string,array{string,error_message:string,2?:string[],3?:bool,4?:string}>
+     * @return iterable<string,array{string,error_message:string,1?:string[],2?:bool,3?:string}>
      */
     public function providerInvalidCodeParse(): iterable
     {
@@ -1304,7 +1372,7 @@ class MethodSignatureTest extends TestCase
                     }
                 ',
                 'error_message' => 'InvalidReturnType',
-                2 => ['InvalidParent'],
+                ['InvalidParent'],
             ],
             // not sure how to handle it
             'SKIPPED-returnsParentWithNoParentAndInvalidParentSuppressedMismatchingReturn' => [
@@ -1316,7 +1384,7 @@ class MethodSignatureTest extends TestCase
                     }
                 ',
                 'error_message' => 'InvalidReturnType',
-                2 => ['InvalidParent'],
+                ['InvalidParent'],
             ],
             'regularMethodMismatchFromParentUse' => [
                 '<?php

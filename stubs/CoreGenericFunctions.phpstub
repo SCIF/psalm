@@ -66,7 +66,11 @@ function array_intersect_assoc(array $arr, array $arr2, array ...$arr3)
  * @param array<mixed, TKey> $arr
  * @param array<mixed, TValue> $arr2
  *
- * @return array<TKey, TValue>|false
+ * @return (
+ *     PHP_MAJOR_VERSION is 8 ?
+ *         ($arr is non-empty-array ? non-empty-array<TKey, TValue> : array<TKey, TValue>) :
+ *         ($arr is non-empty-array ? non-empty-array<TKey, TValue>|false : array<TKey, TValue>|false
+ * )
  * @psalm-ignore-falsable-return
  * @psalm-pure
  */
@@ -426,7 +430,7 @@ function abs($number) {}
  * @param TStep $step
  * @return (
  *     T is int
- *     ? (TStep is int ? non-empty-list<int> : non-empty-list<int|float>)
+ *     ? (TStep is int ? non-empty-list<int> : non-empty-list<float>)
  *     : (
  *         T is float
  *         ? non-empty-list<float>
@@ -843,7 +847,7 @@ function preg_replace($search, $replace, $subject, int $limit = -1, &$count = nu
  * @psalm-taint-specialize
  * @psalm-flow ($subject) -> return
  */
-function preg_replace_callback($search, $replace, $subject, int $limit = -1, &$count = null) {}
+function preg_replace_callback($search, $replace, $subject, int $limit = -1, &$count = null, int $flags = 0) {}
 
 /**
  * @psalm-pure
@@ -948,7 +952,7 @@ function realpath(string $path) {}
  *
  * @param numeric-string $left_operand
  * @param numeric-string $right_operand
- * @return ($right_operand is "0" ? null : numeric-string)
+ * @return (PHP_MAJOR_VERSION is 8 ? numeric-string : ($right_operand is "0" ? null : numeric-string))
  */
 function bcdiv(string $left_operand, string $right_operand, int $scale = 0): ?string {}
 
@@ -1123,7 +1127,7 @@ function json_decode(string $json, ?bool $associative = null, int $depth = 512, 
 /**
  * @psalm-pure
  *
- * @return string|false
+ * @return ($flags is 4194304 ? string : string|false)
  *
  * @psalm-flow ($value) -> return
  * @psalm-ignore-falsable-return

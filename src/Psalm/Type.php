@@ -1,6 +1,7 @@
 <?php
 namespace Psalm;
 
+use Psalm\Plugin\EventHandler\Event\StringInterpreterEvent;
 use function array_merge;
 use function array_pop;
 use function array_shift;
@@ -27,10 +28,14 @@ use Psalm\Type\Atomic\TLiteralClassString;
 use Psalm\Type\Atomic\TLiteralFloat;
 use Psalm\Type\Atomic\TLiteralInt;
 use Psalm\Type\Atomic\TLiteralString;
+use Psalm\Type\Atomic\TLowercaseString;
 use Psalm\Type\Atomic\TMixed;
 use Psalm\Type\Atomic\TNamedObject;
+use Psalm\Type\Atomic\TNonEmptyLowercaseString;
+use Psalm\Type\Atomic\TNonEmptyString;
 use Psalm\Type\Atomic\TNull;
 use Psalm\Type\Atomic\TNumeric;
+use Psalm\Type\Atomic\TNumericString;
 use Psalm\Type\Atomic\TObject;
 use Psalm\Type\Atomic\TObjectWithProperties;
 use Psalm\Type\Atomic\TResource;
@@ -172,6 +177,13 @@ abstract class Type
         return $union;
     }
 
+    public static function getLowercaseString(): Union
+    {
+        $type = new TLowercaseString();
+
+        return new Union([$type]);
+    }
+
     public static function getPositiveInt(bool $from_calculation = false): Union
     {
         $union = new Union([new Type\Atomic\TPositiveInt()]);
@@ -180,9 +192,30 @@ abstract class Type
         return $union;
     }
 
+    public static function getNonEmptyLowercaseString(): Union
+    {
+        $type = new TNonEmptyLowercaseString();
+
+        return new Union([$type]);
+    }
+
+    public static function getNonEmptyString(): Union
+    {
+        $type = new TNonEmptyString();
+
+        return new Union([$type]);
+    }
+
     public static function getNumeric(): Union
     {
         $type = new TNumeric;
+
+        return new Union([$type]);
+    }
+
+    public static function getNumericString(): Union
+    {
+        $type = new TNumericString;
 
         return new Union([$type]);
     }
@@ -194,13 +227,9 @@ abstract class Type
         if ($value !== null) {
             $config = \Psalm\Config::getInstance();
 
-            if ($config->string_interpreters) {
-                foreach ($config->string_interpreters as $string_interpreter) {
-                    if ($type = $string_interpreter::getTypeFromValue($value)) {
-                        break;
-                    }
-                }
-            }
+            $event = new StringInterpreterEvent($value);
+
+            $type = $config->eventDispatcher->dispatchStringInterpreter($event);
 
             if (!$type) {
                 if (strlen($value) < $config->max_string_length) {

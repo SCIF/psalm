@@ -39,10 +39,15 @@ class SymbolLookupTest extends \Psalm\Tests\TestCase
 
     public function testSimpleSymbolLookup(): void
     {
+        $codebase = $this->project_analyzer->getCodebase();
+        $config = $codebase->config;
+        $config->globals['$my_global'] = 'string';
         $this->addFile(
             'somefile.php',
             '<?php
                 namespace B;
+
+                const APPLE = "🍏";
 
                 class A {
                     /** @var int|null */
@@ -66,7 +71,9 @@ class SymbolLookupTest extends \Psalm\Tests\TestCase
 
                 function qux(int $a, int $b) : int {
                     return $a + $b;
-                }'
+                }
+
+                $_SERVER;'
         );
 
         new FileAnalyzer($this->project_analyzer, 'somefile.php', 'somefile.php');
@@ -75,12 +82,60 @@ class SymbolLookupTest extends \Psalm\Tests\TestCase
 
         $this->analyzeFile('somefile.php', new Context());
 
-        $this->assertSame('<?php public function foo() : void', $codebase->getSymbolInformation('somefile.php', 'B\A::foo()'));
-        $this->assertSame('<?php protected int|null $a', $codebase->getSymbolInformation('somefile.php', 'B\A::$a'));
-        $this->assertSame('<?php function B\bar() : int', $codebase->getSymbolInformation('somefile.php', 'B\bar()'));
-        $this->assertSame('<?php BANANA', $codebase->getSymbolInformation('somefile.php', 'B\A::BANANA'));
-        $this->assertSame("<?php function B\baz(\n    int \$a\n) : int", $codebase->getSymbolInformation('somefile.php', 'B\baz()'));
-        $this->assertSame("<?php function B\qux(\n    int \$a,\n    int \$b\n) : int", $codebase->getSymbolInformation('somefile.php', 'B\qux()'));
+        $information = $codebase->getSymbolInformation('somefile.php', 'B\A::foo()');
+        $this->assertNotNull($information);
+        $this->assertSame('<?php public function foo() : void', $information['type']);
+
+        $information = $codebase->getSymbolInformation('somefile.php', 'B\A::$a');
+        $this->assertNotNull($information);
+        $this->assertSame('<?php protected int|null $a', $information['type']);
+
+        $information = $codebase->getSymbolInformation('somefile.php', 'B\bar()');
+        $this->assertNotNull($information);
+        $this->assertSame('<?php function B\bar() : int', $information['type']);
+
+        $information = $codebase->getSymbolInformation('somefile.php', 'B\A::BANANA');
+        $this->assertNotNull($information);
+        $this->assertSame('<?php BANANA', $information['type']);
+
+        $information = $codebase->getSymbolInformation('somefile.php', 'B\baz()');
+        $this->assertNotNull($information);
+        $this->assertSame("<?php function B\baz(\n    int \$a\n) : int", $information['type']);
+
+        $information = $codebase->getSymbolInformation('somefile.php', 'B\qux()');
+        $this->assertNotNull($information);
+        $this->assertSame("<?php function B\qux(\n    int \$a,\n    int \$b\n) : int", $information['type']);
+
+        $information = $codebase->getSymbolInformation('somefile.php', '$_SERVER');
+        $this->assertNotNull($information);
+        $this->assertSame("<?php array<array-key, mixed>", $information['type']);
+
+        $information = $codebase->getSymbolInformation('somefile.php', '$my_global');
+        $this->assertNotNull($information);
+        $this->assertSame("<?php string", $information['type']);
+    }
+
+    public function testSimpleSymbolLookupGlobalConst(): void
+    {
+        $this->addFile(
+            'somefile.php',
+            '<?php
+                define("BANANA", "🍌");
+                const APPLE = "🍏";'
+        );
+
+        new FileAnalyzer($this->project_analyzer, 'somefile.php', 'somefile.php');
+
+        $codebase = $this->project_analyzer->getCodebase();
+
+        $this->analyzeFile('somefile.php', new Context());
+        $information = $codebase->getSymbolInformation('somefile.php', 'APPLE');
+        $this->assertNotNull($information);
+        $this->assertSame("<?php const APPLE string", $information['type']);
+
+        $information =  $codebase->getSymbolInformation('somefile.php', 'BANANA');
+        $this->assertNotNull($information);
+        $this->assertSame("<?php const BANANA string", $information['type']);
     }
 
     public function testSimpleSymbolLocation(): void
@@ -216,13 +271,13 @@ class SymbolLookupTest extends \Psalm\Tests\TestCase
 
         $this->assertNotNull($symbol_at_position);
 
-        $this->assertSame('213-214:int(1)', $symbol_at_position[0]);
+        $this->assertSame('213-214:1', $symbol_at_position[0]);
 
         $symbol_at_position = $codebase->getReferenceAtPosition('somefile.php', new Position(17, 30));
 
         $this->assertNotNull($symbol_at_position);
 
-        $this->assertSame('425-426:int(2)', $symbol_at_position[0]);
+        $this->assertSame('425-426:2', $symbol_at_position[0]);
     }
 
     public function testGetSymbolPositionMissingArg(): void
@@ -256,6 +311,36 @@ class SymbolLookupTest extends \Psalm\Tests\TestCase
         $this->assertNotNull($symbol_at_position);
 
         $this->assertSame('B\A::foo()', $symbol_at_position[0]);
+    }
+
+    public function testGetSymbolPositionGlobalVariable(): void
+    {
+        $codebase = $this->project_analyzer->getCodebase();
+        $codebase->reportUnusedVariables();
+        $config = $codebase->config;
+        $config->throw_exception = false;
+        $config->globals['$my_global'] = 'string';
+
+        $this->addFile(
+            'somefile.php',
+            '<?php
+                function foo() : void {
+                    global $my_global;
+                    echo $my_global;
+                }'
+        );
+
+        $codebase->file_provider->openFile('somefile.php');
+        $codebase->scanFiles();
+        $this->analyzeFile('somefile.php', new Context());
+
+        $symbol_at_position = $codebase->getReferenceAtPosition('somefile.php', new Position(2, 31));
+        $this->assertNotNull($symbol_at_position);
+        $this->assertSame('$my_global', $symbol_at_position[0]);
+
+        $symbol_at_position = $codebase->getReferenceAtPosition('somefile.php', new Position(3, 28));
+        $this->assertNotNull($symbol_at_position);
+        $this->assertSame('73-82:string', $symbol_at_position[0]);
     }
 
     public function testGetSymbolPositionNullableArg(): void
@@ -493,5 +578,35 @@ class SymbolLookupTest extends \Psalm\Tests\TestCase
         } else {
             $this->assertNull($reference_location);
         }
+    }
+
+    public function testGetSignatureHelpIncludesParamDescription(): void
+    {
+        $codebase = $this->project_analyzer->getCodebase();
+        $config = $codebase->config;
+        $config->throw_exception = false;
+
+        $this->addFile(
+            'somefile.php',
+            '<?php
+            namespace B;
+                /**
+                 * @param string $a The first param, a.
+                 */
+                function foo(string $a) {
+                }
+                foo();'
+        );
+
+        $codebase->file_provider->openFile('somefile.php');
+        $codebase->scanFiles();
+        $this->analyzeFile('somefile.php', new Context());
+
+        $reference_location = $codebase->getFunctionArgumentAtPosition('somefile.php', new Position(7, 20));
+        $this->assertNotNull($reference_location);
+        $symbol_information = $codebase->getSignatureInformation($reference_location[0], 'somefile.php');
+        $this->assertNotNull($symbol_information);
+        $this->assertNotNull($symbol_information->parameters);
+        $this->assertEquals('The first param, a.', $symbol_information->parameters[0]->documentation);
     }
 }

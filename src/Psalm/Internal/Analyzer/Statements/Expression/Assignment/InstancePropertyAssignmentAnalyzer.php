@@ -4,11 +4,13 @@ namespace Psalm\Internal\Analyzer\Statements\Expression\Assignment;
 use PhpParser;
 use PhpParser\Node\Expr\PropertyFetch;
 use PhpParser\Node\Stmt\PropertyProperty;
+use Psalm\Codebase;
 use Psalm\Config;
 use Psalm\Internal\Analyzer\ClassAnalyzer;
 use Psalm\Internal\Analyzer\ClassLikeAnalyzer;
 use Psalm\Internal\Analyzer\NamespaceAnalyzer;
 use Psalm\Internal\Analyzer\Statements\ExpressionAnalyzer;
+use Psalm\Internal\Analyzer\Statements\Expression\Call\ClassTemplateParamCollector;
 use Psalm\Internal\Analyzer\Statements\Expression\ExpressionIdentifier;
 use Psalm\Internal\Analyzer\Statements\Expression\Fetch\AtomicPropertyFetchAnalyzer;
 use Psalm\Internal\Analyzer\StatementsAnalyzer;
@@ -40,6 +42,10 @@ use Psalm\Issue\UndefinedPropertyAssignment;
 use Psalm\Issue\UndefinedMagicPropertyAssignment;
 use Psalm\Issue\UndefinedThisPropertyAssignment;
 use Psalm\IssueBuffer;
+use Psalm\Node\Expr\VirtualMethodCall;
+use Psalm\Node\Scalar\VirtualString;
+use Psalm\Node\VirtualArg;
+use Psalm\Node\VirtualIdentifier;
 use Psalm\Type;
 use Psalm\Type\Atomic\TNamedObject;
 use Psalm\Type\Atomic\TNull;
@@ -48,6 +54,9 @@ use function count;
 use function in_array;
 use function strtolower;
 use Psalm\Internal\DataFlow\DataFlowNode;
+use Psalm\Plugin\EventHandler\Event\AddRemoveTaintsEvent;
+use function array_merge;
+use function reset;
 
 /**
  * @internal
@@ -94,12 +103,11 @@ class InstancePropertyAssignmentAnalyzer
             if ($class_property_type) {
                 $class_storage = $codebase->classlike_storage_provider->get($context->self);
 
-                $class_property_type = \Psalm\Internal\Type\TypeExpander::expandUnion(
+                $class_property_type = self::getExpandedPropertyType(
                     $codebase,
-                    clone $class_property_type,
-                    $class_storage->name,
-                    $class_storage->name,
-                    $class_storage->parent_class
+                    $context->self,
+                    $prop_name,
+                    $class_storage
                 );
             }
 
@@ -466,16 +474,23 @@ class InstancePropertyAssignmentAnalyzer
 
                 $data_flow_graph->addNode($property_node);
 
+                $event = new AddRemoveTaintsEvent($stmt, $context, $statements_analyzer, $codebase);
+
+                $added_taints = $codebase->config->eventDispatcher->dispatchAddTaints($event);
+                $removed_taints = $codebase->config->eventDispatcher->dispatchRemoveTaints($event);
+
                 $data_flow_graph->addPath(
                     $property_node,
                     $var_node,
                     'property-assignment'
-                        . ($stmt->name instanceof PhpParser\Node\Identifier ? '-' . $stmt->name : '')
+                        . ($stmt->name instanceof PhpParser\Node\Identifier ? '-' . $stmt->name : ''),
+                    $added_taints,
+                    $removed_taints
                 );
 
                 if ($assignment_value_type->parent_nodes) {
                     foreach ($assignment_value_type->parent_nodes as $parent_node) {
-                        $data_flow_graph->addPath($parent_node, $property_node, '=');
+                        $data_flow_graph->addPath($parent_node, $property_node, '=', $added_taints, $removed_taints);
                     }
                 }
 
@@ -483,7 +498,7 @@ class InstancePropertyAssignmentAnalyzer
 
                 if ($context->vars_in_scope[$var_id]->parent_nodes) {
                     foreach ($context->vars_in_scope[$var_id]->parent_nodes as $parent_node) {
-                        $data_flow_graph->addPath($parent_node, $var_node, '=');
+                        $data_flow_graph->addPath($parent_node, $var_node, '=', $added_taints, $removed_taints);
                     }
                 }
 
@@ -522,11 +537,28 @@ class InstancePropertyAssignmentAnalyzer
 
             $data_flow_graph->addNode($property_node);
 
-            $data_flow_graph->addPath($localized_property_node, $property_node, 'property-assignment');
+            $event = new AddRemoveTaintsEvent($stmt, $context, $statements_analyzer, $codebase);
+
+            $added_taints = $codebase->config->eventDispatcher->dispatchAddTaints($event);
+            $removed_taints = $codebase->config->eventDispatcher->dispatchRemoveTaints($event);
+
+            $data_flow_graph->addPath(
+                $localized_property_node,
+                $property_node,
+                'property-assignment',
+                $added_taints,
+                $removed_taints
+            );
 
             if ($assignment_value_type->parent_nodes) {
                 foreach ($assignment_value_type->parent_nodes as $parent_node) {
-                    $data_flow_graph->addPath($parent_node, $localized_property_node, '=');
+                    $data_flow_graph->addPath(
+                        $parent_node,
+                        $localized_property_node,
+                        '=',
+                        $added_taints,
+                        $removed_taints
+                    );
                 }
             }
 
@@ -550,7 +582,13 @@ class InstancePropertyAssignmentAnalyzer
 
                 $data_flow_graph->addNode($declaring_property_node);
 
-                $data_flow_graph->addPath($property_node, $declaring_property_node, 'property-assignment');
+                $data_flow_graph->addPath(
+                    $property_node,
+                    $declaring_property_node,
+                    'property-assignment',
+                    $added_taints,
+                    $removed_taints
+                );
             }
         }
     }
@@ -994,17 +1032,17 @@ class InstancePropertyAssignmentAnalyzer
 
                 $statements_analyzer->node_data = clone $statements_analyzer->node_data;
 
-                $fake_method_call = new PhpParser\Node\Expr\MethodCall(
+                $fake_method_call = new VirtualMethodCall(
                     $stmt->var,
-                    new PhpParser\Node\Identifier('__set', $stmt->name->getAttributes()),
+                    new VirtualIdentifier('__set', $stmt->name->getAttributes()),
                     [
-                        new PhpParser\Node\Arg(
-                            new PhpParser\Node\Scalar\String_(
+                        new VirtualArg(
+                            new VirtualString(
                                 $prop_name,
                                 $stmt->name->getAttributes()
                             )
                         ),
-                        new PhpParser\Node\Arg(
+                        new VirtualArg(
                             $assignment_value
                         )
                     ]
@@ -1359,10 +1397,32 @@ class InstancePropertyAssignmentAnalyzer
             );
 
             if (!$class_property_type->hasMixed() && $assignment_value_type->hasMixed()) {
+                $origin_locations = [];
+
+                if ($statements_analyzer->data_flow_graph instanceof \Psalm\Internal\Codebase\VariableUseGraph) {
+                    foreach ($assignment_value_type->parent_nodes as $parent_node) {
+                        $origin_locations = array_merge(
+                            $origin_locations,
+                            $statements_analyzer->data_flow_graph->getOriginLocations($parent_node)
+                        );
+                    }
+                }
+
+                $origin_location = count($origin_locations) === 1 ? reset($origin_locations) : null;
+
+                $message = $var_id
+                    ? 'Unable to determine the type that ' . $var_id . ' is being assigned to'
+                    : 'Unable to determine the type of this assignment';
+
+                if ($origin_location && $origin_location->getLineNumber() === $stmt->getLine()) {
+                    $origin_location = null;
+                }
+
                 if (IssueBuffer::accepts(
                     new MixedAssignment(
-                        'Cannot assign' . ($var_id ? ' ' . $var_id . ' ' : ' ') . 'to a mixed type',
-                        new CodeLocation($statements_analyzer->getSource(), $stmt)
+                        $message,
+                        new CodeLocation($statements_analyzer->getSource(), $stmt),
+                        $origin_location
                     ),
                     $statements_analyzer->getSuppressedIssues()
                 )) {
@@ -1376,5 +1436,71 @@ class InstancePropertyAssignmentAnalyzer
             $property_id,
             $assignment_value_type
         );
+    }
+
+    public static function getExpandedPropertyType(
+        Codebase $codebase,
+        string $fq_class_name,
+        string $property_name,
+        \Psalm\Storage\ClassLikeStorage $storage
+    ) : ?Type\Union {
+        $property_class_name = $codebase->properties->getDeclaringClassForProperty(
+            $fq_class_name . '::$' . $property_name,
+            true
+        );
+
+        if ($property_class_name === null) {
+            return null;
+        }
+
+        $property_class_storage = $codebase->classlike_storage_provider->get($property_class_name);
+
+        $property_storage = $property_class_storage->properties[$property_name];
+
+        if (!$property_storage->type) {
+            return null;
+        }
+
+        $property_type = clone $property_storage->type;
+
+        $fleshed_out_type = !$property_type->isMixed()
+            ? \Psalm\Internal\Type\TypeExpander::expandUnion(
+                $codebase,
+                $property_type,
+                $fq_class_name,
+                $fq_class_name,
+                $storage->parent_class,
+                true,
+                false,
+                $storage->final
+            )
+            : $property_type;
+
+        $class_template_params = ClassTemplateParamCollector::collect(
+            $codebase,
+            $property_class_storage,
+            $storage,
+            null,
+            new Type\Atomic\TNamedObject($fq_class_name),
+            true
+        );
+
+        $template_result = new \Psalm\Internal\Type\TemplateResult(
+            $class_template_params ?: [],
+            []
+        );
+
+        if ($class_template_params) {
+            $fleshed_out_type = \Psalm\Internal\Type\TemplateStandinTypeReplacer::replace(
+                $fleshed_out_type,
+                $template_result,
+                $codebase,
+                null,
+                null,
+                null
+            );
+        }
+
+        return $fleshed_out_type;
     }
 }

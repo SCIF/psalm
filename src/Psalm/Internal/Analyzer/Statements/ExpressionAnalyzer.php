@@ -15,6 +15,7 @@ use Psalm\Internal\FileManipulation\FileManipulationBuffer;
 use Psalm\Issue\ForbiddenCode;
 use Psalm\Issue\UnrecognizedExpression;
 use Psalm\IssueBuffer;
+use Psalm\Plugin\EventHandler\Event\AfterExpressionAnalysisEvent;
 use Psalm\Type;
 use function in_array;
 use function strtolower;
@@ -78,26 +79,22 @@ class ExpressionAnalyzer
             }
         }
 
-        $plugin_classes = $codebase->config->after_expression_checks;
+        $event = new AfterExpressionAnalysisEvent(
+            $stmt,
+            $context,
+            $statements_analyzer,
+            $codebase,
+            []
+        );
 
-        if ($plugin_classes) {
-            $file_manipulations = [];
+        if ($codebase->config->eventDispatcher->dispatchAfterExpressionAnalysis($event) === false) {
+            return false;
+        }
 
-            foreach ($plugin_classes as $plugin_fq_class_name) {
-                if ($plugin_fq_class_name::afterExpressionAnalysis(
-                    $stmt,
-                    $context,
-                    $statements_analyzer,
-                    $codebase,
-                    $file_manipulations
-                ) === false) {
-                    return false;
-                }
-            }
+        $file_manipulations = $event->getFileReplacements();
 
-            if ($file_manipulations) {
-                FileManipulationBuffer::add($statements_analyzer->getFilePath(), $file_manipulations);
-            }
+        if ($file_manipulations) {
+            FileManipulationBuffer::add($statements_analyzer->getFilePath(), $file_manipulations);
         }
 
         return true;
@@ -374,21 +371,20 @@ class ExpressionAnalyzer
             return Expression\YieldFromAnalyzer::analyze($statements_analyzer, $stmt, $context);
         }
 
-        if ($stmt instanceof PhpParser\Node\Expr\Match_
-            && $statements_analyzer->getCodebase()->php_major_version >= 8
-        ) {
+        $php_major_version = $statements_analyzer->getCodebase()->php_major_version;
+        $php_minor_version = $statements_analyzer->getCodebase()->php_minor_version;
+
+        if ($stmt instanceof PhpParser\Node\Expr\Match_ && $php_major_version >= 8) {
             return Expression\MatchAnalyzer::analyze($statements_analyzer, $stmt, $context);
         }
 
-        if ($stmt instanceof PhpParser\Node\Expr\Throw_
-            && $statements_analyzer->getCodebase()->php_major_version >= 8
-        ) {
+        if ($stmt instanceof PhpParser\Node\Expr\Throw_ && $php_major_version >= 8) {
             return ThrowAnalyzer::analyze($statements_analyzer, $stmt, $context);
         }
 
         if (($stmt instanceof PhpParser\Node\Expr\NullsafePropertyFetch
                 || $stmt instanceof PhpParser\Node\Expr\NullsafeMethodCall)
-            && $statements_analyzer->getCodebase()->php_major_version >= 8
+            && $php_major_version >= 8
         ) {
             return Expression\NullsafeAnalyzer::analyze($statements_analyzer, $stmt, $context);
         }
@@ -400,7 +396,8 @@ class ExpressionAnalyzer
 
         if (IssueBuffer::accepts(
             new UnrecognizedExpression(
-                'Psalm does not understand ' . get_class($stmt),
+                'Psalm does not understand ' . get_class($stmt) . ' for PHP ' .
+                $php_major_version . ' ' . $php_minor_version,
                 new CodeLocation($statements_analyzer->getSource(), $stmt)
             ),
             $statements_analyzer->getSuppressedIssues()

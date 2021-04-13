@@ -797,11 +797,56 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                         return (int) (hexdec($x) + 1);
                     }',
             ],
+            'unsetArrayWithKnownOffset' => [
+                '<?php
+                    function bar(string $f) : void {
+                        $filter = rand(0, 1) ? explode(",", $f) : [$f];
+                        unset($filter[rand(0, 1)]);
+                        if ($filter) {}
+                    }'
+            ],
+            'stringInScalar' => [
+                '<?php
+                    /**
+                     * @template T of scalar
+                     * @param T $value
+                     */
+                    function normalizeValue(bool|int|float|string $value): void
+                    {
+                        assert(is_string($value));
+                    }'
+            ],
+            'NumericCanBeFalsy' => [
+                '<?php
+                    function test(string|int|float|bool $value): bool {
+                        if (is_numeric($value) || $value === true) {
+                            if ($value) {
+                                return true;
+                            }
+                        }
+                        return false;
+                    }'
+            ],
+            'NumericCanBeNotIntOrNotFloat' => [
+                '<?php
+                    /** @param mixed $a */
+                    function a($a): void{
+                        if (is_numeric($a)) {
+                            assert(!is_float($a));
+                        }
+                    }
+                    /** @param mixed $a */
+                    function b($a): void{
+                        if (is_numeric($a)) {
+                            assert(!is_int($a));
+                        }
+                    }'
+            ]
         ];
     }
 
     /**
-     * @return iterable<string,array{string,error_message:string,2?:string[],3?:bool,4?:string}>
+     * @return iterable<string,array{string,error_message:string,1?:string[],2?:bool,3?:string}>
      */
     public function providerInvalidCodeParse(): iterable
     {

@@ -5,6 +5,7 @@ use PhpParser;
 use Psalm\Internal\Analyzer\StatementsAnalyzer;
 use Psalm\Internal\Codebase\InternalCallMapHandler;
 use Psalm\Internal\Analyzer\Statements\Expression\ExpressionIdentifier;
+use Psalm\Internal\Analyzer\Statements\Expression\Call\FunctionCallReturnTypeFetcher;
 use Psalm\Codebase;
 use Psalm\CodeLocation;
 use Psalm\Context;
@@ -18,6 +19,7 @@ use function strtolower;
 use Psalm\Internal\DataFlow\TaintSource;
 use Psalm\Internal\DataFlow\DataFlowNode;
 use Psalm\Internal\Codebase\TaintFlowGraph;
+use Psalm\Plugin\EventHandler\Event\AddRemoveTaintsEvent;
 
 class MethodCallReturnTypeFetcher
 {
@@ -110,20 +112,6 @@ class MethodCallReturnTypeFetcher
                 $return_type_candidate = $callmap_callables[0]->return_type;
             }
 
-            if (($call_map_id->fq_class_name === 'Iterator'
-                    || $call_map_id->fq_class_name === 'IteratorIterator'
-                    || $call_map_id->fq_class_name === 'Generator'
-                    || $call_map_id->fq_class_name === 'SplDoublyLinkedList'
-                    || $call_map_id->fq_class_name === 'SplObjectStorage'
-                )
-                && $method_name === 'current'
-            ) {
-                if ($stmt->getAttributes()) {
-                    $return_type_candidate->addType(new Type\Atomic\TNull());
-                    $return_type_candidate->ignore_nullable_issues = true;
-                }
-            }
-
             if ($return_type_candidate->isFalsable()) {
                 $return_type_candidate->ignore_falsable_issues = true;
             }
@@ -133,7 +121,11 @@ class MethodCallReturnTypeFetcher
                 $return_type_candidate,
                 $fq_class_name,
                 $static_type,
-                $class_storage->parent_class
+                $class_storage->parent_class,
+                true,
+                false,
+                false,
+                true
             );
         } else {
             $self_fq_class_name = $fq_class_name;
@@ -147,6 +139,21 @@ class MethodCallReturnTypeFetcher
 
             if ($return_type_candidate) {
                 $return_type_candidate = clone $return_type_candidate;
+
+                if ($template_result->upper_bounds) {
+                    $return_type_candidate = \Psalm\Internal\Type\TypeExpander::expandUnion(
+                        $codebase,
+                        $return_type_candidate,
+                        $fq_class_name,
+                        null,
+                        $class_storage->parent_class,
+                        true,
+                        false,
+                        $static_type instanceof Type\Atomic\TNamedObject
+                            && $codebase->classlike_storage_provider->get($static_type->value)->final,
+                        true
+                    );
+                }
 
                 $return_type_candidate = self::replaceTemplateTypes(
                     $return_type_candidate,
@@ -165,7 +172,8 @@ class MethodCallReturnTypeFetcher
                     true,
                     false,
                     $static_type instanceof Type\Atomic\TNamedObject
-                        && $codebase->classlike_storage_provider->get($static_type->value)->final
+                        && $codebase->classlike_storage_provider->get($static_type->value)->final,
+                    true
                 );
 
                 $return_type_location = $codebase->methods->getMethodReturnTypeLocation(
@@ -208,6 +216,7 @@ class MethodCallReturnTypeFetcher
             $return_type_candidate,
             $stmt->name,
             $stmt->var,
+            $args,
             $method_id,
             $declaring_method_id,
             $cased_method_id,
@@ -217,201 +226,291 @@ class MethodCallReturnTypeFetcher
         return $return_type_candidate;
     }
 
+    /**
+     * @param  array<PhpParser\Node\Arg>   $args
+     */
     public static function taintMethodCallResult(
         StatementsAnalyzer $statements_analyzer,
         Type\Union $return_type_candidate,
         PhpParser\Node $name_expr,
         PhpParser\Node\Expr $var_expr,
+        array $args,
         MethodIdentifier $method_id,
         ?MethodIdentifier $declaring_method_id,
         string $cased_method_id,
         Context $context
     ) : void {
-        $codebase = $statements_analyzer->getCodebase();
+        if (!$statements_analyzer->data_flow_graph
+            || !$declaring_method_id
+        ) {
+            return;
+        }
 
         if ($statements_analyzer->data_flow_graph instanceof TaintFlowGraph
-            && $declaring_method_id
-            && !\in_array('TaintedInput', $statements_analyzer->getSuppressedIssues())
+            && \in_array('TaintedInput', $statements_analyzer->getSuppressedIssues())
         ) {
-            $method_storage = $codebase->methods->getStorage(
-                $declaring_method_id
+            return;
+        }
+
+        $codebase = $statements_analyzer->getCodebase();
+
+        $event = new AddRemoveTaintsEvent($var_expr, $context, $statements_analyzer, $codebase);
+
+        $added_taints = $codebase->config->eventDispatcher->dispatchAddTaints($event);
+        $removed_taints = $codebase->config->eventDispatcher->dispatchRemoveTaints($event);
+
+        $method_storage = $codebase->methods->getStorage(
+            $declaring_method_id
+        );
+
+        $node_location = new CodeLocation($statements_analyzer, $name_expr);
+
+        $is_declaring = (string) $declaring_method_id === (string) $method_id;
+
+        $var_id = ExpressionIdentifier::getArrayVarId(
+            $var_expr,
+            null,
+            $statements_analyzer
+        );
+
+        if ($method_storage->specialize_call
+            && $var_id
+            && isset($context->vars_in_scope[$var_id])
+            && $statements_analyzer->data_flow_graph instanceof TaintFlowGraph
+        ) {
+            $var_nodes = [];
+
+            $parent_nodes = $context->vars_in_scope[$var_id]->parent_nodes;
+
+            $unspecialized_parent_nodes = \array_filter(
+                $parent_nodes,
+                function ($parent_node) {
+                    return !$parent_node->specialization_key;
+                }
             );
 
-            $node_location = new CodeLocation($statements_analyzer, $name_expr);
+            $specialized_parent_nodes = \array_filter(
+                $parent_nodes,
+                function ($parent_node) {
+                    return (bool) $parent_node->specialization_key;
+                }
+            );
 
-            $is_declaring = (string) $declaring_method_id === (string) $method_id;
+            $var_node = DataFlowNode::getForAssignment(
+                $var_id,
+                new CodeLocation($statements_analyzer, $var_expr)
+            );
 
-            if ($method_storage->specialize_call) {
-                $var_id = ExpressionIdentifier::getArrayVarId(
-                    $var_expr,
-                    null,
-                    $statements_analyzer
+            if ($method_storage->location) {
+                $this_parent_node = DataFlowNode::getForAssignment(
+                    '$this in ' . $method_id,
+                    $method_storage->location
                 );
 
-                if ($var_id && isset($context->vars_in_scope[$var_id])) {
-                    $var_nodes = [];
-
-                    $parent_nodes = $context->vars_in_scope[$var_id]->parent_nodes;
-
-                    $unspecialized_parent_nodes = \array_filter(
-                        $parent_nodes,
-                        function ($parent_node) {
-                            return !$parent_node->specialization_key;
-                        }
+                foreach ($parent_nodes as $parent_node) {
+                    $statements_analyzer->data_flow_graph->addPath(
+                        $parent_node,
+                        $this_parent_node,
+                        '=',
+                        $added_taints,
+                        $removed_taints
                     );
-
-                    $specialized_parent_nodes = \array_filter(
-                        $parent_nodes,
-                        function ($parent_node) {
-                            return (bool) $parent_node->specialization_key;
-                        }
-                    );
-
-                    $var_node = DataFlowNode::getForAssignment(
-                        $var_id,
-                        new CodeLocation($statements_analyzer, $var_expr)
-                    );
-
-                    if ($method_storage->location) {
-                        $this_parent_node = DataFlowNode::getForAssignment(
-                            '$this in ' . $method_id,
-                            $method_storage->location
-                        );
-
-                        foreach ($parent_nodes as $parent_node) {
-                            $statements_analyzer->data_flow_graph->addPath($parent_node, $this_parent_node, '=');
-                        }
-                    }
-
-                    $var_nodes[$var_node->id] = $var_node;
-
-                    $method_call_nodes = [];
-
-                    if ($unspecialized_parent_nodes) {
-                        $method_call_node = DataFlowNode::getForMethodReturn(
-                            (string) $method_id,
-                            $cased_method_id,
-                            $is_declaring ? ($method_storage->signature_return_type_location
-                                ?: $method_storage->location) : null,
-                            $node_location
-                        );
-
-                        $method_call_nodes[$method_call_node->id] = $method_call_node;
-                    }
-
-                    foreach ($specialized_parent_nodes as $parent_node) {
-                        $universal_method_call_node = DataFlowNode::getForMethodReturn(
-                            (string) $method_id,
-                            $cased_method_id,
-                            $is_declaring ? ($method_storage->signature_return_type_location
-                                ?: $method_storage->location) : null,
-                            null
-                        );
-
-                        $method_call_node = new DataFlowNode(
-                            strtolower((string) $method_id),
-                            $cased_method_id,
-                            $is_declaring ? ($method_storage->signature_return_type_location
-                                ?: $method_storage->location) : null,
-                            $parent_node->specialization_key
-                        );
-
-                        $statements_analyzer->data_flow_graph->addPath(
-                            $universal_method_call_node,
-                            $method_call_node,
-                            '='
-                        );
-
-                        $method_call_nodes[$method_call_node->id] = $method_call_node;
-                    }
-
-                    foreach ($method_call_nodes as $method_call_node) {
-                        $statements_analyzer->data_flow_graph->addNode($method_call_node);
-
-                        foreach ($var_nodes as $var_node) {
-                            $statements_analyzer->data_flow_graph->addNode($var_node);
-
-                            $statements_analyzer->data_flow_graph->addPath(
-                                $method_call_node,
-                                $var_node,
-                                'method-call-' . $method_id->method_name
-                            );
-                        }
-
-                        if (!$is_declaring) {
-                            $cased_declaring_method_id = $codebase->methods->getCasedMethodId($declaring_method_id);
-
-                            $declaring_method_call_node = new DataFlowNode(
-                                strtolower((string) $declaring_method_id),
-                                $cased_declaring_method_id,
-                                $method_storage->signature_return_type_location ?: $method_storage->location,
-                                $method_call_node->specialization_key
-                            );
-
-                            $statements_analyzer->data_flow_graph->addNode($declaring_method_call_node);
-                            $statements_analyzer->data_flow_graph->addPath(
-                                $declaring_method_call_node,
-                                $method_call_node,
-                                'parent'
-                            );
-                        }
-                    }
-
-                    $return_type_candidate->parent_nodes = $method_call_nodes;
-
-                    $stmt_var_type = clone $context->vars_in_scope[$var_id];
-
-                    $stmt_var_type->parent_nodes = $var_nodes;
-
-                    $context->vars_in_scope[$var_id] = $stmt_var_type;
                 }
-            } else {
+            }
+
+            $var_nodes[$var_node->id] = $var_node;
+
+            $method_call_nodes = [];
+
+            if ($unspecialized_parent_nodes) {
                 $method_call_node = DataFlowNode::getForMethodReturn(
                     (string) $method_id,
                     $cased_method_id,
-                    $is_declaring
-                        ? ($method_storage->signature_return_type_location ?: $method_storage->location)
-                        : null,
+                    $is_declaring ? ($method_storage->signature_return_type_location
+                        ?: $method_storage->location) : null,
+                    $node_location
+                );
+
+                $method_call_nodes[$method_call_node->id] = $method_call_node;
+            }
+
+            foreach ($specialized_parent_nodes as $parent_node) {
+                $universal_method_call_node = DataFlowNode::getForMethodReturn(
+                    (string) $method_id,
+                    $cased_method_id,
+                    $is_declaring ? ($method_storage->signature_return_type_location
+                        ?: $method_storage->location) : null,
                     null
                 );
+
+                $method_call_node = new DataFlowNode(
+                    strtolower((string) $method_id),
+                    $cased_method_id,
+                    $is_declaring ? ($method_storage->signature_return_type_location
+                        ?: $method_storage->location) : null,
+                    $parent_node->specialization_key
+                );
+
+                $statements_analyzer->data_flow_graph->addPath(
+                    $universal_method_call_node,
+                    $method_call_node,
+                    '=',
+                    $added_taints,
+                    $removed_taints
+                );
+
+                $method_call_nodes[$method_call_node->id] = $method_call_node;
+            }
+
+            if (!$method_call_nodes) {
+                return;
+            }
+
+            foreach ($method_call_nodes as $method_call_node) {
+                $statements_analyzer->data_flow_graph->addNode($method_call_node);
+
+                foreach ($var_nodes as $var_node) {
+                    $statements_analyzer->data_flow_graph->addNode($var_node);
+
+                    $statements_analyzer->data_flow_graph->addPath(
+                        $method_call_node,
+                        $var_node,
+                        'method-call-' . $method_id->method_name,
+                        $added_taints,
+                        $removed_taints
+                    );
+                }
 
                 if (!$is_declaring) {
                     $cased_declaring_method_id = $codebase->methods->getCasedMethodId($declaring_method_id);
 
-                    $declaring_method_call_node = DataFlowNode::getForMethodReturn(
-                        (string) $declaring_method_id,
+                    $declaring_method_call_node = new DataFlowNode(
+                        strtolower((string) $declaring_method_id),
                         $cased_declaring_method_id,
                         $method_storage->signature_return_type_location ?: $method_storage->location,
-                        null
+                        $method_call_node->specialization_key
                     );
 
                     $statements_analyzer->data_flow_graph->addNode($declaring_method_call_node);
                     $statements_analyzer->data_flow_graph->addPath(
                         $declaring_method_call_node,
                         $method_call_node,
-                        'parent'
+                        'parent',
+                        $added_taints,
+                        $removed_taints
                     );
                 }
-
-                $statements_analyzer->data_flow_graph->addNode($method_call_node);
-
-                $return_type_candidate->parent_nodes = [
-                    $method_call_node->id => $method_call_node
-                ];
             }
 
-            if ($method_storage->taint_source_types) {
-                $method_node = TaintSource::getForMethodReturn(
-                    (string) $method_id,
-                    $cased_method_id,
-                    $method_storage->signature_return_type_location ?: $method_storage->location
+            $return_type_candidate->parent_nodes = $method_call_nodes;
+
+            $stmt_var_type = clone $context->vars_in_scope[$var_id];
+
+            $stmt_var_type->parent_nodes = $var_nodes;
+
+            $context->vars_in_scope[$var_id] = $stmt_var_type;
+        } elseif ($method_storage->specialize_call
+            && $statements_analyzer->data_flow_graph instanceof TaintFlowGraph
+        ) {
+            $method_call_node = DataFlowNode::getForMethodReturn(
+                (string) $method_id,
+                $cased_method_id,
+                $is_declaring
+                    ? ($method_storage->signature_return_type_location ?: $method_storage->location)
+                    : null,
+                $node_location
+            );
+
+            if (!$is_declaring) {
+                $cased_declaring_method_id = $codebase->methods->getCasedMethodId($declaring_method_id);
+
+                $declaring_method_call_node = DataFlowNode::getForMethodReturn(
+                    (string) $declaring_method_id,
+                    $cased_declaring_method_id,
+                    $method_storage->signature_return_type_location ?: $method_storage->location,
+                    $node_location
                 );
 
-                $method_node->taints = $method_storage->taint_source_types;
-
-                $statements_analyzer->data_flow_graph->addSource($method_node);
+                $statements_analyzer->data_flow_graph->addNode($declaring_method_call_node);
+                $statements_analyzer->data_flow_graph->addPath(
+                    $declaring_method_call_node,
+                    $method_call_node,
+                    'parent',
+                    $added_taints,
+                    $removed_taints
+                );
             }
+
+            $statements_analyzer->data_flow_graph->addNode($method_call_node);
+
+            $return_type_candidate->parent_nodes = [
+                $method_call_node->id => $method_call_node
+            ];
+        } else {
+            $method_call_node = DataFlowNode::getForMethodReturn(
+                (string) $method_id,
+                $cased_method_id,
+                $is_declaring
+                    ? ($statements_analyzer->data_flow_graph instanceof TaintFlowGraph
+                        ? ($method_storage->signature_return_type_location ?: $method_storage->location)
+                        : ($method_storage->return_type_location ?: $method_storage->location))
+                    : null,
+                null
+            );
+
+            if (!$is_declaring) {
+                $cased_declaring_method_id = $codebase->methods->getCasedMethodId($declaring_method_id);
+
+                $declaring_method_call_node = DataFlowNode::getForMethodReturn(
+                    (string) $declaring_method_id,
+                    $cased_declaring_method_id,
+                    $method_storage->signature_return_type_location ?: $method_storage->location,
+                    null
+                );
+
+                $statements_analyzer->data_flow_graph->addNode($declaring_method_call_node);
+                $statements_analyzer->data_flow_graph->addPath(
+                    $declaring_method_call_node,
+                    $method_call_node,
+                    'parent',
+                    $added_taints,
+                    $removed_taints
+                );
+            }
+
+            $statements_analyzer->data_flow_graph->addNode($method_call_node);
+
+            $return_type_candidate->parent_nodes = [
+                $method_call_node->id => $method_call_node
+            ];
         }
+
+        if ($method_storage->taint_source_types && $statements_analyzer->data_flow_graph instanceof TaintFlowGraph) {
+            $method_node = TaintSource::getForMethodReturn(
+                (string) $method_id,
+                $cased_method_id,
+                $method_storage->signature_return_type_location ?: $method_storage->location
+            );
+
+            $method_node->taints = $method_storage->taint_source_types;
+
+            $statements_analyzer->data_flow_graph->addSource($method_node);
+        }
+
+        if (!$statements_analyzer->data_flow_graph instanceof TaintFlowGraph) {
+            return;
+        }
+
+        FunctionCallReturnTypeFetcher::taintUsingFlows(
+            $statements_analyzer,
+            $method_storage,
+            $statements_analyzer->data_flow_graph,
+            (string) $method_id,
+            $args,
+            $node_location,
+            $method_call_node,
+            $method_storage->removed_taints
+        );
     }
 
     private static function replaceTemplateTypes(

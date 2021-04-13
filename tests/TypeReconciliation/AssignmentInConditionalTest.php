@@ -453,7 +453,7 @@ class AssignmentInConditionalTest extends \Psalm\Tests\TestCase
     }
 
     /**
-     * @return iterable<string,array{string,error_message:string,2?:string[],3?:bool,4?:string}>
+     * @return iterable<string,array{string,error_message:string,1?:string[],2?:bool,3?:string}>
      */
     public function providerInvalidCodeParse(): iterable
     {
@@ -468,6 +468,21 @@ class AssignmentInConditionalTest extends \Psalm\Tests\TestCase
                         }
 
                         return $pos;
+                    }',
+                'error_message' => 'InvalidReturnStatement',
+            ],
+            'assignmentInBranchOfOr' => [
+                '<?php
+                    function getPath(): string|object {
+                        return rand(0, 1) ? "a" : new stdClass();
+                    }
+
+                    function foo(string $s) : string {
+                        if (($path = $s) || ($path = getPath())) {
+                            return $path;
+                        }
+
+                        return "b";
                     }',
                 'error_message' => 'InvalidReturnStatement',
             ],

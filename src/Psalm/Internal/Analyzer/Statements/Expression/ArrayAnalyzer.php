@@ -2,6 +2,7 @@
 namespace Psalm\Internal\Analyzer\Statements\Expression;
 
 use PhpParser;
+use Psalm\Codebase;
 use Psalm\Internal\Analyzer\Statements\ExpressionAnalyzer;
 use Psalm\Internal\Analyzer\StatementsAnalyzer;
 use Psalm\CodeLocation;
@@ -12,6 +13,8 @@ use Psalm\Issue\MixedArrayOffset;
 use Psalm\IssueBuffer;
 use Psalm\Type;
 use Psalm\Internal\Type\TypeCombiner;
+use Psalm\Plugin\EventHandler\Event\AddRemoveTaintsEvent;
+
 use function preg_match;
 use function array_merge;
 use function array_values;
@@ -39,7 +42,7 @@ class ArrayAnalyzer
 
         $array_creation_info = new ArrayCreationInfo();
 
-        foreach ($stmt->items as $int_offset => $item) {
+        foreach ($stmt->items as $item) {
             if ($item === null) {
                 \Psalm\IssueBuffer::add(
                     new \Psalm\Issue\ParseError(
@@ -55,8 +58,8 @@ class ArrayAnalyzer
                 $statements_analyzer,
                 $context,
                 $array_creation_info,
-                $int_offset,
-                $item
+                $item,
+                $codebase
             );
         }
 
@@ -110,8 +113,12 @@ class ArrayAnalyzer
         }
 
         if ($array_creation_info->all_list) {
-            $array_type = new Type\Atomic\TNonEmptyList($item_value_type ?: Type::getMixed());
-            $array_type->count = count($stmt->items);
+            if (empty($array_creation_info->item_key_atomic_types)) {
+                $array_type = new Type\Atomic\TList($item_value_type ?: Type::getMixed());
+            } else {
+                $array_type = new Type\Atomic\TNonEmptyList($item_value_type ?: Type::getMixed());
+                $array_type->count = count($array_creation_info->property_types);
+            }
 
             $stmt_type = new Type\Union([
                 $array_type,
@@ -154,6 +161,7 @@ class ArrayAnalyzer
                     && !$atomic_key_type instanceof Type\Atomic\TInt
                     && !$atomic_key_type instanceof Type\Atomic\TArrayKey
                     && !$atomic_key_type instanceof Type\Atomic\TMixed
+                    && !$atomic_key_type instanceof Type\Atomic\TTemplateParam
                     && !(
                         $atomic_key_type instanceof Type\Atomic\TObjectWithProperties
                         && isset($atomic_key_type->methods['__toString'])
@@ -199,7 +207,7 @@ class ArrayAnalyzer
             $item_value_type ?: Type::getMixed(),
         ]);
 
-        $array_type->count = count($stmt->items);
+        $array_type->count = count($array_creation_info->property_types);
 
         $stmt_type = new Type\Union([
             $array_type,
@@ -218,8 +226,8 @@ class ArrayAnalyzer
         StatementsAnalyzer $statements_analyzer,
         Context $context,
         ArrayCreationInfo $array_creation_info,
-        int $int_offset,
-        PhpParser\Node\Expr\ArrayItem $item
+        PhpParser\Node\Expr\ArrayItem $item,
+        Codebase $codebase
     ) : void {
         if (ExpressionAnalyzer::analyze($statements_analyzer, $item->value, $context) === false) {
             return;
@@ -235,19 +243,42 @@ class ArrayAnalyzer
             self::handleUnpackedArray(
                 $statements_analyzer,
                 $array_creation_info,
-                $int_offset,
                 $item,
                 $unpacked_array_type
             );
+
+            if (($data_flow_graph = $statements_analyzer->data_flow_graph)
+                && $data_flow_graph instanceof \Psalm\Internal\Codebase\VariableUseGraph
+                && $unpacked_array_type->parent_nodes
+            ) {
+                $var_location = new CodeLocation($statements_analyzer->getSource(), $item->value);
+
+                $new_parent_node = \Psalm\Internal\DataFlow\DataFlowNode::getForAssignment(
+                    'array',
+                    $var_location
+                );
+
+                $data_flow_graph->addNode($new_parent_node);
+
+                foreach ($unpacked_array_type->parent_nodes as $parent_node) {
+                    $data_flow_graph->addPath(
+                        $parent_node,
+                        $new_parent_node,
+                        'arrayvalue-assignment'
+                    );
+                }
+
+                $array_creation_info->parent_taint_nodes += [$new_parent_node->id => $new_parent_node];
+            }
 
             return;
         }
 
         $item_key_value = null;
+        $item_key_type = null;
+        $item_is_list_item = false;
 
         if ($item->key) {
-            $array_creation_info->all_list = false;
-
             $was_inside_use = $context->inside_use;
             $context->inside_use = true;
             if (ExpressionAnalyzer::analyze($statements_analyzer, $item->key, $context) === false) {
@@ -287,15 +318,21 @@ class ArrayAnalyzer
                 } elseif ($key_type->isSingleIntLiteral()) {
                     $item_key_value = $key_type->getSingleIntLiteral()->value;
 
-                    if ($item_key_value > $int_offset + $array_creation_info->int_offset_diff) {
-                        $array_creation_info->int_offset_diff = $item_key_value - $int_offset;
+                    if ($item_key_value >= $array_creation_info->int_offset) {
+                        if ($item_key_value === $array_creation_info->int_offset) {
+                            $item_is_list_item = true;
+                        }
+                        $array_creation_info->int_offset = $item_key_value + 1;
                     }
                 }
             }
         } else {
-            $item_key_value = $int_offset + $array_creation_info->int_offset_diff;
-            $array_creation_info->item_key_atomic_types[] = new Type\Atomic\TInt();
+            $item_is_list_item = true;
+            $item_key_value = $array_creation_info->int_offset++;
+            $array_creation_info->item_key_atomic_types[] = new Type\Atomic\TLiteralInt($item_key_value);
         }
+
+        $array_creation_info->all_list = $array_creation_info->all_list && $item_is_list_item;
 
         if ($item_key_value !== null) {
             if (isset($array_creation_info->array_keys[$item_key_value])) {
@@ -312,6 +349,7 @@ class ArrayAnalyzer
 
             $array_creation_info->array_keys[$item_key_value] = true;
         }
+
 
         if (($data_flow_graph = $statements_analyzer->data_flow_graph)
             && ($data_flow_graph instanceof \Psalm\Internal\Codebase\VariableUseGraph
@@ -333,12 +371,53 @@ class ArrayAnalyzer
 
                     $data_flow_graph->addNode($new_parent_node);
 
+                    $event = new AddRemoveTaintsEvent($item, $context, $statements_analyzer, $codebase);
+
+                    $added_taints = $codebase->config->eventDispatcher->dispatchAddTaints($event);
+                    $removed_taints = $codebase->config->eventDispatcher->dispatchRemoveTaints($event);
+
                     foreach ($item_value_type->parent_nodes as $parent_node) {
                         $data_flow_graph->addPath(
                             $parent_node,
                             $new_parent_node,
-                            'array-assignment'
-                                . ($item_key_value !== null ? '-\'' . $item_key_value . '\'' : '')
+                            'arrayvalue-assignment'
+                                . ($item_key_value !== null ? '-\'' . $item_key_value . '\'' : ''),
+                            $added_taints,
+                            $removed_taints
+                        );
+                    }
+
+                    $array_creation_info->parent_taint_nodes += [$new_parent_node->id => $new_parent_node];
+                }
+
+                if ($item_key_type
+                    && $item_key_type->parent_nodes
+                    && $item_key_value === null
+                    && !($item_key_type->isSingle()
+                        && $item_key_type->hasLiteralValue()
+                        && $data_flow_graph instanceof \Psalm\Internal\Codebase\TaintFlowGraph)
+                ) {
+                    $var_location = new CodeLocation($statements_analyzer->getSource(), $item);
+
+                    $new_parent_node = \Psalm\Internal\DataFlow\DataFlowNode::getForAssignment(
+                        'array',
+                        $var_location
+                    );
+
+                    $data_flow_graph->addNode($new_parent_node);
+
+                    $event = new AddRemoveTaintsEvent($item, $context, $statements_analyzer, $codebase);
+
+                    $added_taints = $codebase->config->eventDispatcher->dispatchAddTaints($event);
+                    $removed_taints = $codebase->config->eventDispatcher->dispatchRemoveTaints($event);
+
+                    foreach ($item_key_type->parent_nodes as $parent_node) {
+                        $data_flow_graph->addPath(
+                            $parent_node,
+                            $new_parent_node,
+                            'arraykey-assignment',
+                            $added_taints,
+                            $removed_taints
                         );
                     }
 
@@ -395,13 +474,11 @@ class ArrayAnalyzer
     private static function handleUnpackedArray(
         StatementsAnalyzer $statements_analyzer,
         ArrayCreationInfo $array_creation_info,
-        int $int_offset,
         PhpParser\Node\Expr\ArrayItem $item,
         Type\Union $unpacked_array_type
     ) : void {
         foreach ($unpacked_array_type->getAtomicTypes() as $unpacked_atomic_type) {
             if ($unpacked_atomic_type instanceof Type\Atomic\TKeyedArray) {
-                $unpacked_array_offset = 0;
                 foreach ($unpacked_atomic_type->properties as $key => $property_value) {
                     if (\is_string($key)) {
                         if (IssueBuffer::accepts(
@@ -417,24 +494,18 @@ class ArrayAnalyzer
                         return;
                     }
 
-                    $array_creation_info->item_key_atomic_types[] = new Type\Atomic\TLiteralInt($key);
+                    $new_int_offset = $array_creation_info->int_offset++;
+
+                    $array_creation_info->item_key_atomic_types[] = new Type\Atomic\TLiteralInt($new_int_offset);
                     $array_creation_info->item_value_atomic_types = array_merge(
                         $array_creation_info->item_value_atomic_types,
                         array_values($property_value->getAtomicTypes())
                     );
 
-                    $new_int_offset = $int_offset + $array_creation_info->int_offset_diff + $unpacked_array_offset;
-
                     $array_creation_info->array_keys[$new_int_offset] = true;
                     $array_creation_info->property_types[$new_int_offset] = $property_value;
-
-                    $unpacked_array_offset++;
                 }
-
-                $array_creation_info->int_offset_diff += $unpacked_array_offset - 1;
             } else {
-                $array_creation_info->can_create_objectlike = false;
-
                 $codebase = $statements_analyzer->getCodebase();
 
                 if ($unpacked_atomic_type instanceof Type\Atomic\TArray
@@ -442,7 +513,14 @@ class ArrayAnalyzer
                     || (
                         $unpacked_atomic_type instanceof Type\Atomic\TGenericObject
                         && $unpacked_atomic_type->hasTraversableInterface($codebase)
+                        && \count($unpacked_atomic_type->type_params) === 2
                 )) {
+                    /** @psalm-suppress PossiblyUndefinedArrayOffset provably true, but Psalm can’t see it */
+                    if ($unpacked_atomic_type->type_params[1]->isEmpty()) {
+                        continue;
+                    }
+                    $array_creation_info->can_create_objectlike = false;
+
                     if ($unpacked_atomic_type->type_params[0]->hasString()) {
                         if (IssueBuffer::accepts(
                             new DuplicateArrayKey(
@@ -466,6 +544,11 @@ class ArrayAnalyzer
                         )
                     );
                 } elseif ($unpacked_atomic_type instanceof Type\Atomic\TList) {
+                    if ($unpacked_atomic_type->type_param->isEmpty()) {
+                        continue;
+                    }
+                    $array_creation_info->can_create_objectlike = false;
+
                     $array_creation_info->item_key_atomic_types[] = new Type\Atomic\TInt();
 
                     $array_creation_info->item_value_atomic_types = array_merge(

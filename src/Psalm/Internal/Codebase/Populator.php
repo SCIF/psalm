@@ -4,7 +4,6 @@ namespace Psalm\Internal\Codebase;
 use function array_keys;
 use function array_merge;
 use function count;
-use function is_int;
 use Psalm\Config;
 use Psalm\Internal\Analyzer\ClassLikeAnalyzer;
 use Psalm\Internal\Provider\ClassLikeStorageProvider;
@@ -119,7 +118,11 @@ class Populator
             }
 
             foreach ($class_storage->dependent_classlikes as $dependent_classlike_lc => $_) {
-                $dependee_storage = $this->classlike_storage_provider->get($dependent_classlike_lc);
+                try {
+                    $dependee_storage = $this->classlike_storage_provider->get($dependent_classlike_lc);
+                } catch (\InvalidArgumentException $exception) {
+                    continue;
+                }
 
                 $class_storage->dependent_classlikes += $dependee_storage->dependent_classlikes;
             }

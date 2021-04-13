@@ -114,6 +114,38 @@ class PropertyTypeTest extends TestCase
         $this->analyzeFile('somefile.php', new Context());
     }
 
+    public function testFooBar(): void
+    {
+        Config::getInstance()->remember_property_assignments_after_call = false;
+
+        $this->addFile(
+            'somefile.php',
+            '<?php
+                    class A {
+                        private ?int $bar = null;
+
+                        public function baz(): void
+                        {
+                            $this->bar = null;
+
+                            foreach (range(1, 5) as $part) {
+                                if ($part === 3) {
+                                    $this->foo();
+                                }
+                            }
+
+                            if ($this->bar === null) {}
+                        }
+
+                        private function foo() : void {
+                            $this->bar = 5;
+                        }
+                    }'
+        );
+
+        $this->analyzeFile('somefile.php', new Context());
+    }
+
     public function testForgetFinalMethodCalls(): void
     {
         Config::getInstance()->remember_property_assignments_after_call = false;
@@ -920,13 +952,13 @@ class PropertyTypeTest extends TestCase
 
                     class Finally_ extends Node\Stmt
                     {
-                        /** @var Node[] Statements */
+                        /** @var list<Node\Stmt> Statements */
                         public $stmts;
 
                         /**
                          * Constructs a finally node.
                          *
-                         * @param array<int, Node\Stmt> $stmts      Statements
+                         * @param list<Node\Stmt> $stmts      Statements
                          * @param array  $attributes Additional attributes
                          */
                         public function __construct(array $stmts = array(), array $attributes = array()) {
@@ -1724,34 +1756,6 @@ class PropertyTypeTest extends TestCase
 
                     class Bar extends Foo {}',
             ],
-            'parentSetsWiderTypeInConstructor' => [
-                '<?php
-                    interface Foo {}
-
-                    interface FooMore extends Foo {
-                        public function something(): void;
-                    }
-
-                    class Bar {
-                        /** @var Foo */
-                        protected $foo;
-
-                        public function __construct(Foo $foo) {
-                            $this->foo = $foo;
-                        }
-                    }
-
-
-                    class BarMore extends Bar {
-                        /** @var FooMore */
-                        protected $foo;
-
-                        public function __construct(FooMore $foo) {
-                            parent::__construct($foo);
-                            $this->foo->something();
-                        }
-                    }',
-            ],
             'inferPropertyTypesForSimpleConstructors' => [
                 '<?php
                     class A {
@@ -1819,6 +1823,7 @@ class PropertyTypeTest extends TestCase
                     class EntityTags {
                         private $tags;
 
+                        /** @no-named-arguments */
                         public function __construct(Tag ...$tags) {
                             $this->tags = $tags;
                         }
@@ -2385,11 +2390,121 @@ class PropertyTypeTest extends TestCase
                 [],
                 '8.0'
             ],
+            'dynamicPropertyFetch' => [
+                '<?php
+                    class Foo {
+                        public int $a = 0;
+                    }
+
+                    function takesFoo(?Foo $foo, string $b) : void {
+                        echo $foo->{$b} ?? null;
+                    }'
+            ],
+            'nullCoalesceWithNullablePropertyAccess' => [
+                '<?php
+                    class Bar {
+                        public ?string $a = null;
+                    }
+
+                    function takesBar(?Bar $bar) : string {
+                        return $bar?->a ?? "default";
+                    }',
+                [],
+                [],
+                '8.0'
+            ],
+            'possiblyNullOnFunctionCallCoalesced' => [
+                '<?php
+                    class Foo
+                    {
+                        /** @var int */
+                        public $a = 0;
+                    }
+
+                    function accessOnVar(?Foo $bar, string $b) : void {
+                        echo $bar->{$b} ?? null;
+                    }',
+            ],
+            'dontMemoizeConditionalAssignment' => [
+                '<?php
+                    class A {}
+
+                    class B {
+                        protected ?A $a = null;
+
+                        public function test(): void {
+                            if (!$this->a) {
+                                $this->mayBeSetA();
+                            }
+                            if ($this->a instanceof A) {
+                            }
+                        }
+
+                        protected function mayBeSetA(): void {
+                            if (mt_rand(0, 1)) {
+                                $this->a = new A();
+                            }
+                        }
+                    }'
+            ],
+            'allowDefaultForTemplatedProperty' => [
+                '<?php
+                    /**
+                     * @template T as string|null
+                     */
+                    abstract class A {
+                        /** @var list<T> */
+                        public $foo = [];
+                    }
+
+                    /**
+                     * @extends A<string>
+                     */
+                    class AChild extends A {
+                        public $foo = ["hello"];
+                    }'
+            ],
+            'allowBuiltinPropertyDocblock' => [
+                '<?php
+                    class FooException extends LogicException {
+                        /** @var int */
+                        protected $code = 404;
+                    }'
+            ],
+            'dontMemoizeFinalMutationFreeInferredMethod' => [
+                '<?php
+                    final class ExecutionMode
+                    {
+                        private bool $isAutoCommitEnabled = true;
+
+                        public function enableAutoCommit(): void
+                        {
+                            $this->isAutoCommitEnabled = true;
+                        }
+
+                        public function disableAutoCommit(): void
+                        {
+                            $this->isAutoCommitEnabled = false;
+                        }
+
+                        public function isAutoCommitEnabled(): bool
+                        {
+                            return $this->isAutoCommitEnabled;
+                        }
+                    }
+
+                    $mode = new ExecutionMode();
+                    $mode->disableAutoCommit();
+                    assert($mode->isAutoCommitEnabled() === false);
+
+                    $mode->enableAutoCommit();
+                    assert($mode->isAutoCommitEnabled() === true);'
+            ],
         ];
     }
 
     /**
-     * @return iterable<string,array{string,error_message:string,2?:string[],3?:bool,4?:string}>
+     * @return iterable<string,array{string,error_message:string,1?:string[],2?:bool,3?:string}>
      */
     public function providerInvalidCodeParse(): iterable
     {
@@ -3237,32 +3352,6 @@ class PropertyTypeTest extends TestCase
                     }',
                 'error_message' => 'PropertyNotSetInConstructor',
             ],
-            'parentSetsWiderTypeInConstructor' => [
-                '<?php
-                    interface Foo {}
-
-                    interface FooMore extends Foo {}
-
-                    class Bar {
-                        /** @var Foo */
-                        protected $foo;
-
-                        public function __construct(Foo $foo) {
-                            $this->foo = $foo;
-                        }
-                    }
-
-                    class BarMore extends Bar {
-                        /** @var FooMore */
-                        protected $foo;
-
-                        public function __construct(FooMore $foo) {
-                            parent::__construct($foo);
-                            $this->foo->something();
-                        }
-                    }',
-                'error_message' => 'UndefinedInterfaceMethod',
-            ],
             'nullableTypedPropertyNoConstructor' => [
                 '<?php
                     class A {
@@ -3541,6 +3630,39 @@ class PropertyTypeTest extends TestCase
                         public string $s = [];
                     }',
                 'error_message' => 'MismatchingDocblockPropertyType',
+            ],
+            'possiblyNullOnFunctionCallNotCoalesced' => [
+                '<?php
+                    function getC() : ?C {
+                        return rand(0, 1) ? new C() : null;
+                    }
+
+                    function foo() : void {
+                        echo getC()->id;
+                    }
+
+                    class C {
+                        public int $id = 1;
+                    }',
+                'error_message' => 'PossiblyNullPropertyFetch',
+            ],
+            'noCrashWhenCallingMagicSet' => [
+                '<?php
+                    class A {
+                        public function __set(string $s, mixed $value) : void {}
+                    }
+
+                    (new A)->__set("foo");',
+                'error_message' => 'TooFewArguments',
+            ],
+            'noCrashWhenCallingMagicGet' => [
+                '<?php
+                    class A {
+                        public function __get(string $s) : mixed {}
+                    }
+
+                    (new A)->__get();',
+                'error_message' => 'TooFewArguments',
             ],
         ];
     }

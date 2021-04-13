@@ -4,6 +4,7 @@ namespace Psalm;
 
 use Composer\Autoload\ClassLoader;
 use Composer\Semver\Semver;
+use Composer\Semver\VersionParser;
 use DOMDocument;
 use LogicException;
 use Psalm\Config\IssueHandler;
@@ -15,6 +16,7 @@ use Psalm\Internal\Analyzer\ClassLikeAnalyzer;
 use Psalm\Internal\Analyzer\FileAnalyzer;
 use Psalm\Internal\Analyzer\ProjectAnalyzer;
 use Psalm\Internal\Composer;
+use Psalm\Internal\EventDispatcher;
 use Psalm\Internal\IncludeCollector;
 use Psalm\Internal\Scanner\FileScanner;
 use Psalm\Issue\ArgumentIssue;
@@ -24,7 +26,6 @@ use Psalm\Issue\FunctionIssue;
 use Psalm\Issue\MethodIssue;
 use Psalm\Issue\PropertyIssue;
 use Psalm\Issue\VariableIssue;
-use Psalm\Plugin\Hook;
 use Psalm\Progress\Progress;
 use Psalm\Progress\VoidProgress;
 use SimpleXMLElement;
@@ -465,104 +466,6 @@ class Config
     private $plugin_classes = [];
 
     /**
-     * Static methods to be called after method checks have completed
-     *
-     * @var class-string<Hook\AfterMethodCallAnalysisInterface>[]
-     */
-    public $after_method_checks = [];
-
-    /**
-     * Static methods to be called after project function checks have completed
-     *
-     * Called after function calls to functions defined in the project.
-     *
-     * Allows influencing the return type and adding of modifications.
-     *
-     * @var class-string<Hook\AfterFunctionCallAnalysisInterface>[]
-     */
-    public $after_function_checks = [];
-
-    /**
-     * Static methods to be called after every function call
-     *
-     * Called after each function call, including php internal functions.
-     *
-     * Cannot change the call or influence its return type
-     *
-     * @var class-string<Hook\AfterEveryFunctionCallAnalysisInterface>[]
-     */
-    public $after_every_function_checks = [];
-
-
-    /**
-     * Static methods to be called after expression checks have completed
-     *
-     * @var class-string<Hook\AfterExpressionAnalysisInterface>[]
-     */
-    public $after_expression_checks = [];
-
-    /**
-     * Static methods to be called after statement checks have completed
-     *
-     * @var class-string<Hook\AfterStatementAnalysisInterface>[]
-     */
-    public $after_statement_checks = [];
-
-    /**
-     * Static methods to be called after method checks have completed
-     *
-     * @var class-string<Hook\StringInterpreterInterface>[]
-     */
-    public $string_interpreters = [];
-
-    /**
-     * Static methods to be called after classlike exists checks have completed
-     *
-     * @var class-string<Hook\AfterClassLikeExistenceCheckInterface>[]
-     */
-    public $after_classlike_exists_checks = [];
-
-    /**
-     * Static methods to be called after classlike checks have completed
-     *
-     * @var class-string<Hook\AfterClassLikeAnalysisInterface>[]
-     */
-    public $after_classlike_checks = [];
-
-    /**
-     * Static methods to be called after classlikes have been scanned
-     *
-     * @var class-string<Hook\AfterClassLikeVisitInterface>[]
-     */
-    public $after_visit_classlikes = [];
-
-    /**
-     * Static methods to be called after codebase has been populated
-     *
-     * @var class-string<Hook\AfterCodebasePopulatedInterface>[]
-     */
-    public $after_codebase_populated = [];
-
-    /**
-     * Static methods to be called after codebase has been populated
-     *
-     * @var class-string<Hook\AfterAnalysisInterface>[]
-     */
-    public $after_analysis = [];
-
-    /**
-     * Static methods to be called after a file has been analyzed
-     * @var class-string<Hook\AfterFileAnalysisInterface>[]
-     */
-    public $after_file_checks = [];
-
-    /**
-     * Static methods to be called before a file is analyzed
-     * @var class-string<Hook\BeforeFileAnalysisInterface>[]
-     */
-    public $before_file_checks = [];
-
-    /**
      * @var bool
      */
     public $allow_internal_named_arg_calls = true;
@@ -571,13 +474,6 @@ class Config
      * @var bool
      */
     public $allow_named_arg_calls = true;
-
-    /**
-     * Static methods to be called after functionlike checks have completed
-     *
-     * @var class-string<Hook\AfterFunctionLikeAnalysisInterface>[]
-     */
-    public $after_functionlike_checks = [];
 
     /** @var array<string, mixed> */
     private $predefined_constants = [];
@@ -639,9 +535,15 @@ class Config
      */
     private $report_info = true;
 
+    /**
+     * @var EventDispatcher
+     */
+    public $eventDispatcher;
+
     protected function __construct()
     {
         self::$instance = $this;
+        $this->eventDispatcher = new EventDispatcher();
     }
 
     /**
@@ -947,6 +849,15 @@ class Config
             $config->level = 2;
         }
 
+        // turn on unused variable detection in level 1
+        if (!isset($config_xml['findUnusedCode'])
+            && !isset($config_xml['findUnusedVariablesAndParams'])
+            && $config->level === 1
+            && $config->show_mixed_issues !== false
+        ) {
+            $config->find_unused_variables = true;
+        }
+
         if (isset($config_xml['errorBaseline'])) {
             $attribute_text = (string) $config_xml['errorBaseline'];
             $config->error_baseline = $attribute_text;
@@ -1050,7 +961,10 @@ class Config
 
                 if (!$file_path) {
                     throw new Exception\ConfigException(
-                        'Cannot resolve stubfile path ' . $config->base_dir . DIRECTORY_SEPARATOR . $stub_file['name']
+                        'Cannot resolve stubfile path '
+                            . rtrim($config->base_dir, DIRECTORY_SEPARATOR)
+                            . DIRECTORY_SEPARATOR
+                            . $stub_file['name']
                     );
                 }
 
@@ -1758,7 +1672,7 @@ class Config
         $core_generic_files = [];
 
         if (\PHP_VERSION_ID < 80000 && $codebase->php_major_version >= 8) {
-            $stringable_path = dirname(__DIR__, 2) . '/stubs/Php80.php';
+            $stringable_path = dirname(__DIR__, 2) . '/stubs/Php80.phpstub';
 
             if (!file_exists($stringable_path)) {
                 throw new \UnexpectedValueException('Cannot locate PHP 8.0 classes');
@@ -1797,31 +1711,24 @@ class Config
 
         $codebase->register_stub_files = true;
 
-        // note: don't realpath $generic_stubs_path, or phar version will fail
-        $generic_stubs_path = dirname(__DIR__, 2) . '/stubs/CoreGenericFunctions.phpstub';
+        $core_generic_files = [
+            dirname(__DIR__, 2) . '/stubs/CoreGenericFunctions.phpstub',
+            dirname(__DIR__, 2) . '/stubs/CoreGenericClasses.phpstub',
+            dirname(__DIR__, 2) . '/stubs/CoreGenericIterators.phpstub',
+            dirname(__DIR__, 2) . '/stubs/CoreImmutableClasses.phpstub',
+            dirname(__DIR__, 2) . '/stubs/DOM.phpstub',
+            dirname(__DIR__, 2) . '/stubs/Reflection.phpstub',
+            dirname(__DIR__, 2) . '/stubs/SPL.phpstub',
+        ];
 
-        if (!file_exists($generic_stubs_path)) {
-            throw new \UnexpectedValueException('Cannot locate core generic stubs');
+        foreach ($core_generic_files as $stub_path) {
+            if (!file_exists($stub_path)) {
+                throw new \UnexpectedValueException('Cannot locate ' . $stub_path);
+            }
         }
-
-        // note: don't realpath $generic_classes_path, or phar version will fail
-        $generic_classes_path = dirname(__DIR__, 2) . '/stubs/CoreGenericClasses.phpstub';
-
-        if (!file_exists($generic_classes_path)) {
-            throw new \UnexpectedValueException('Cannot locate core generic classes');
-        }
-
-        // note: don't realpath $generic_classes_path, or phar version will fail
-        $immutable_classes_path = dirname(__DIR__, 2) . '/stubs/CoreImmutableClasses.phpstub';
-
-        if (!file_exists($immutable_classes_path)) {
-            throw new \UnexpectedValueException('Cannot locate core immutable classes');
-        }
-
-        $core_generic_files = [$generic_stubs_path, $generic_classes_path, $immutable_classes_path];
 
         if (\PHP_VERSION_ID >= 80000 && $codebase->php_major_version >= 8) {
-            $stringable_path = dirname(__DIR__, 2) . '/stubs/Php80.php';
+            $stringable_path = dirname(__DIR__, 2) . '/stubs/Php80.phpstub';
 
             if (!file_exists($stringable_path)) {
                 throw new \UnexpectedValueException('Cannot locate PHP 8.0 classes');
@@ -1831,7 +1738,7 @@ class Config
         }
 
         if (\extension_loaded('PDO')) {
-            $ext_pdo_path = dirname(__DIR__, 2) . '/stubs/pdo.php';
+            $ext_pdo_path = dirname(__DIR__, 2) . '/stubs/pdo.phpstub';
 
             if (!file_exists($ext_pdo_path)) {
                 throw new \UnexpectedValueException('Cannot locate pdo classes');
@@ -1841,7 +1748,7 @@ class Config
         }
 
         if (\extension_loaded('soap')) {
-            $ext_pdo_path = dirname(__DIR__, 2) . '/stubs/soap.php';
+            $ext_pdo_path = dirname(__DIR__, 2) . '/stubs/soap.phpstub';
 
             if (!file_exists($ext_pdo_path)) {
                 throw new \UnexpectedValueException('Cannot locate soap classes');
@@ -1851,7 +1758,7 @@ class Config
         }
 
         if (\extension_loaded('ds')) {
-            $ext_ds_path = dirname(__DIR__, 2) . '/stubs/ext-ds.php';
+            $ext_ds_path = dirname(__DIR__, 2) . '/stubs/ext-ds.phpstub';
 
             if (!file_exists($ext_ds_path)) {
                 throw new \UnexpectedValueException('Cannot locate ext-ds classes');
@@ -1863,7 +1770,7 @@ class Config
         $stub_files = array_merge($core_generic_files, $this->stub_files);
 
         if ($this->load_xdebug_stub) {
-            $xdebug_stub_path = dirname(__DIR__, 2) . '/stubs/Xdebug.php';
+            $xdebug_stub_path = dirname(__DIR__, 2) . '/stubs/Xdebug.phpstub';
 
             if (!file_exists($xdebug_stub_path)) {
                 throw new \UnexpectedValueException('Cannot locate Xdebug stub');
@@ -2159,13 +2066,20 @@ class Config
             $php_version = $composer_json['require']['php'] ?? null;
 
             if (\is_string($php_version)) {
+                $version_parser = new VersionParser();
+
+                $constraint = $version_parser->parseConstraints($php_version);
+
                 foreach (['5.4', '5.5', '5.6', '7.0', '7.1', '7.2', '7.3', '7.4', '8.0'] as $candidate) {
-                    if (Semver::satisfies($candidate, $php_version)) {
+                    if ($constraint->matches(new \Composer\Semver\Constraint\Constraint('<=', "$candidate.0.0-dev"))
+                        || $constraint->matches(new \Composer\Semver\Constraint\Constraint('<=', "$candidate.999"))
+                    ) {
                         return $candidate;
                     }
                 }
             }
         }
+
         return null;
     }
 

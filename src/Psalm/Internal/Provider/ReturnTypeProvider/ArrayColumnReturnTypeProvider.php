@@ -1,13 +1,12 @@
 <?php
 namespace Psalm\Internal\Provider\ReturnTypeProvider;
 
-use PhpParser;
-use Psalm\CodeLocation;
-use Psalm\Context;
-use Psalm\StatementsSource;
+use Psalm\Plugin\EventHandler\Event\FunctionReturnTypeProviderEvent;
 use Psalm\Type;
 
-class ArrayColumnReturnTypeProvider implements \Psalm\Plugin\Hook\FunctionReturnTypeProviderInterface
+use function reset;
+
+class ArrayColumnReturnTypeProvider implements \Psalm\Plugin\EventHandler\FunctionReturnTypeProviderInterface
 {
     /**
      * @return array<lowercase-string>
@@ -17,16 +16,10 @@ class ArrayColumnReturnTypeProvider implements \Psalm\Plugin\Hook\FunctionReturn
         return ['array_column'];
     }
 
-    /**
-     * @param  list<PhpParser\Node\Arg>    $call_args
-     */
-    public static function getFunctionReturnType(
-        StatementsSource $statements_source,
-        string $function_id,
-        array $call_args,
-        Context $context,
-        CodeLocation $code_location
-    ) : Type\Union {
+    public static function getFunctionReturnType(FunctionReturnTypeProviderEvent $event) : Type\Union
+    {
+        $statements_source = $event->getStatementsSource();
+        $call_args = $event->getCallArgs();
         if (!$statements_source instanceof \Psalm\Internal\Analyzer\StatementsAnalyzer
             || \count($call_args) < 2
         ) {
@@ -42,20 +35,29 @@ class ArrayColumnReturnTypeProvider implements \Psalm\Plugin\Hook\FunctionReturn
             && $first_arg_type->hasArray()
         ) {
             $input_array = $first_arg_type->getAtomicTypes()['array'];
+            $row_type = null;
             if ($input_array instanceof Type\Atomic\TKeyedArray) {
                 $row_type = $input_array->getGenericArrayType()->type_params[1];
-                if ($row_type->isSingle() && $row_type->hasArray()) {
-                    $row_shape = $row_type->getAtomicTypes()['array'];
-                }
             } elseif ($input_array instanceof Type\Atomic\TArray) {
                 $row_type = $input_array->type_params[1];
-                if ($row_type->isSingle() && $row_type->hasArray()) {
-                    $row_shape = $row_type->getAtomicTypes()['array'];
-                }
             } elseif ($input_array instanceof Type\Atomic\TList) {
                 $row_type = $input_array->type_param;
-                if ($row_type->isSingle() && $row_type->hasArray()) {
+            }
+
+            if ($row_type && $row_type->isSingle()) {
+                if ($row_type->hasArray()) {
                     $row_shape = $row_type->getAtomicTypes()['array'];
+                } elseif ($row_type->hasObjectType()) {
+                    $row_shape_union = GetObjectVarsReturnTypeProvider::getGetObjectVarsReturnType(
+                        $row_type,
+                        $statements_source,
+                        $event->getContext(),
+                        $event->getCodeLocation()
+                    );
+                    if ($row_shape_union->isSingle()) {
+                        $row_shape_union_parts = $row_shape_union->getAtomicTypes();
+                        $row_shape = reset($row_shape_union_parts);
+                    }
                 }
             }
 

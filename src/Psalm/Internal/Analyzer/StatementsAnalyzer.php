@@ -40,6 +40,7 @@ use Psalm\Issue\UnevaluatedCode;
 use Psalm\Issue\UnrecognizedStatement;
 use Psalm\Issue\UnusedVariable;
 use Psalm\IssueBuffer;
+use Psalm\Plugin\EventHandler\Event\AfterStatementAnalysisEvent;
 use Psalm\Type;
 use function strtolower;
 use function fwrite;
@@ -582,26 +583,21 @@ class StatementsAnalyzer extends SourceAnalyzer
 
         $codebase = $statements_analyzer->getCodebase();
 
-        $plugin_classes = $codebase->config->after_statement_checks;
+        $event = new AfterStatementAnalysisEvent(
+            $stmt,
+            $context,
+            $statements_analyzer,
+            $codebase,
+            []
+        );
 
-        if ($plugin_classes) {
-            $file_manipulations = [];
+        if ($codebase->config->eventDispatcher->dispatchAfterStatementAnalysis($event) === false) {
+            return false;
+        }
 
-            foreach ($plugin_classes as $plugin_fq_class_name) {
-                if ($plugin_fq_class_name::afterStatementAnalysis(
-                    $stmt,
-                    $context,
-                    $statements_analyzer,
-                    $codebase,
-                    $file_manipulations
-                ) === false) {
-                    return false;
-                }
-            }
-
-            if ($file_manipulations) {
-                FileManipulationBuffer::add($statements_analyzer->getFilePath(), $file_manipulations);
-            }
+        $file_manipulations = $event->getFileReplacements();
+        if ($file_manipulations) {
+            FileManipulationBuffer::add($statements_analyzer->getFilePath(), $file_manipulations);
         }
 
         if ($new_issues) {
@@ -953,6 +949,7 @@ class StatementsAnalyzer extends SourceAnalyzer
                         try {
                             if ($expected_exception === strtolower($possibly_thrown_exception)
                                 || $this->codebase->classExtends($possibly_thrown_exception, $expected_exception)
+                                || $this->codebase->interfaceExtends($possibly_thrown_exception, $expected_exception)
                             ) {
                                 $is_expected = true;
                                 break;

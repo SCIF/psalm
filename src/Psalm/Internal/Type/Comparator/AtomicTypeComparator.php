@@ -10,6 +10,7 @@ use Psalm\Type\Atomic\Scalar;
 use Psalm\Type\Atomic\TArray;
 use Psalm\Type\Atomic\TClassStringMap;
 use Psalm\Type\Atomic\TCallable;
+use Psalm\Type\Atomic\TCallableObject;
 use Psalm\Type\Atomic\TCallableString;
 use Psalm\Type\Atomic\TEmptyMixed;
 use Psalm\Type\Atomic\TGenericObject;
@@ -231,6 +232,17 @@ class AtomicTypeComparator
                 $allow_interface_equality,
                 $atomic_comparison_result
             );
+        }
+
+        if ($container_type_part instanceof TObjectWithProperties
+            && $input_type_part instanceof TObject
+            && !$input_type_part instanceof TObjectWithProperties
+            && !$input_type_part instanceof TCallableObject
+        ) {
+            if ($atomic_comparison_result) {
+                $atomic_comparison_result->type_coerced = true;
+            }
+            return false;
         }
 
         if (($input_type_part instanceof TArray
@@ -457,8 +469,8 @@ class AtomicTypeComparator
 
                     $array_comparison_result = new TypeComparisonResult();
 
-                    if (!$input_param->isEmpty()
-                        && !UnionTypeComparator::isContainedBy(
+                    if (!$input_param->isEmpty()) {
+                        if (!UnionTypeComparator::isContainedBy(
                             $codebase,
                             $input_param,
                             $container_param,
@@ -467,24 +479,22 @@ class AtomicTypeComparator
                             $array_comparison_result,
                             $allow_interface_equality
                         )
-                        && !$array_comparison_result->type_coerced_from_scalar
-                    ) {
-                        if ($atomic_comparison_result && $array_comparison_result->type_coerced_from_mixed) {
-                            $atomic_comparison_result->type_coerced_from_mixed = true;
+                            && !$array_comparison_result->type_coerced_from_scalar
+                        ) {
+                            if ($atomic_comparison_result && $array_comparison_result->type_coerced_from_mixed) {
+                                $atomic_comparison_result->type_coerced_from_mixed = true;
+                            }
+                            $all_types_contain = false;
+                        } else {
+                            if ($atomic_comparison_result) {
+                                $atomic_comparison_result->to_string_cast
+                                    = $atomic_comparison_result->to_string_cast === true
+                                        || $array_comparison_result->to_string_cast === true;
+                            }
                         }
-                        $all_types_contain = false;
                     }
                 }
-
-                if ($all_types_contain) {
-                    if ($atomic_comparison_result) {
-                        $atomic_comparison_result->to_string_cast = false;
-                    }
-
-                    return true;
-                }
-
-                return false;
+                return $all_types_contain;
             }
 
             if ($input_type_part->hasTraversableInterface($codebase)) {
@@ -639,7 +649,8 @@ class AtomicTypeComparator
     public static function canBeIdentical(
         Codebase $codebase,
         Type\Atomic $type1_part,
-        Type\Atomic $type2_part
+        Type\Atomic $type2_part,
+        bool $allow_interface_equality = true
     ) : bool {
         if ((get_class($type1_part) === TList::class
                 && $type2_part instanceof Type\Atomic\TNonEmptyList)
@@ -673,11 +684,11 @@ class AtomicTypeComparator
         $first_comparison_result = new TypeComparisonResult();
         $second_comparison_result = new TypeComparisonResult();
 
-        $either_contains = (AtomicTypeComparator::isContainedBy(
+        return (AtomicTypeComparator::isContainedBy(
             $codebase,
             $type1_part,
             $type2_part,
-            true,
+            $allow_interface_equality,
             false,
             $first_comparison_result
         )
@@ -686,7 +697,7 @@ class AtomicTypeComparator
             $codebase,
             $type2_part,
             $type1_part,
-            true,
+            $allow_interface_equality,
             false,
             $second_comparison_result
         )
@@ -694,11 +705,5 @@ class AtomicTypeComparator
         ) || ($first_comparison_result->type_coerced
             && $second_comparison_result->type_coerced
         );
-
-        if ($either_contains) {
-            return true;
-        }
-
-        return false;
     }
 }

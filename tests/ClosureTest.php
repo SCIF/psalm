@@ -340,7 +340,7 @@ class ClosureTest extends TestCase
                     $a = function() : Closure { return function() : string { return "hello"; }; };
                     $b = $a()();',
                 'assertions' => [
-                    '$a' => 'pure-Closure():pure-Closure():string(hello)',
+                    '$a' => 'pure-Closure():pure-Closure():"hello"',
                     '$b' => 'string',
                 ],
             ],
@@ -534,11 +534,30 @@ class ClosureTest extends TestCase
                         }
                     }'
             ],
+            'CallableWithArrayMap' => [
+                '<?php
+                    /**
+                     * @psalm-template T
+                     * @param class-string<T> $className
+                     * @return callable(...mixed):T
+                     */
+                    function maker(string $className) {
+                       return function(...$args) use ($className) {
+                          /** @psalm-suppress MixedMethodCall */
+                          return new $className(...$args);
+                       };
+                    }
+                    $maker = maker(stdClass::class);
+                    $result = array_map($maker, ["abc"]);',
+                'assertions' => [
+                    '$result' => 'array{stdClass}'
+                ],
+            ],
         ];
     }
 
     /**
-     * @return iterable<string,array{string,error_message:string,2?:string[],3?:bool,4?:string}>
+     * @return iterable<string,array{string,error_message:string,1?:string[],2?:bool,3?:string}>
      */
     public function providerInvalidCodeParse(): iterable
     {
@@ -888,6 +907,41 @@ class ClosureTest extends TestCase
                         }
                     );',
                 'error_message' => 'InvalidArgument'
+            ],
+            'undefinedVariableInEncapsedString' => [
+                '<?php
+                    fn(): string => "$a";
+                ',
+                'error_message' => 'UndefinedVariable',
+                [],
+                false,
+                '7.4'
+            ],
+            'undefinedVariableInStringCast' => [
+                '<?php
+                    fn(): string => (string) $a;
+                ',
+                'error_message' => 'UndefinedVariable',
+                [],
+                false,
+                '7.4'
+            ],
+            'forbidTemplateAnnotationOnClosure' => [
+                '<?php
+                    /** @template T */
+                    function (): void {};
+                ',
+                'error_message' => 'InvalidDocblock',
+            ],
+            'forbidTemplateAnnotationOnShortClosure' => [
+                '<?php
+                    /** @template T */
+                    fn(): bool => false;
+                ',
+                'error_message' => 'InvalidDocblock',
+                [],
+                false,
+                '7.4'
             ],
         ];
     }

@@ -32,6 +32,11 @@ use Psalm\Issue\PossiblyUndefinedArrayOffset;
 use Psalm\Issue\PossiblyUndefinedIntArrayOffset;
 use Psalm\Issue\PossiblyUndefinedStringArrayOffset;
 use Psalm\IssueBuffer;
+use Psalm\Node\Expr\VirtualConstFetch;
+use Psalm\Node\Expr\VirtualMethodCall;
+use Psalm\Node\VirtualArg;
+use Psalm\Node\VirtualIdentifier;
+use Psalm\Node\VirtualName;
 use Psalm\Type;
 use Psalm\Type\Atomic\TKeyedArray;
 use Psalm\Type\Atomic\TArray;
@@ -61,6 +66,7 @@ use function in_array;
 use function is_int;
 use function preg_match;
 use Psalm\Internal\Type\TemplateResult;
+use Psalm\Plugin\EventHandler\Event\AddRemoveTaintsEvent;
 
 /**
  * @internal
@@ -145,7 +151,8 @@ class ArrayFetchAnalyzer
                 $stmt->var,
                 $keyed_array_var_id,
                 $stmt_type,
-                $used_key_type
+                $used_key_type,
+                $context
             );
 
             return true;
@@ -315,7 +322,8 @@ class ArrayFetchAnalyzer
             $stmt->var,
             $keyed_array_var_id,
             $stmt_type,
-            $used_key_type
+            $used_key_type,
+            $context
         );
 
         return true;
@@ -329,7 +337,8 @@ class ArrayFetchAnalyzer
         PhpParser\Node\Expr $var,
         ?string $keyed_array_var_id,
         Type\Union $stmt_type,
-        Type\Union $offset_type
+        Type\Union $offset_type,
+        ?Context $context = null
     ) : void {
         if ($statements_analyzer->data_flow_graph
             && ($stmt_var_type = $statements_analyzer->node_data->getType($var))
@@ -342,12 +351,25 @@ class ArrayFetchAnalyzer
                 return;
             }
 
+            $added_taints = [];
+            $removed_taints = [];
+
+            if ($context) {
+                $codebase = $statements_analyzer->getCodebase();
+                $event = new AddRemoveTaintsEvent($var, $context, $statements_analyzer, $codebase);
+
+                $added_taints = $codebase->config->eventDispatcher->dispatchAddTaints($event);
+                $removed_taints = $codebase->config->eventDispatcher->dispatchRemoveTaints($event);
+            }
+
             $var_location = new CodeLocation($statements_analyzer->getSource(), $var);
 
             $new_parent_node = DataFlowNode::getForAssignment(
-                $keyed_array_var_id ?: 'array-fetch',
+                $keyed_array_var_id ?: 'arrayvalue-fetch',
                 $var_location
             );
+
+            $array_key_node = null;
 
             $statements_analyzer->data_flow_graph->addNode($new_parent_node);
 
@@ -357,23 +379,50 @@ class ArrayFetchAnalyzer
                     ? $offset_type->getSingleIntLiteral()->value
                     : null);
 
+            if ($keyed_array_var_id === null && $dim_value === null) {
+                $array_key_node = DataFlowNode::getForAssignment(
+                    'arraykey-fetch',
+                    $var_location
+                );
+
+                $statements_analyzer->data_flow_graph->addNode($array_key_node);
+            }
+
             foreach ($stmt_var_type->parent_nodes as $parent_node) {
                 $statements_analyzer->data_flow_graph->addPath(
                     $parent_node,
                     $new_parent_node,
-                    'array-fetch' . ($dim_value !== null ? '-\'' . $dim_value . '\'' : '')
+                    'arrayvalue-fetch' . ($dim_value !== null ? '-\'' . $dim_value . '\'' : ''),
+                    $added_taints,
+                    $removed_taints
                 );
 
                 if ($stmt_type->by_ref) {
                     $statements_analyzer->data_flow_graph->addPath(
                         $new_parent_node,
                         $parent_node,
-                        'array-assignment' . ($dim_value !== null ? '-\'' . $dim_value . '\'' : '')
+                        'arrayvalue-assignment' . ($dim_value !== null ? '-\'' . $dim_value . '\'' : ''),
+                        $added_taints,
+                        $removed_taints
+                    );
+                }
+
+                if ($array_key_node) {
+                    $statements_analyzer->data_flow_graph->addPath(
+                        $parent_node,
+                        $array_key_node,
+                        'arraykey-fetch',
+                        $added_taints,
+                        $removed_taints
                     );
                 }
             }
 
             $stmt_type->parent_nodes = [$new_parent_node->id => $new_parent_node];
+
+            if ($array_key_node) {
+                $offset_type->parent_nodes = [$array_key_node->id => $array_key_node];
+            }
         }
     }
 
@@ -1741,11 +1790,11 @@ class ArrayFetchAnalyzer
 
             $statements_analyzer->node_data = clone $statements_analyzer->node_data;
 
-            $fake_method_call = new PhpParser\Node\Expr\MethodCall(
+            $fake_method_call = new VirtualMethodCall(
                 $stmt->var,
-                new PhpParser\Node\Identifier('item', $stmt->var->getAttributes()),
+                new VirtualIdentifier('item', $stmt->var->getAttributes()),
                 [
-                    new PhpParser\Node\Arg($stmt->dim)
+                    new VirtualArg($stmt->dim)
                 ]
             );
 
@@ -1794,22 +1843,22 @@ class ArrayFetchAnalyzer
 
                 $statements_analyzer->node_data = clone $statements_analyzer->node_data;
 
-                $fake_set_method_call = new PhpParser\Node\Expr\MethodCall(
+                $fake_set_method_call = new VirtualMethodCall(
                     $stmt->var,
-                    new PhpParser\Node\Identifier('offsetSet', $stmt->var->getAttributes()),
+                    new VirtualIdentifier('offsetSet', $stmt->var->getAttributes()),
                     [
-                        new PhpParser\Node\Arg(
+                        new VirtualArg(
                             $stmt->dim
                                 ? $stmt->dim
-                                : new PhpParser\Node\Expr\ConstFetch(
-                                    new PhpParser\Node\Name('null'),
+                                : new VirtualConstFetch(
+                                    new VirtualName('null'),
                                     $stmt->var->getAttributes()
                                 )
                         ),
-                        new PhpParser\Node\Arg(
+                        new VirtualArg(
                             $assign_value
-                                ?: new PhpParser\Node\Expr\ConstFetch(
-                                    new PhpParser\Node\Name('null'),
+                                ?: new VirtualConstFetch(
+                                    new VirtualName('null'),
                                     $stmt->var->getAttributes()
                                 )
                         ),
@@ -1830,11 +1879,11 @@ class ArrayFetchAnalyzer
 
                 $statements_analyzer->node_data = clone $statements_analyzer->node_data;
 
-                $fake_get_method_call = new PhpParser\Node\Expr\MethodCall(
+                $fake_get_method_call = new VirtualMethodCall(
                     $stmt->var,
-                    new PhpParser\Node\Identifier('offsetGet', $stmt->var->getAttributes()),
+                    new VirtualIdentifier('offsetGet', $stmt->var->getAttributes()),
                     [
-                        new PhpParser\Node\Arg(
+                        new VirtualArg(
                             $stmt->dim
                         )
                     ]

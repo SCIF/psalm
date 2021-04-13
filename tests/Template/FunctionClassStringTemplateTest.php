@@ -702,7 +702,7 @@ class FunctionClassStringTemplateTest extends TestCase
     }
 
     /**
-     * @return iterable<string,array{string,error_message:string,2?:string[],3?:bool,4?:string}>
+     * @return iterable<string,array{string,error_message:string,1?:string[],2?:bool,3?:string}>
      */
     public function providerInvalidCodeParse(): iterable
     {
@@ -809,6 +809,28 @@ class FunctionClassStringTemplateTest extends TestCase
                         $i = createInitializer($className, $realInstance);
                     }',
                 'error_message' => 'Closure(object):void'
+            ],
+            'preventClassStringInPlaceOfTemplatedClassString' => [
+                '<?php
+                    class ImageFile {}
+                    class MusicFile {}
+
+                    /**
+                     * @template T of object
+                     */
+                    interface FileManager {
+                        /**
+                         * @param class-string<T> $instance
+                         * @return T
+                         */
+                        public function create(string $instance) : object;
+                    }
+
+                    /** @param FileManager<ImageFile> $m */
+                    function foo(FileManager $m) : void {
+                        $m->create(MusicFile::class);
+                    }',
+                'error_message' => 'InvalidArgument'
             ],
         ];
     }

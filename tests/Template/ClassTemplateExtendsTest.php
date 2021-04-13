@@ -996,7 +996,7 @@ class ClassTemplateExtendsTest extends TestCase
                     class User {}
 
                     /**
-                     * @template-extends ArrayIterator<int, User>
+                     * @template-extends ArrayIterator<array-key, User>
                      */
                     class Users extends ArrayIterator
                     {
@@ -1071,6 +1071,7 @@ class ClassTemplateExtendsTest extends TestCase
                     /**
                      * @template T
                      * @psalm-consistent-constructor
+                     * @psalm-consistent-templates
                      */
                     class Container {
                         /** @var T */
@@ -1100,7 +1101,7 @@ class ClassTemplateExtendsTest extends TestCase
                     }
 
                     /**
-                     * @template T1 as A
+                     * @template T1
                      * @template-extends Container<T1>
                      */
                     class AContainer extends Container {}
@@ -1119,6 +1120,7 @@ class ClassTemplateExtendsTest extends TestCase
                     /**
                      * @template T
                      * @psalm-consistent-constructor
+                     * @psalm-consistent-templates
                      */
                     class Container {
                         /** @var T */
@@ -1148,13 +1150,13 @@ class ClassTemplateExtendsTest extends TestCase
                     }
 
                     /**
-                     * @template T1 as object
+                     * @template T1
                      * @template-extends Container<T1>
                      */
                     class ObjectContainer extends Container {}
 
                     /**
-                     * @template T2 as A
+                     * @template T2
                      * @template-extends ObjectContainer<T2>
                      */
                     class AContainer extends ObjectContainer {}
@@ -1173,6 +1175,7 @@ class ClassTemplateExtendsTest extends TestCase
                     /**
                      * @template T
                      * @psalm-consistent-constructor
+                     * @psalm-consistent-templates
                      */
                     class Container {
                         /** @var T */
@@ -1202,13 +1205,13 @@ class ClassTemplateExtendsTest extends TestCase
                     }
 
                     /**
-                     * @template T as object
+                     * @template T
                      * @template-extends Container<T>
                      */
                     class ObjectContainer extends Container {}
 
                     /**
-                     * @template T as A
+                     * @template T
                      * @template-extends ObjectContainer<T>
                      */
                     class AContainer extends ObjectContainer {}
@@ -1490,6 +1493,7 @@ class ClassTemplateExtendsTest extends TestCase
                      * @template TKey of array-key
                      * @template-implements Collection<TKey, T>
                      * @psalm-consistent-constructor
+                     * @psalm-consistent-templates
                      */
                     class ArrayCollection implements Collection
                     {
@@ -1540,6 +1544,7 @@ class ClassTemplateExtendsTest extends TestCase
                      * @template TKey of array-key
                      * @template-implements Collection<TKey>
                      * @psalm-consistent-constructor
+                     * @psalm-consistent-templates
                      */
                     class ArrayCollection implements Collection
                     {
@@ -2237,6 +2242,7 @@ class ClassTemplateExtendsTest extends TestCase
                      * @template TKey as array-key
                      * @template TValue
                      * @psalm-consistent-constructor
+                     * @psalm-consistent-templates
                      */
                     class Collection
                     {
@@ -3293,38 +3299,6 @@ class ClassTemplateExtendsTest extends TestCase
                         }
                     }'
             ],
-            'nestedTemplateExtends' => [
-                '<?php
-                    namespace Foo;
-
-                    interface IBaseViewData {}
-
-                    /**
-                     * @template TViewData
-                     */
-                    class BaseModel {}
-
-                    /**
-                     * @template TViewData as IBaseViewData
-                     * @template TModel as BaseModel<TViewData>
-                     */
-                    abstract class BaseRepository {}
-
-                    class StudentViewData implements IBaseViewData {}
-                    class TeacherViewData implements IBaseViewData {}
-
-                    /** @extends BaseModel<StudentViewData> */
-                    class StudentModel extends BaseModel {}
-
-                    /** @extends BaseModel<TeacherViewData> */
-                    class TeacherModel extends BaseModel {}
-
-                    /** @extends BaseRepository<StudentViewData, StudentModel> */
-                    class StudentRepository extends BaseRepository {}
-
-                    /** @extends BaseRepository<TeacherViewData, TeacherModel> */
-                    class TeacherRepository extends BaseRepository {}'
-            ],
             'templateInheritedPropertyCorrectly' => [
                 '<?php
                     /**
@@ -4282,11 +4256,187 @@ class ClassTemplateExtendsTest extends TestCase
                         function getIterator(): Traversable;
                     }'
             ],
+            'extendsWithAlias' => [
+                '<?php
+                    /**
+                     * @template TAValue
+                     */
+                    abstract class A {
+                        /**
+                         * @template TAValueNew as TAValue
+                         *
+                         * @psalm-param TAValueNew $val
+                         */
+                        abstract public function foo($val): void;
+                    }
+
+                    /**
+                     * @template TBValue
+                     * @extends A<TBValue>
+                     */
+                    abstract class B extends A {
+                        /**
+                         * @template TBValueNew as TBValue
+                         *
+                         * @psalm-param TBValueNew $val
+                         */
+                        abstract public function foo($val): void;
+                    }'
+            ],
+            'extendsWithTemplatedClosureProperty' => [
+                '<?php
+                    /**
+                     * @template T1
+                     */
+                    class A
+                    {
+                        /**
+                         * @var T1|null
+                         */
+                        protected $type;
+
+                        /**
+                         * @var (Closure(): T1)|null
+                         */
+                        protected $closure;
+                    }
+
+                    /**
+                     * @template T2
+                     * @extends A<T2>
+                     */
+                    class B extends A {
+                        /**
+                         * @return T2|null
+                         */
+                        public function getType() {
+                            return $this->type;
+                        }
+
+                        /**
+                         * @return (Closure(): T2)|null
+                         */
+                        public function getClosureReturningType() {
+                            return $this->closure;
+                        }
+                    }'
+            ],
+            'inferPropertyTypeOnThisInstanceofExtended' => [
+                '<?php
+
+                    /** @template T as scalar */
+                    class Collection {
+                        /** @var T */
+                        public $val;
+
+                        /** @param T $val */
+                        public function __construct($val) {
+                            $this->val = $val;
+                        }
+
+                        public function foo() : string {
+                            if ($this instanceof StringCollection) {
+                                return $this->val;
+                            }
+
+                            return "hello";
+                        }
+                    }
+
+                    /** @extends Collection<string> */
+                    class StringCollection extends Collection {}',
+            ],
+            'noInfiniteLoop' => [
+                '<?php
+                    /**
+                     * @template TValue
+                     * @template-extends SplObjectStorage<object, TValue>
+                     */
+                    class ObjectStorage extends SplObjectStorage {}
+
+                    $foo = new ObjectStorage();'
+            ],
+            'liskovTerminatedByFinalClass' => [
+                '<?php
+                    final class CustomEnum extends Enum
+                    {
+                        public static function all() : CustomEnumSet
+                        {
+                            return new CustomEnumSet();
+                        }
+                    }
+
+                    /**
+                     * @template T of Enum
+                     */
+                    class EnumSet
+                    {
+                        private $type;
+
+                        /**
+                         * @param class-string<T> $type
+                         */
+                        public function __construct(string $type)
+                        {
+                            $this->type = $type;
+                        }
+                    }
+
+                    abstract class Enum {
+                        /**
+                         * @return EnumSet<static>
+                         */
+                        public static function all() : EnumSet
+                        {
+                            return new EnumSet(static::class);
+                        }
+                    }
+
+                    /**
+                     * @extends EnumSet<CustomEnum>
+                     */
+                    final class CustomEnumSet extends EnumSet {
+
+                        public function __construct()
+                        {
+                            parent::__construct(CustomEnum::class);
+                        }
+                    }',
+                [],
+                [],
+                '7.4'
+            ],
+            'extendTemplatedClassString' => [
+                '<?php
+                    /** @template T1 of object */
+                    abstract class ParentClass {
+                        /** @var class-string<T1> */
+                        protected $c;
+
+                        /** @param class-string<T1> $c */
+                        public function __construct(string $c) {
+                            $this->c = $c;
+                        }
+
+                        /** @return class-string<T1> */
+                        abstract public function foo(): string;
+                    }
+
+                    /**
+                     * @template T2 of object
+                     * @extends ParentClass<T2>
+                     */
+                    class ChildClass extends ParentClass {
+                        public function foo(): string {
+                            return $this->c;
+                        }
+                    }'
+            ],
         ];
     }
 
     /**
-     * @return iterable<string,array{string,error_message:string,2?:string[],3?:bool,4?:string}>
+     * @return iterable<string,array{string,error_message:string,1?:string[],2?:bool,3?:string}>
      */
     public function providerInvalidCodeParse(): iterable
     {
@@ -5293,36 +5443,6 @@ class ClassTemplateExtendsTest extends TestCase
                     }',
                 'error_message' => 'LessSpecificReturnStatement'
             ],
-            'nestedTemplateExtendsInvalid' => [
-                '<?php
-                    namespace Foo;
-
-                    interface IBaseViewData {}
-
-                    /**
-                     * @template TViewData
-                     */
-                    class BaseModel {}
-
-                    /**
-                     * @template TViewData as IBaseViewData
-                     * @template TModel as BaseModel<TViewData>
-                     */
-                    abstract class BaseRepository {}
-
-                    class StudentViewData implements IBaseViewData {}
-                    class TeacherViewData implements IBaseViewData {}
-
-                    /** @extends BaseModel<StudentViewData> */
-                    class StudentModel extends BaseModel {}
-
-                    /** @extends BaseModel<TeacherViewData> */
-                    class TeacherModel extends BaseModel {}
-
-                    /** @extends BaseRepository<StudentViewData, TeacherModel> */
-                    class StudentRepository extends BaseRepository {}',
-                'error_message' => 'InvalidTemplateParam'
-            ],
             'detectIssueInDoublyInheritedMethod' => [
                 '<?php
                     class Foo {}
@@ -5360,6 +5480,234 @@ class ClassTemplateExtendsTest extends TestCase
                         $c->test($f);
                     }',
                 'error_message' => 'ArgumentTypeCoercion'
+            ],
+            'templateExtendsSameNameWithStaticCallUnsafeTemplatedExtended' => [
+                '<?php
+                    /**
+                     * @template T
+                     * @psalm-consistent-constructor
+                     * @psalm-consistent-templates
+                     */
+                    class Container {
+                        /** @var T */
+                        private $t;
+
+                        /** @param T $t */
+                        private function __construct($t) {
+                            $this->t = $t;
+                        }
+
+                        /**
+                         * @template U
+                         * @param U $t
+                         * @return static<U>
+                         */
+                        public static function getContainer($t) {
+                            return new static($t);
+                        }
+
+                        /**
+                         * @return T
+                         */
+                        public function getValue()
+                        {
+                            return $this->t;
+                        }
+                    }
+
+                    /**
+                     * @template T as object
+                     * @template-extends Container<T>
+                     */
+                    class ObjectContainer extends Container {}',
+                'error_message' => 'InvalidTemplateParam'
+            ],
+            'templateExtendsSameNameWithStaticCallUnsafeMissingExtendedParam' => [
+                '<?php
+                    /**
+                     * @template T
+                     * @psalm-consistent-constructor
+                     * @psalm-consistent-templates
+                     */
+                    class Container {
+                        /** @var T */
+                        private $t;
+
+                        /** @param T $t */
+                        private function __construct($t) {
+                            $this->t = $t;
+                        }
+
+                        /**
+                         * @template U
+                         * @param U $t
+                         * @return static<U>
+                         */
+                        public static function getContainer($t) {
+                            return new static($t);
+                        }
+
+                        /**
+                         * @return T
+                         */
+                        public function getValue()
+                        {
+                            return $this->t;
+                        }
+                    }
+
+                    /**
+                     * @template-extends Container<object>
+                     */
+                    class ObjectContainer extends Container {}',
+                'error_message' => 'MissingTemplateParam'
+            ],
+            'templateExtendsSameNameWithStaticCallNoExtendsParams' => [
+                '<?php
+                    /**
+                     * @template T
+                     * @psalm-consistent-constructor
+                     * @psalm-consistent-templates
+                     */
+                    class Container {
+                        /** @var T */
+                        private $t;
+
+                        /** @param T $t */
+                        private function __construct($t) {
+                            $this->t = $t;
+                        }
+
+                        /**
+                         * @template U
+                         * @param U $t
+                         * @return static<U>
+                         */
+                        public static function getContainer($t) {
+                            return new static($t);
+                        }
+
+                        /**
+                         * @return T
+                         */
+                        public function getValue()
+                        {
+                            return $this->t;
+                        }
+                    }
+
+                    class ObjectContainer extends Container {}',
+                'error_message' => 'MissingTemplateParam'
+            ],
+            'templateExtendsSameNameWithStaticCallUnsafeTooManyTemplatedExtended' => [
+                '<?php
+                    /**
+                     * @template T
+                     * @psalm-consistent-constructor
+                     * @psalm-consistent-templates
+                     */
+                    class Container {
+                        /** @var T */
+                        private $t;
+
+                        /** @param T $t */
+                        private function __construct($t) {
+                            $this->t = $t;
+                        }
+
+                        /**
+                         * @template U
+                         * @param U $t
+                         * @return static<U>
+                         */
+                        public static function getContainer($t) {
+                            return new static($t);
+                        }
+
+                        /**
+                         * @return T
+                         */
+                        public function getValue()
+                        {
+                            return $this->t;
+                        }
+                    }
+
+                    /**
+                     * @template T1
+                     * @template T2
+                     * @template-extends Container<T1>
+                     */
+                    class ObjectContainer extends Container {}',
+                'error_message' => 'TooManyTemplateParams'
+            ],
+            'templateExtendsSameNameWithStaticCallUnsafeInstantiationParameterised' => [
+                '<?php
+                    /**
+                     * @template T
+                     * @psalm-consistent-constructor
+                     */
+                    class Container {
+                        /** @var T */
+                        private $t;
+
+                        /** @param T $t */
+                        private function __construct($t) {
+                            $this->t = $t;
+                        }
+
+                        /**
+                         * @template U
+                         * @param U $t
+                         * @return static<U>
+                         */
+                        public static function getContainer($t) {
+                            return new static($t);
+                        }
+
+                        /**
+                         * @return T
+                         */
+                        public function getValue()
+                        {
+                            return $this->t;
+                        }
+                    }',
+                'error_message' => 'UnsafeGenericInstantiation'
+            ],
+            'templateExtendsSameNameWithStaticCallUnsafeInstantiationNoParameters' => [
+                '<?php
+                    /**
+                     * @template T
+                     * @psalm-consistent-constructor
+                     */
+                    class Container {
+                        /** @var T */
+                        private $t;
+
+                        /** @param T $t */
+                        private function __construct($t) {
+                            $this->t = $t;
+                        }
+
+                        /**
+                         * @template U
+                         * @param U $t
+                         * @return static
+                         */
+                        public static function getContainer($t) {
+                            return new static($t);
+                        }
+
+                        /**
+                         * @return T
+                         */
+                        public function getValue()
+                        {
+                            return $this->t;
+                        }
+                    }',
+                'error_message' => 'UnsafeGenericInstantiation'
             ],
         ];
     }

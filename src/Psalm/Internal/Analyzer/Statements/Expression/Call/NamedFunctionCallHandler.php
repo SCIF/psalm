@@ -13,6 +13,10 @@ use Psalm\Context;
 use Psalm\Internal\DataFlow\DataFlowNode;
 use Psalm\Issue\ForbiddenCode;
 use Psalm\IssueBuffer;
+use Psalm\Node\Expr\VirtualArray;
+use Psalm\Node\Expr\VirtualArrayItem;
+use Psalm\Node\Expr\VirtualVariable;
+use Psalm\Node\Scalar\VirtualString;
 use Psalm\Type;
 use Psalm\Type\Atomic\TNamedObject;
 use Psalm\Type\Reconciler;
@@ -115,7 +119,7 @@ class NamedFunctionCallHandler
             return;
         }
 
-        if ($function_id === 'file_exists' && $first_arg) {
+        if (\in_array($function_id, ['is_file', 'file_exists']) && $first_arg) {
             $var_id = ExpressionIdentifier::getArrayVarId($first_arg->value, null);
 
             if ($var_id) {
@@ -188,16 +192,16 @@ class NamedFunctionCallHandler
 
                 $var_name = $arg_type->getSingleStringLiteral()->value;
 
-                $new_items[] = new PhpParser\Node\Expr\ArrayItem(
-                    new PhpParser\Node\Expr\Variable($var_name, $arg->value->getAttributes()),
-                    new PhpParser\Node\Scalar\String_($var_name, $arg->value->getAttributes()),
+                $new_items[] = new VirtualArrayItem(
+                    new VirtualVariable($var_name, $arg->value->getAttributes()),
+                    new VirtualString($var_name, $arg->value->getAttributes()),
                     false,
                     $arg->getAttributes()
                 );
             }
 
             if ($all_args_string_literals) {
-                $arr = new PhpParser\Node\Expr\Array_($new_items, $stmt->getAttributes());
+                $arr = new VirtualArray($new_items, $stmt->getAttributes());
                 $old_node_data = $statements_analyzer->node_data;
                 $statements_analyzer->node_data = clone $statements_analyzer->node_data;
 
@@ -418,111 +422,28 @@ class NamedFunctionCallHandler
                 $var_id = '$' . $var->name;
 
                 if (isset($context->vars_in_scope[$var_id])) {
-                    if ($function_id === 'get_class') {
-                        $atomic_type = new Type\Atomic\TDependentGetClass(
-                            $var_id,
-                            $context->vars_in_scope[$var_id]->hasMixed()
-                                ? Type::getObject()
-                                : $context->vars_in_scope[$var_id]
-                        );
-                    } elseif ($function_id === 'gettype') {
-                        $atomic_type = new Type\Atomic\TDependentGetType($var_id);
-                    } else {
-                        $atomic_type = new Type\Atomic\TDependentGetDebugType($var_id);
-                    }
-
-                    $statements_analyzer->node_data->setType($real_stmt, new Type\Union([$atomic_type]));
-                }
-            } elseif (($var_type = $statements_analyzer->node_data->getType($var))
-                && ($function_id === 'get_class'
-                    || $function_id === 'get_debug_type'
-                )
-            ) {
-                $class_string_types = [];
-
-                foreach ($var_type->getAtomicTypes() as $class_type) {
-                    if ($class_type instanceof Type\Atomic\TNamedObject) {
-                        $class_string_types[] = new Type\Atomic\TClassString($class_type->value, clone $class_type);
-                    } elseif ($class_type instanceof Type\Atomic\TTemplateParam
-                        && $class_type->as->isSingle()
-                    ) {
-                        $as_atomic_type = \array_values($class_type->as->getAtomicTypes())[0];
-
-                        if ($as_atomic_type instanceof Type\Atomic\TObject) {
-                            $class_string_types[] = new Type\Atomic\TTemplateParamClass(
-                                $class_type->param_name,
-                                'object',
-                                null,
-                                $class_type->defining_class
+                    if (!$context->vars_in_scope[$var_id]->hasTemplate()) {
+                        if ($function_id === 'get_class') {
+                            $atomic_type = new Type\Atomic\TDependentGetClass(
+                                $var_id,
+                                $context->vars_in_scope[$var_id]->hasMixed()
+                                    ? Type::getObject()
+                                    : $context->vars_in_scope[$var_id]
                             );
-                        } elseif ($as_atomic_type instanceof TNamedObject) {
-                            $class_string_types[] = new Type\Atomic\TTemplateParamClass(
-                                $class_type->param_name,
-                                $as_atomic_type->value,
-                                $as_atomic_type,
-                                $class_type->defining_class
-                            );
+                        } elseif ($function_id === 'gettype') {
+                            $atomic_type = new Type\Atomic\TDependentGetType($var_id);
+                        } else {
+                            $atomic_type = new Type\Atomic\TDependentGetDebugType($var_id);
                         }
-                    } elseif ($function_id === 'get_class') {
-                        $class_string_types[] = new Type\Atomic\TClassString();
-                    } {
-                    if ($class_type instanceof Type\Atomic\TInt) {
-                        $class_string_types[] = new Type\Atomic\TLiteralString('int');
-                    } elseif ($class_type instanceof Type\Atomic\TString) {
-                        $class_string_types[] = new Type\Atomic\TLiteralString('string');
-                    } elseif ($class_type instanceof Type\Atomic\TFloat) {
-                        $class_string_types[] = new Type\Atomic\TLiteralString('float');
-                    } elseif ($class_type instanceof Type\Atomic\TBool) {
-                        $class_string_types[] = new Type\Atomic\TLiteralString('bool');
-                    } elseif ($class_type instanceof Type\Atomic\TClosedResource) {
-                        $class_string_types[] = new Type\Atomic\TLiteralString('resource (closed)');
-                    } elseif ($class_type instanceof Type\Atomic\TNull) {
-                        $class_string_types[] = new Type\Atomic\TLiteralString('null');
-                    } else {
-                        $class_string_types[] = new Type\Atomic\TString();
-                    }
+
+                        $statements_analyzer->node_data->setType($real_stmt, new Type\Union([$atomic_type]));
+
+                        return;
                     }
                 }
-
-                $statements_analyzer->node_data->setType($real_stmt, new Type\Union($class_string_types));
             }
-        } elseif ($function_id === 'get_class'
-            && ($get_class_name = $statements_analyzer->getFQCLN())
-        ) {
-            $statements_analyzer->node_data->setType(
-                $real_stmt,
-                new Type\Union([
-                    new Type\Atomic\TClassString(
-                        $get_class_name,
-                        new Type\Atomic\TNamedObject($get_class_name)
-                    )
-                ])
-            );
-        }if ($first_arg) {
-            $var = $first_arg->value;
 
-            if ($var instanceof PhpParser\Node\Expr\Variable
-                && is_string($var->name)
-            ) {
-                $var_id = '$' . $var->name;
-
-                if (isset($context->vars_in_scope[$var_id])) {
-                    if ($function_id === 'get_class') {
-                        $atomic_type = new Type\Atomic\TDependentGetClass(
-                            $var_id,
-                            $context->vars_in_scope[$var_id]->hasMixed()
-                                ? Type::getObject()
-                                : $context->vars_in_scope[$var_id]
-                        );
-                    } elseif ($function_id === 'gettype') {
-                        $atomic_type = new Type\Atomic\TDependentGetType($var_id);
-                    } else {
-                        $atomic_type = new Type\Atomic\TDependentGetDebugType($var_id);
-                    }
-
-                    $statements_analyzer->node_data->setType($real_stmt, new Type\Union([$atomic_type]));
-                }
-            } elseif (($var_type = $statements_analyzer->node_data->getType($var))
+            if (($var_type = $statements_analyzer->node_data->getType($var))
                 && ($function_id === 'get_class'
                     || $function_id === 'get_debug_type'
                 )

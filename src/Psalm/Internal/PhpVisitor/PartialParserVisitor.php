@@ -17,7 +17,7 @@ use function substr_count;
  */
 class PartialParserVisitor extends PhpParser\NodeVisitorAbstract
 {
-    /** @var array<int, array{0: int, 1: int, 2: int, 3: int, 4:int}> */
+    /** @var array<int, array{int, int, int, int, int}> */
     private $offset_map;
 
     /** @var bool */
@@ -41,7 +41,7 @@ class PartialParserVisitor extends PhpParser\NodeVisitorAbstract
     /** @var PhpParser\ErrorHandler\Collecting */
     private $error_handler;
 
-    /** @param array<int, array{0: int, 1: int, 2: int, 3: int, 4:int}> $offset_map */
+    /** @param array<int, array{int, int, int, int, int}> $offset_map */
     public function __construct(
         PhpParser\Parser $parser,
         PhpParser\ErrorHandler\Collecting $error_handler,
@@ -158,6 +158,47 @@ class PartialParserVisitor extends PhpParser\NodeVisitorAbstract
 
                         $fake_class = '<?php class _ {' . $method_contents . '}';
 
+                        $extra_characters = [];
+
+                        // To avoid a parser error during completion we replace
+                        //
+                        // Foo::
+                        // if (...) {}
+                        //
+                        // with
+                        //
+                        // Foo::;
+                        // if (...) {}
+                        //
+                        // When we insert the extra semicolon we have to keep track of the places
+                        // we inserted it, and then shift the AST node offsets accordingly after parsing
+                        // is complete.
+                        //
+                        // If anyone's unlucky enough to have a static method named "if" with a newline
+                        // before the method name e.g.
+                        //
+                        // Foo::
+                        // if(...);
+                        //
+                        // This transformation will break that.
+                        \preg_match_all(
+                            '/(->|::)(\n\s*(if|list)\s*\()/',
+                            $fake_class,
+                            $matches,
+                            \PREG_OFFSET_CAPTURE | \PREG_SET_ORDER
+                        );
+
+                        foreach ($matches as $match) {
+                            $fake_class = \substr_replace(
+                                $fake_class,
+                                $match[1][0] . ';' . $match[2][0],
+                                $match[0][1],
+                                \strlen($match[0][0])
+                            );
+
+                            $extra_characters[] = $match[2][1];
+                        }
+
                         $replacement_stmts = $this->parser->parse(
                             $fake_class,
                             $error_handler
@@ -181,9 +222,6 @@ class PartialParserVisitor extends PhpParser\NodeVisitorAbstract
                             // changes "): {" to ") {"
                             $hacky_class_fix = preg_replace('/(\)[\s]*):([\s]*\{)/', '$1 $2', $hacky_class_fix);
 
-                            // allows autocompletion
-                            $hacky_class_fix = preg_replace('/(->|::)(\n\s*if\s*\()/', '~;$2', $hacky_class_fix);
-
                             if ($hacky_class_fix !== $fake_class) {
                                 $replacement_stmts = $this->parser->parse(
                                     $hacky_class_fix,
@@ -203,10 +241,25 @@ class PartialParserVisitor extends PhpParser\NodeVisitorAbstract
 
                         $replacement_stmts = $replacement_stmts[0]->stmts;
 
+                        $extra_offsets = [];
+
+                        foreach ($extra_characters as $extra_offset) {
+                            $l = strlen($fake_class);
+
+                            for ($i = $extra_offset; $i < $l; $i++) {
+                                if (isset($extra_offsets[$i])) {
+                                    $extra_offsets[$i]--;
+                                } else {
+                                    $extra_offsets[$i] = -1;
+                                }
+                            }
+                        }
+
                         $renumbering_traverser = new PhpParser\NodeTraverser;
                         $position_shifter = new \Psalm\Internal\PhpVisitor\OffsetShifterVisitor(
                             $stmt_start_pos - 15,
-                            $current_line
+                            $current_line,
+                            $extra_offsets
                         );
                         $renumbering_traverser->addVisitor($position_shifter);
                         $replacement_stmts = $renumbering_traverser->traverse($replacement_stmts);

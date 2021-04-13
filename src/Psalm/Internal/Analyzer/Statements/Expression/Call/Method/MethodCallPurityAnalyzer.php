@@ -4,6 +4,8 @@ namespace Psalm\Internal\Analyzer\Statements\Expression\Call\Method;
 use PhpParser;
 use Psalm\Internal\Analyzer\ClassLikeAnalyzer;
 use Psalm\Internal\Analyzer\StatementsAnalyzer;
+use Psalm\Internal\Analyzer\Statements\Expression\Assignment\InstancePropertyAssignmentAnalyzer
+    as AssignmentAnalyzer;
 use Psalm\Codebase;
 use Psalm\CodeLocation;
 use Psalm\Context;
@@ -104,6 +106,7 @@ class MethodCallPurityAnalyzer
             if ($codebase->find_unused_variables
                 && !$context->inside_conditional
                 && !$context->inside_use
+                && !$context->inside_throw
             ) {
                 if (!$context->inside_assignment && !$context->inside_call) {
                     if (IssueBuffer::accepts(
@@ -138,6 +141,10 @@ class MethodCallPurityAnalyzer
         ) {
             $context->removeMutableObjectVars();
         } elseif ($method_storage->this_property_mutations) {
+            if (!$method_pure_compatible) {
+                $context->removeMutableObjectVars(true);
+            }
+
             foreach ($method_storage->this_property_mutations as $name => $_) {
                 $mutation_var_id = $lhs_var_id . '->' . $name;
 
@@ -145,10 +152,15 @@ class MethodCallPurityAnalyzer
                     && isset($context->vars_in_scope[$mutation_var_id])
                     && !isset($class_storage->declaring_property_ids[$name]);
 
-                $context->remove($mutation_var_id);
-
                 if ($this_property_didnt_exist) {
                     $context->vars_in_scope[$mutation_var_id] = Type::getMixed();
+                } else {
+                    $context->vars_in_scope[$mutation_var_id] = AssignmentAnalyzer::getExpandedPropertyType(
+                        $codebase,
+                        $class_storage->name,
+                        $name,
+                        $class_storage
+                    ) ?: Type::getMixed();
                 }
             }
         }

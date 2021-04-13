@@ -23,18 +23,12 @@ collections)
 	~/project/psalm --monochrome --show-info=false
 	;;
 
-proxymanager)
-	git clone git@github.com:muglug/ProxyManager.git
-	cd ProxyManager
-	composer install
-	~/project/psalm --monochrome
-	;;
-
 psl)
 	git clone git@github.com:muglug/psl.git
 	cd psl
+	git checkout 1.6.x
 	composer install --ignore-platform-reqs
-	~/project/psalm --monochrome
+	~/project/psalm --monochrome --config=tools/psalm/psalm.xml
 	;;
 
 laravel)

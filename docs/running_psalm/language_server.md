@@ -2,7 +2,7 @@
 
 Psalm now has built-in Language Server Compatibility support so you can run it in your favourite IDE.
 
-It currently supports diagnostics (i.e. finding errors and warnings), go-to-definition and hover.
+It currently supports diagnostics (i.e. finding errors and warnings), go-to-definition and hover, with limited support for autocompletion (PRs are welcome!).
 
 It works well in a variety of editors (listed alphabetically):
 
@@ -79,7 +79,7 @@ This is the config I used (for Vim):
 au User lsp_setup call lsp#register_server({
      \ 'name': 'psalm-language-server',
      \ 'cmd': {server_info->[expand('vendor/bin/psalm-language-server')]},
-     \ 'whitelist': ['php'],
+     \ 'allowlist': ['php'],
      \ })
 ```
 

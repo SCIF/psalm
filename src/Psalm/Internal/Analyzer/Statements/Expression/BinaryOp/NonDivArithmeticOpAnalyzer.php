@@ -37,6 +37,7 @@ use function array_values;
 use function preg_match;
 use function strtolower;
 use function is_int;
+use const PHP_INT_MAX;
 
 /**
  * @internal
@@ -295,13 +296,14 @@ class NonDivArithmeticOpAnalyzer
             && $right_type_part instanceof TLiteralInt
             && ($left instanceof PhpParser\Node\Scalar
                 || $left instanceof PhpParser\Node\Expr\ConstFetch
-                || $left instanceof PhpParser\Node\Expr\ClassConstFetch)
+                || $left instanceof PhpParser\Node\Expr\ClassConstFetch
+                || $left instanceof PhpParser\Node\Expr\BinaryOp)
             && ($right instanceof PhpParser\Node\Scalar
                 || $right instanceof PhpParser\Node\Expr\ConstFetch
-                || $right instanceof PhpParser\Node\Expr\ClassConstFetch)
+                || $right instanceof PhpParser\Node\Expr\ClassConstFetch
+                || $right instanceof PhpParser\Node\Expr\BinaryOp)
         ) {
             // time for some arithmetic!
-
             $calculated_type = null;
 
             if ($parent instanceof PhpParser\Node\Expr\BinaryOp\Plus) {
@@ -311,9 +313,19 @@ class NonDivArithmeticOpAnalyzer
             } elseif ($parent instanceof PhpParser\Node\Expr\BinaryOp\Mod) {
                 $calculated_type = Type::getInt(false, $left_type_part->value % $right_type_part->value);
             } elseif ($parent instanceof PhpParser\Node\Expr\BinaryOp\Mul) {
-                $calculated_type = Type::getInt(false, $left_type_part->value * $right_type_part->value);
+                $result = $left_type_part->value * $right_type_part->value;
+                if ($result <= PHP_INT_MAX) {
+                    $calculated_type = Type::getInt(false, $result);
+                } else {
+                    $calculated_type = Type::getFloat($result);
+                }
             } elseif ($parent instanceof PhpParser\Node\Expr\BinaryOp\Pow) {
-                $calculated_type = Type::getInt(false, $left_type_part->value ** $right_type_part->value);
+                $result = $left_type_part->value ** $right_type_part->value;
+                if ($result <= PHP_INT_MAX) {
+                    $calculated_type = Type::getInt(false, $result);
+                } else {
+                    $calculated_type = Type::getFloat($result);
+                }
             } elseif ($parent instanceof PhpParser\Node\Expr\BinaryOp\BitwiseOr) {
                 $calculated_type = Type::getInt(false, $left_type_part->value | $right_type_part->value);
             } elseif ($parent instanceof PhpParser\Node\Expr\BinaryOp\BitwiseAnd) {
@@ -325,12 +337,16 @@ class NonDivArithmeticOpAnalyzer
             } elseif ($parent instanceof PhpParser\Node\Expr\BinaryOp\ShiftRight) {
                 $calculated_type = Type::getInt(false, $left_type_part->value >> $right_type_part->value);
             } elseif ($parent instanceof PhpParser\Node\Expr\BinaryOp\Div) {
-                $value = $left_type_part->value / $right_type_part->value;
-
-                if (is_int($value)) {
-                    $calculated_type = Type::getInt(false, $value);
+                if ($right_type_part->value === 0) {
+                    $calculated_type = Type::getEmpty();
                 } else {
-                    $calculated_type = Type::getFloat($value);
+                    $value = $left_type_part->value / $right_type_part->value;
+
+                    if (is_int($value)) {
+                        $calculated_type = Type::getInt(false, $value);
+                    } else {
+                        $calculated_type = Type::getFloat($value);
+                    }
                 }
             }
 
@@ -658,7 +674,15 @@ class NonDivArithmeticOpAnalyzer
                     if ($parent instanceof PhpParser\Node\Expr\BinaryOp\Minus) {
                         $always_positive = false;
                     } elseif ($left_is_positive && $right_is_positive) {
-                        $always_positive = true;
+                        if ($parent instanceof PhpParser\Node\Expr\BinaryOp\BitwiseXor
+                            || $parent instanceof PhpParser\Node\Expr\BinaryOp\BitwiseAnd
+                            || $parent instanceof PhpParser\Node\Expr\BinaryOp\ShiftLeft
+                            || $parent instanceof PhpParser\Node\Expr\BinaryOp\ShiftRight
+                        ) {
+                            $always_positive = false;
+                        } else {
+                            $always_positive = true;
+                        }
                     } elseif ($parent instanceof PhpParser\Node\Expr\BinaryOp\Plus
                         && ($left_type_part instanceof TLiteralInt && $left_type_part->value === 0)
                         && $right_is_positive

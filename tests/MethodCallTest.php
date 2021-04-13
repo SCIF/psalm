@@ -402,8 +402,19 @@ class MethodCallTest extends TestCase
                             return "mixed";
                         }
 
-                        return $type->getName();
+                        if ($type instanceof ReflectionUnionType) {
+                            return "union";
+                        }
+
+                        if ($type instanceof ReflectionNamedType) {
+                            return $type->getName();
+                        }
+
+                        throw new RuntimeException("unexpected type");
                     }',
+                    'assertions' => [],
+                    'error_levels' => [],
+                    'php_version' =>  '8.0'
             ],
             'PDOMethod' => [
                 '<?php
@@ -942,11 +953,27 @@ class MethodCallTest extends TestCase
 
                     if ($it->current() === null) {}'
             ],
+            'resolveFinalInParentCall' => [
+                '<?php
+                    abstract class A {
+                        protected static function create() : static {
+                            return new static();
+                        }
+
+                        final private function __construct() {}
+                    }
+
+                    final class B extends A {
+                        public static function new() : self {
+                            return parent::create();
+                        }
+                    }'
+            ],
         ];
     }
 
     /**
-     * @return iterable<string,array{string,error_message:string,2?:string[],3?:bool,4?:string}>
+     * @return iterable<string,array{string,error_message:string,1?:string[],2?:bool,3?:string}>
      */
     public function providerInvalidCodeParse(): iterable
     {

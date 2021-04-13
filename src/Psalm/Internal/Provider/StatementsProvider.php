@@ -56,9 +56,19 @@ class StatementsProvider
     private $changed_members = [];
 
     /**
-     * @var array<string, array<int, array{0: int, 1: int, 2: int, 3: int}>>
+     * @var array<string, bool>
+     */
+    private $errors = [];
+
+    /**
+     * @var array<string, array<int, array{int, int, int, int}>>
      */
     private $diff_map = [];
+
+    /**
+     * @var array<string, array<int, array{int, int}>>
+     */
+    private $deletion_ranges = [];
 
     /**
      * @var PhpParser\Lexer|null
@@ -86,6 +96,8 @@ class StatementsProvider
      */
     public function getStatementsForFile(string $file_path, string $php_version, ?Progress $progress = null): array
     {
+        unset($this->errors[$file_path]);
+
         if ($progress === null) {
             $progress = new VoidProgress();
         }
@@ -104,7 +116,9 @@ class StatementsProvider
         ) {
             $progress->debug('Parsing ' . $file_path . "\n");
 
-            $stmts = self::parseStatements($file_contents, $php_version, $file_path);
+            $has_errors = false;
+
+            $stmts = self::parseStatements($file_contents, $php_version, $has_errors, $file_path);
 
             return $stmts ?: [];
         }
@@ -163,17 +177,20 @@ class StatementsProvider
                 }
             }
 
+            $has_errors = false;
+
             $stmts = self::parseStatements(
                 $file_contents,
                 $php_version,
+                $has_errors,
                 $file_path,
                 $existing_file_contents,
                 $existing_statements_copy,
                 $file_changes
             );
 
-            if ($existing_file_contents && $existing_statements) {
-                [$unchanged_members, $unchanged_signature_members, $changed_members, $diff_map]
+            if ($existing_file_contents && $existing_statements && (!$has_errors || $stmts)) {
+                [$unchanged_members, $unchanged_signature_members, $changed_members, $diff_map, $deletion_ranges]
                     = \Psalm\Internal\Diff\FileStatementsDiffer::diff(
                         $existing_statements,
                         $stmts,
@@ -258,6 +275,9 @@ class StatementsProvider
                 }
 
                 $this->diff_map[$file_path] = $diff_map;
+                $this->deletion_ranges[$file_path] = $deletion_ranges;
+            } elseif ($has_errors && !$stmts) {
+                $this->errors[$file_path] = true;
             }
 
             if ($this->file_storage_cache_provider) {
@@ -268,6 +288,7 @@ class StatementsProvider
         } else {
             $from_cache = true;
             $this->diff_map[$file_path] = [];
+            $this->deletion_ranges[$file_path] = [];
         }
 
         $this->parser_cache_provider->saveStatementsToCache($file_path, $file_content_hash, $stmts, $from_cache);
@@ -313,15 +334,36 @@ class StatementsProvider
         $this->unchanged_signature_members = array_merge($more_unchanged_members, $this->unchanged_signature_members);
     }
 
+    /**
+     * @return array<string, bool>
+     */
+    public function getErrors() : array
+    {
+        return $this->errors;
+    }
+
+    /**
+     * @param array<string, bool> $errors
+     *
+     */
+    public function addErrors(array $errors): void
+    {
+        $this->errors += $errors;
+    }
+
     public function setUnchangedFile(string $file_path): void
     {
         if (!isset($this->diff_map[$file_path])) {
             $this->diff_map[$file_path] = [];
         }
+
+        if (!isset($this->deletion_ranges[$file_path])) {
+            $this->deletion_ranges[$file_path] = [];
+        }
     }
 
     /**
-     * @return array<string, array<int, array{0: int, 1: int, 2: int, 3: int}>>
+     * @return array<string, array<int, array{int, int, int, int}>>
      */
     public function getDiffMap(): array
     {
@@ -329,12 +371,29 @@ class StatementsProvider
     }
 
     /**
-     * @param array<string, array<int, array{0: int, 1: int, 2: int, 3: int}>> $diff_map
+     * @return array<string, array<int, array{int, int}>>
+     */
+    public function getDeletionRanges(): array
+    {
+        return $this->deletion_ranges;
+    }
+
+    /**
+     * @param array<string, array<int, array{int, int, int, int}>> $diff_map
      *
      */
     public function addDiffMap(array $diff_map): void
     {
         $this->diff_map = array_merge($diff_map, $this->diff_map);
+    }
+
+    /**
+     * @param array<string, array<int, array{int, int}>> $deletion_ranges
+     *
+     */
+    public function addDeletionRanges(array $deletion_ranges): void
+    {
+        $this->deletion_ranges = array_merge($deletion_ranges, $this->deletion_ranges);
     }
 
     public function resetDiffs(): void
@@ -343,6 +402,7 @@ class StatementsProvider
         $this->unchanged_members = [];
         $this->unchanged_signature_members = [];
         $this->diff_map = [];
+        $this->deletion_ranges = [];
     }
 
     /**
@@ -354,6 +414,7 @@ class StatementsProvider
     public static function parseStatements(
         string $file_contents,
         string $php_version,
+        bool &$has_errors,
         ?string $file_path = null,
         ?string $existing_file_contents = null,
         ?array $existing_statements = null,
@@ -416,6 +477,7 @@ class StatementsProvider
 
         if ($error_handler->hasErrors() && $file_path) {
             $config = \Psalm\Config::getInstance();
+            $has_errors = true;
 
             foreach ($error_handler->getErrors() as $error) {
                 if ($error->hasColumnInfo()) {

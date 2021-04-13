@@ -2,6 +2,7 @@
 namespace Psalm\Internal\Analyzer;
 
 use PhpParser;
+use PhpParser\Node\Expr\ArrowFunction;
 use Psalm\Codebase;
 use Psalm\CodeLocation;
 use Psalm\Context;
@@ -18,14 +19,10 @@ use function in_array;
 
 /**
  * @internal
+ * @extends FunctionLikeAnalyzer<PhpParser\Node\Stmt\ClassMethod>
  */
 class MethodAnalyzer extends FunctionLikeAnalyzer
 {
-    /**
-     * @var PhpParser\Node\Stmt\ClassMethod
-     */
-    protected $function;
-
     public function __construct(
         PhpParser\Node\Stmt\ClassMethod $function,
         SourceAnalyzer $source,
@@ -165,7 +162,7 @@ class MethodAnalyzer extends FunctionLikeAnalyzer
 
         return null;
     }
-    
+
     public static function isMethodVisible(
         \Psalm\Internal\MethodIdentifier $method_id,
         Context $context,

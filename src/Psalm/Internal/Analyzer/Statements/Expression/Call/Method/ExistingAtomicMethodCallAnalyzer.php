@@ -23,6 +23,8 @@ use Psalm\Issue\PropertyTypeCoercion;
 use Psalm\Issue\UndefinedThisPropertyAssignment;
 use Psalm\Issue\UndefinedThisPropertyFetch;
 use Psalm\IssueBuffer;
+use Psalm\Node\Expr\VirtualFuncCall;
+use Psalm\Plugin\EventHandler\Event\AfterMethodCallAnalysisEvent;
 use Psalm\Storage\Assertion;
 use Psalm\Type;
 use function strtolower;
@@ -62,7 +64,7 @@ class ExistingAtomicMethodCallAnalyzer extends CallAnalyzer
 
         $cased_method_id = $fq_class_name . '::' . $stmt_name->name;
 
-        $result->existent_method_ids[] = $method_id;
+        $result->existent_method_ids[] = $method_id->__toString();
 
         if ($context->collect_initializations && $context->calling_method_id) {
             [$calling_method_class] = explode('::', $context->calling_method_id);
@@ -87,7 +89,7 @@ class ExistingAtomicMethodCallAnalyzer extends CallAnalyzer
         if ($fq_class_name === 'Closure' && $method_name_lc === '__invoke') {
             $statements_analyzer->node_data = clone $statements_analyzer->node_data;
 
-            $fake_function_call = new PhpParser\Node\Expr\FuncCall(
+            $fake_function_call = new VirtualFuncCall(
                 $stmt->var,
                 $args,
                 $stmt->getAttributes()
@@ -369,26 +371,28 @@ class ExistingAtomicMethodCallAnalyzer extends CallAnalyzer
             }
         }
 
-        if ($config->after_method_checks) {
+        if ($config->eventDispatcher->hasAfterMethodCallAnalysisHandlers()) {
             $file_manipulations = [];
 
             $appearing_method_id = $codebase->methods->getAppearingMethodId($method_id);
             $declaring_method_id = $codebase->methods->getDeclaringMethodId($method_id);
 
             if ($appearing_method_id !== null && $declaring_method_id !== null) {
-                foreach ($config->after_method_checks as $plugin_fq_class_name) {
-                    $plugin_fq_class_name::afterMethodCallAnalysis(
-                        $stmt,
-                        (string) $method_id,
-                        (string) $appearing_method_id,
-                        (string) $declaring_method_id,
-                        $context,
-                        $statements_analyzer,
-                        $codebase,
-                        $file_manipulations,
-                        $return_type_candidate
-                    );
-                }
+                $event = new AfterMethodCallAnalysisEvent(
+                    $stmt,
+                    (string) $method_id,
+                    (string) $appearing_method_id,
+                    (string) $declaring_method_id,
+                    $context,
+                    $statements_analyzer,
+                    $codebase,
+                    $file_manipulations,
+                    $return_type_candidate
+                );
+
+                $config->eventDispatcher->dispatchAfterMethodCallAnalysis($event);
+                $file_manipulations = $event->getFileReplacements();
+                $return_type_candidate = $event->getReturnTypeCandidate();
             }
 
             if ($file_manipulations) {
@@ -419,7 +423,8 @@ class ExistingAtomicMethodCallAnalyzer extends CallAnalyzer
 
         $codebase = $statements_analyzer->getCodebase();
 
-        $first_arg_value = $stmt->args[0]->value;
+        $first_arg_value = $stmt->args[0]->value ?? null;
+
         if (!$first_arg_value instanceof PhpParser\Node\Scalar\String_) {
             return null;
         }
@@ -457,7 +462,9 @@ class ExistingAtomicMethodCallAnalyzer extends CallAnalyzer
 
                 // If a `@property` annotation is set, the type of the value passed to the
                 // magic setter must match the annotation.
-                $second_arg_type = $statements_analyzer->node_data->getType($stmt->args[1]->value);
+                $second_arg_type = isset($stmt->args[1])
+                    ? $statements_analyzer->node_data->getType($stmt->args[1]->value)
+                    : null;
 
                 if (isset($class_storage->pseudo_property_set_types['$' . $prop_name]) && $second_arg_type) {
                     $pseudo_set_type = \Psalm\Internal\Type\TypeExpander::expandUnion(

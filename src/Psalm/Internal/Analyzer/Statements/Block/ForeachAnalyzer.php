@@ -28,6 +28,8 @@ use Psalm\Issue\RawObjectIteration;
 use Psalm\Issue\UnnecessaryVarAnnotation;
 use Psalm\IssueBuffer;
 use Psalm\Internal\Scope\LoopScope;
+use Psalm\Node\Expr\VirtualMethodCall;
+use Psalm\Node\VirtualIdentifier;
 use Psalm\Type;
 use function is_string;
 use function in_array;
@@ -215,6 +217,7 @@ class ForeachAnalyzer
             if (self::checkIteratorType(
                 $statements_analyzer,
                 $stmt,
+                $stmt->expr,
                 $iterator_type,
                 $codebase,
                 $context,
@@ -335,11 +338,13 @@ class ForeachAnalyzer
     }
 
     /**
+     * @param PhpParser\Node\Stmt\Foreach_|PhpParser\Node\Expr\YieldFrom $stmt
      * @return false|null
      */
     public static function checkIteratorType(
         StatementsAnalyzer $statements_analyzer,
-        PhpParser\Node\Stmt\Foreach_ $stmt,
+        PhpParser\NodeAbstract $stmt,
+        PhpParser\Node\Expr $expr,
         Type\Union $iterator_type,
         Codebase $codebase,
         Context $context,
@@ -351,7 +356,7 @@ class ForeachAnalyzer
             if (IssueBuffer::accepts(
                 new NullIterator(
                     'Cannot iterate over null',
-                    new CodeLocation($statements_analyzer->getSource(), $stmt->expr)
+                    new CodeLocation($statements_analyzer->getSource(), $expr)
                 ),
                 $statements_analyzer->getSuppressedIssues()
             )) {
@@ -361,7 +366,7 @@ class ForeachAnalyzer
             if (IssueBuffer::accepts(
                 new PossiblyNullIterator(
                     'Cannot iterate over nullable var ' . $iterator_type,
-                    new CodeLocation($statements_analyzer->getSource(), $stmt->expr)
+                    new CodeLocation($statements_analyzer->getSource(), $expr)
                 ),
                 $statements_analyzer->getSuppressedIssues()
             )) {
@@ -371,7 +376,7 @@ class ForeachAnalyzer
             if (IssueBuffer::accepts(
                 new PossiblyFalseIterator(
                     'Cannot iterate over falsable var ' . $iterator_type,
-                    new CodeLocation($statements_analyzer->getSource(), $stmt->expr)
+                    new CodeLocation($statements_analyzer->getSource(), $expr)
                 ),
                 $statements_analyzer->getSuppressedIssues()
             )) {
@@ -415,7 +420,7 @@ class ForeachAnalyzer
                     $iterator_atomic_type = $iterator_atomic_type->getGenericArrayType();
                 } elseif ($iterator_atomic_type instanceof Type\Atomic\TList) {
                     $list_var_id = ExpressionIdentifier::getArrayVarId(
-                        $stmt->expr,
+                        $expr,
                         $statements_analyzer->getFQCLN(),
                         $statements_analyzer
                     );
@@ -442,14 +447,6 @@ class ForeachAnalyzer
                     $value_type = Type::combineUnionTypes($value_type, $iterator_atomic_type->type_params[1]);
                 }
 
-                ArrayFetchAnalyzer::taintArrayFetch(
-                    $statements_analyzer,
-                    $stmt->expr,
-                    null,
-                    $value_type,
-                    Type::getMixed()
-                );
-
                 $key_type_part = $iterator_atomic_type->type_params[0];
 
                 if (!$key_type) {
@@ -457,6 +454,14 @@ class ForeachAnalyzer
                 } else {
                     $key_type = Type::combineUnionTypes($key_type, $key_type_part);
                 }
+
+                ArrayFetchAnalyzer::taintArrayFetch(
+                    $statements_analyzer,
+                    $expr,
+                    null,
+                    $value_type,
+                    $key_type
+                );
 
                 $has_valid_iterator = true;
                 continue;
@@ -476,13 +481,14 @@ class ForeachAnalyzer
             ) {
                 $has_valid_iterator = true;
                 $value_type = Type::getMixed();
+                $key_type = Type::getMixed();
 
                 ArrayFetchAnalyzer::taintArrayFetch(
                     $statements_analyzer,
-                    $stmt->expr,
+                    $expr,
                     null,
                     $value_type,
-                    Type::getMixed()
+                    $key_type
                 );
 
                 if (!$context->pure) {
@@ -564,6 +570,14 @@ class ForeachAnalyzer
                     $key_type = Type::combineUnionTypes($key_type, $intersection_key_type);
                 }
 
+                ArrayFetchAnalyzer::taintArrayFetch(
+                    $statements_analyzer,
+                    $expr,
+                    null,
+                    $value_type,
+                    $key_type
+                );
+
                 $has_valid_iterator = true;
 
                 if (!$context->pure) {
@@ -592,7 +606,7 @@ class ForeachAnalyzer
                     if (ClassLikeAnalyzer::checkFullyQualifiedClassLikeName(
                         $statements_analyzer,
                         $iterator_atomic_type->value,
-                        new CodeLocation($statements_analyzer->getSource(), $stmt->expr),
+                        new CodeLocation($statements_analyzer->getSource(), $expr),
                         $context->self,
                         $context->calling_method_id,
                         $statements_analyzer->getSuppressedIssues()
@@ -609,7 +623,7 @@ class ForeachAnalyzer
                     self::handleIterable(
                         $statements_analyzer,
                         $iterator_atomic_type,
-                        $stmt->expr,
+                        $expr,
                         $codebase,
                         $context,
                         $key_type,
@@ -647,7 +661,7 @@ class ForeachAnalyzer
                 if (IssueBuffer::accepts(
                     new PossibleRawObjectIteration(
                         'Possibly undesired iteration over regular object ' . \reset($raw_object_types),
-                        new CodeLocation($statements_analyzer->getSource(), $stmt->expr)
+                        new CodeLocation($statements_analyzer->getSource(), $expr)
                     ),
                     $statements_analyzer->getSuppressedIssues()
                 )) {
@@ -657,7 +671,7 @@ class ForeachAnalyzer
                 if (IssueBuffer::accepts(
                     new RawObjectIteration(
                         'Possibly undesired iteration over regular object ' . \reset($raw_object_types),
-                        new CodeLocation($statements_analyzer->getSource(), $stmt->expr)
+                        new CodeLocation($statements_analyzer->getSource(), $expr)
                     ),
                     $statements_analyzer->getSuppressedIssues()
                 )) {
@@ -671,7 +685,7 @@ class ForeachAnalyzer
                 if (IssueBuffer::accepts(
                     new PossiblyInvalidIterator(
                         'Cannot iterate over ' . $invalid_iterator_types[0],
-                        new CodeLocation($statements_analyzer->getSource(), $stmt->expr)
+                        new CodeLocation($statements_analyzer->getSource(), $expr)
                     ),
                     $statements_analyzer->getSuppressedIssues()
                 )) {
@@ -681,7 +695,7 @@ class ForeachAnalyzer
                 if (IssueBuffer::accepts(
                     new InvalidIterator(
                         'Cannot iterate over ' . $invalid_iterator_types[0],
-                        new CodeLocation($statements_analyzer->getSource(), $stmt->expr)
+                        new CodeLocation($statements_analyzer->getSource(), $expr)
                     ),
                     $statements_analyzer->getSuppressedIssues()
                 )) {
@@ -774,9 +788,9 @@ class ForeachAnalyzer
 
                     $statements_analyzer->node_data = clone $statements_analyzer->node_data;
 
-                    $fake_method_call = new PhpParser\Node\Expr\MethodCall(
+                    $fake_method_call = new VirtualMethodCall(
                         $foreach_expr,
-                        new PhpParser\Node\Identifier('getIterator', $foreach_expr->getAttributes())
+                        new VirtualIdentifier('getIterator', $foreach_expr->getAttributes())
                     );
 
                     $suppressed_issues = $statements_analyzer->getSuppressedIssues();
@@ -1058,9 +1072,9 @@ class ForeachAnalyzer
 
         $statements_analyzer->node_data = clone $statements_analyzer->node_data;
 
-        $fake_method_call = new PhpParser\Node\Expr\MethodCall(
+        $fake_method_call = new VirtualMethodCall(
             $foreach_expr,
-            new PhpParser\Node\Identifier($method_name, $foreach_expr->getAttributes())
+            new VirtualIdentifier($method_name, $foreach_expr->getAttributes())
         );
 
         $suppressed_issues = $statements_analyzer->getSuppressedIssues();

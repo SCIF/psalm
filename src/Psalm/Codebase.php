@@ -18,7 +18,10 @@ use const PHP_MINOR_VERSION;
 use PhpParser;
 use function preg_match;
 use Psalm\Internal\Analyzer\ProjectAnalyzer;
+use Psalm\Internal\Analyzer\NamespaceAnalyzer;
 use Psalm\Internal\Analyzer\Statements\Block\ForeachAnalyzer;
+use Psalm\Internal\Analyzer\Statements\Expression\Fetch\ConstFetchAnalyzer;
+use Psalm\Internal\Analyzer\Statements\Expression\Fetch\VariableFetchAnalyzer;
 use Psalm\Internal\Type\Comparator\UnionTypeComparator;
 use Psalm\Internal\Codebase\InternalCallMapHandler;
 use Psalm\Internal\Provider\ClassLikeStorageProvider;
@@ -39,6 +42,10 @@ use function strrpos;
 use function strtolower;
 use function substr;
 use function substr_count;
+use function array_pop;
+use function implode;
+use function array_reverse;
+use function dirname;
 
 class Codebase
 {
@@ -309,17 +316,18 @@ class Codebase
 
         $this->functions = new Internal\Codebase\Functions($providers->file_storage_provider, $reflection);
 
-        $this->properties = new Internal\Codebase\Properties(
-            $providers->classlike_storage_provider,
-            $providers->file_reference_provider
-        );
-
         $this->classlikes = new Internal\Codebase\ClassLikes(
             $this->config,
             $providers->classlike_storage_provider,
             $providers->file_reference_provider,
             $providers->statements_provider,
             $this->scanner
+        );
+
+        $this->properties = new Internal\Codebase\Properties(
+            $providers->classlike_storage_provider,
+            $providers->file_reference_provider,
+            $this->classlikes
         );
 
         $this->methods = new Internal\Codebase\Methods(
@@ -899,10 +907,50 @@ class Codebase
         $this->file_storage_provider->remove($file_path);
     }
 
-    public function getSymbolInformation(string $file_path, string $symbol): ?string
+    public function getFunctionStorageForSymbol(string $file_path, string $symbol): ?FunctionLikeStorage
+    {
+        if (strpos($symbol, '::')) {
+            $symbol = substr($symbol, 0, -2);
+            /** @psalm-suppress ArgumentTypeCoercion */
+            $method_id = new \Psalm\Internal\MethodIdentifier(...explode('::', $symbol));
+
+            $declaring_method_id = $this->methods->getDeclaringMethodId($method_id);
+
+            if (!$declaring_method_id) {
+                return null;
+            }
+
+            $storage = $this->methods->getStorage($declaring_method_id);
+            return $storage;
+        }
+
+        $function_id = strtolower(substr($symbol, 0, -2));
+        $file_storage = $this->file_storage_provider->get($file_path);
+
+        if (isset($file_storage->functions[$function_id])) {
+            $function_storage = $file_storage->functions[$function_id];
+
+            return $function_storage;
+        }
+
+        if (!$function_id) {
+            return null;
+        }
+
+        $function = $this->functions->getStorage(null, $function_id);
+
+        return $function;
+    }
+
+    /**
+     * @param string $file_path
+     * @param string $symbol
+     * @return array{ type: string, description?: string|null}|null
+     */
+    public function getSymbolInformation(string $file_path, string $symbol): ?array
     {
         if (\is_numeric($symbol[0])) {
-            return \preg_replace('/^[^:]*:/', '', $symbol);
+            return ['type' => \preg_replace('/^[^:]*:/', '', $symbol)];
         }
 
         try {
@@ -921,7 +969,10 @@ class Codebase
 
                     $storage = $this->methods->getStorage($declaring_method_id);
 
-                    return '<?php ' . $storage->getSignature(true);
+                    return [
+                        'type' => '<?php ' . $storage->getSignature(true),
+                        'description' => $storage->description,
+                    ];
                 }
 
                 [, $symbol_name] = explode('::', $symbol);
@@ -929,7 +980,10 @@ class Codebase
                 if (strpos($symbol, '$') !== false) {
                     $storage = $this->properties->getStorage($symbol);
 
-                    return '<?php ' . $storage->getInfo() . ' ' . $symbol_name;
+                    return [
+                        'type' => '<?php ' . $storage->getInfo() . ' ' . $symbol_name,
+                        'description' => $storage->description,
+                    ];
                 }
 
                 [$fq_classlike_name, $const_name] = explode('::', $symbol);
@@ -943,7 +997,10 @@ class Codebase
                     return null;
                 }
 
-                return '<?php ' . $const_name;
+                return [
+                    'type' => '<?php ' . $const_name,
+                    'description' => $class_constants[$const_name]->description,
+                ];
             }
 
             if (strpos($symbol, '()')) {
@@ -953,7 +1010,10 @@ class Codebase
                 if (isset($file_storage->functions[$function_id])) {
                     $function_storage = $file_storage->functions[$function_id];
 
-                    return '<?php ' . $function_storage->getSignature(true);
+                    return [
+                        'type' => '<?php ' . $function_storage->getSignature(true),
+                        'description' => $function_storage->description,
+                    ];
                 }
 
                 if (!$function_id) {
@@ -961,12 +1021,53 @@ class Codebase
                 }
 
                 $function = $this->functions->getStorage(null, $function_id);
-                return '<?php ' . $function->getSignature(true);
+                return [
+                    'type' => '<?php ' . $function->getSignature(true),
+                    'description' => $function->description,
+                ];
             }
 
-            $storage = $this->classlike_storage_provider->get($symbol);
+            if (strpos($symbol, '$') === 0) {
+                $type = VariableFetchAnalyzer::getGlobalType($symbol);
+                if (!$type->isMixed()) {
+                    return ['type' => '<?php ' . $type];
+                }
+            }
 
-            return '<?php ' . ($storage->abstract ? 'abstract ' : '') . 'class ' . $storage->name;
+            try {
+                $storage = $this->classlike_storage_provider->get($symbol);
+                return [
+                    'type' => '<?php ' . ($storage->abstract ? 'abstract ' : '') . 'class ' . $storage->name,
+                    'description' => $storage->description,
+                ];
+            } catch (\InvalidArgumentException $e) {
+            }
+
+            if (strpos($symbol, '\\')) {
+                $const_name_parts = explode('\\', $symbol);
+                $const_name = array_pop($const_name_parts);
+                $namespace_name = implode('\\', $const_name_parts);
+
+                $namespace_constants = NamespaceAnalyzer::getConstantsForNamespace(
+                    $namespace_name,
+                    \ReflectionProperty::IS_PUBLIC
+                );
+                if (isset($namespace_constants[$const_name])) {
+                    $type = $namespace_constants[$const_name];
+                    return ['type' => '<?php const ' . $symbol . ' ' . $type];
+                }
+            } else {
+                $file_storage = $this->file_storage_provider->get($file_path);
+                if (isset($file_storage->constants[$symbol])) {
+                    return ['type' => '<?php const ' . $symbol . ' ' . $file_storage->constants[$symbol]];
+                }
+                $constant = ConstFetchAnalyzer::getGlobalConstType($this, $symbol, $symbol);
+
+                if ($constant) {
+                    return ['type' => '<?php const ' . $symbol . ' ' . $constant];
+                }
+            }
+            return null;
         } catch (\Exception $e) {
             error_log($e->getMessage());
 
@@ -1169,8 +1270,12 @@ class Codebase
     /**
      * @param  non-empty-string $function_symbol
      */
-    public function getSignatureInformation(string $function_symbol) : ?\LanguageServerProtocol\SignatureInformation
-    {
+    public function getSignatureInformation(
+        string $function_symbol,
+        string $file_path = null
+    ): ?\LanguageServerProtocol\SignatureInformation {
+        $signature_label = '';
+        $signature_documentation = null;
         if (strpos($function_symbol, '::') !== false) {
             /** @psalm-suppress ArgumentTypeCoercion */
             $method_id = new \Psalm\Internal\MethodIdentifier(...explode('::', $function_symbol));
@@ -1183,11 +1288,23 @@ class Codebase
 
             $method_storage = $this->methods->getStorage($declaring_method_id);
             $params = $method_storage->params;
+            $signature_label = $method_storage->cased_name;
+            $signature_documentation = $method_storage->description;
         } else {
             try {
-                $function_storage = $this->functions->getStorage(null, strtolower($function_symbol));
-
+                if ($file_path) {
+                    $function_storage = $this->functions->getStorage(
+                        null,
+                        strtolower($function_symbol),
+                        dirname($file_path),
+                        $file_path
+                    );
+                } else {
+                    $function_storage = $this->functions->getStorage(null, strtolower($function_symbol));
+                }
                 $params = $function_storage->params;
+                $signature_label = $function_storage->cased_name;
+                $signature_documentation = $function_storage->description;
             } catch (\Exception $exception) {
                 if (InternalCallMapHandler::inCallMap($function_symbol)) {
                     $callables = InternalCallMapHandler::getCallablesFromCallMap($function_symbol);
@@ -1203,15 +1320,18 @@ class Codebase
             }
         }
 
-        $signature_label = '(';
+        $signature_label .= '(';
         $parameters = [];
 
         foreach ($params as $i => $param) {
             $parameter_label = ($param->type ?: 'mixed') . ' $' . $param->name;
-            $parameters[] = new \LanguageServerProtocol\ParameterInformation([
-                strlen($signature_label),
-                strlen($signature_label) + strlen($parameter_label),
-            ]);
+            $parameters[] = new \LanguageServerProtocol\ParameterInformation(
+                [
+                    strlen($signature_label),
+                    strlen($signature_label) + strlen($parameter_label),
+                ],
+                $param->description ?? null
+            );
 
             $signature_label .= $parameter_label;
 
@@ -1224,12 +1344,13 @@ class Codebase
 
         return new \LanguageServerProtocol\SignatureInformation(
             $signature_label,
-            $parameters
+            $parameters,
+            $signature_documentation
         );
     }
 
     /**
-     * @return array{0: string, 1: '->'|'::'|'symbol', 2: int}|null
+     * @return array{0: string, 1: '->'|'::'|'['|'symbol', 2: int}|null
      */
     public function getCompletionDataAtPosition(string $file_path, Position $position): ?array
     {
@@ -1261,6 +1382,21 @@ class Codebase
                 : 0;
             $end_pos = $end_pos_excluding_whitespace + $num_whitespace_bytes;
 
+            if ($offset - $end_pos === 1) {
+                $candidate_gap = substr($file_contents, $end_pos, 1);
+
+                if ($candidate_gap == '[') {
+                    $gap = $candidate_gap;
+                    $recent_type = $possible_type;
+
+                    if ($recent_type === 'mixed') {
+                        return null;
+                    }
+
+                    return [$recent_type, $gap, $offset];
+                }
+            }
+
             if ($offset - $end_pos === 2 || $offset - $end_pos === 3) {
                 $candidate_gap = substr($file_contents, $end_pos, 2);
 
@@ -1278,7 +1414,16 @@ class Codebase
         }
 
         foreach ($reference_map as $start_pos => [$end_pos, $possible_reference]) {
-            if ($offset < $start_pos || $possible_reference[0] !== '*') {
+            if ($offset < $start_pos) {
+                continue;
+            }
+            // If the reference precedes a "::" then treat it as a class reference.
+            if ($offset - $end_pos === 2 && substr($file_contents, $end_pos, 2) === '::') {
+                return [$possible_reference, '::', $offset];
+            }
+
+            // Only continue for references that are partial / don't exist.
+            if ($possible_reference[0] !== '*') {
                 continue;
             }
 
@@ -1292,13 +1437,37 @@ class Codebase
         return null;
     }
 
+    public function getTypeContextAtPosition(string $file_path, Position $position): ?Type\Union
+    {
+        $file_contents = $this->getFileContents($file_path);
+        $offset = $position->toOffset($file_contents);
+
+        [$reference_map, $type_map, $argument_map] = $this->analyzer->getMapsForFile($file_path);
+        if (!$reference_map && !$type_map && !$argument_map) {
+            return null;
+        }
+        foreach ($argument_map as $start_pos => [$end_pos, $function, $argument_num]) {
+            if ($offset < $start_pos || $offset > $end_pos) {
+                continue;
+            }
+            // First parameter to a function-like
+            $function_storage = $this->getFunctionStorageForSymbol($file_path, $function . '()');
+            if (!$function_storage || !$function_storage->params) {
+                return null;
+            }
+            $parameter = $function_storage->params[$argument_num];
+            return $parameter->type;
+        }
+
+        return null;
+    }
+
     /**
      * @return list<\LanguageServerProtocol\CompletionItem>
      */
     public function getCompletionItemsForClassishThing(string $type_string, string $gap) : array
     {
-        $instance_completion_items = [];
-        $static_completion_items = [];
+        $completion_items = [];
 
         $type = Type::parseString($type_string);
 
@@ -1310,24 +1479,25 @@ class Codebase
                     foreach ($class_storage->appearing_method_ids as $declaring_method_id) {
                         $method_storage = $this->methods->getStorage($declaring_method_id);
 
-                        $completion_item = new \LanguageServerProtocol\CompletionItem(
-                            $method_storage->cased_name,
-                            \LanguageServerProtocol\CompletionItemKind::METHOD,
-                            (string)$method_storage,
-                            null,
-                            (string)$method_storage->visibility,
-                            $method_storage->cased_name,
-                            $method_storage->cased_name . (count($method_storage->params) !== 0 ? '($0)' : '()'),
-                            null,
-                            null,
-                            new Command('Trigger parameter hints', 'editor.action.triggerParameterHints')
-                        );
-                        $completion_item->insertTextFormat = \LanguageServerProtocol\InsertTextFormat::SNIPPET;
+                        if ($method_storage->is_static || $gap === '->') {
+                            $completion_item = new \LanguageServerProtocol\CompletionItem(
+                                $method_storage->cased_name,
+                                \LanguageServerProtocol\CompletionItemKind::METHOD,
+                                (string)$method_storage,
+                                $method_storage->description,
+                                (string)$method_storage->visibility,
+                                $method_storage->cased_name,
+                                $method_storage->cased_name . (count($method_storage->params) !== 0 ? '($0)' : '()'),
+                                null,
+                                null,
+                                new Command('Trigger parameter hints', 'editor.action.triggerParameterHints'),
+                                null,
+                                2
+                            );
 
-                        if ($method_storage->is_static) {
-                            $static_completion_items[] = $completion_item;
-                        } else {
-                            $instance_completion_items[] = $completion_item;
+                            $completion_item->insertTextFormat = \LanguageServerProtocol\InsertTextFormat::SNIPPET;
+
+                            $completion_items[] = $completion_item;
                         }
                     }
 
@@ -1336,29 +1506,25 @@ class Codebase
                             $declaring_class . '::$' . $property_name
                         );
 
-                        $completion_item = new \LanguageServerProtocol\CompletionItem(
-                            '$' . $property_name,
-                            \LanguageServerProtocol\CompletionItemKind::PROPERTY,
-                            $property_storage->getInfo(),
-                            null,
-                            (string)$property_storage->visibility,
-                            $property_name,
-                            ($gap === '::' ? '$' : '') . $property_name
-                        );
-
-                        if ($property_storage->is_static) {
-                            $static_completion_items[] = $completion_item;
-                        } else {
-                            $instance_completion_items[] = $completion_item;
+                        if ($property_storage->is_static || $gap === '->') {
+                            $completion_items[] = new \LanguageServerProtocol\CompletionItem(
+                                '$' . $property_name,
+                                \LanguageServerProtocol\CompletionItemKind::PROPERTY,
+                                $property_storage->getInfo(),
+                                $property_storage->description,
+                                (string)$property_storage->visibility,
+                                $property_name,
+                                ($gap === '::' ? '$' : '') . $property_name
+                            );
                         }
                     }
 
-                    foreach ($class_storage->constants as $const_name => $_) {
-                        $static_completion_items[] = new \LanguageServerProtocol\CompletionItem(
+                    foreach ($class_storage->constants as $const_name => $const) {
+                        $completion_items[] = new \LanguageServerProtocol\CompletionItem(
                             $const_name,
                             \LanguageServerProtocol\CompletionItemKind::VARIABLE,
                             'const ' . $const_name,
-                            null,
+                            $const->description,
                             null,
                             $const_name,
                             $const_name
@@ -1369,15 +1535,6 @@ class Codebase
                     continue;
                 }
             }
-        }
-
-        if ($gap === '->') {
-            $completion_items = $instance_completion_items;
-        } else {
-            $completion_items = array_merge(
-                $instance_completion_items,
-                $static_completion_items
-            );
         }
 
         return $completion_items;
@@ -1391,6 +1548,12 @@ class Codebase
         int $offset,
         string $file_path
     ) : array {
+        $fq_suggestion = false;
+
+        if (($type_string[1] ?? '') === '\\') {
+            $fq_suggestion = true;
+        }
+
         $matching_classlike_names = $this->classlikes->getMatchingClassLikeNames($type_string);
 
         $completion_items = [];
@@ -1442,6 +1605,7 @@ class Codebase
             );
 
             if ($aliases
+                && !$fq_suggestion
                 && $aliases->namespace
                 && $insertion_text === '\\' . $fq_class_name
                 && $aliases->namespace_first_stmt_start
@@ -1473,11 +1637,18 @@ class Codebase
                 $insertion_text = $class_name;
             }
 
+            try {
+                $class_storage = $this->classlike_storage_provider->get($fq_class_name);
+                $description = $class_storage->description;
+            } catch (\Exception $e) {
+                $description = null;
+            }
+
             $completion_items[] = new \LanguageServerProtocol\CompletionItem(
                 $fq_class_name,
                 \LanguageServerProtocol\CompletionItemKind::CLASS_,
                 null,
-                null,
+                $description,
                 null,
                 $fq_class_name,
                 $insertion_text,
@@ -1486,6 +1657,137 @@ class Codebase
             );
         }
 
+        $functions = $this->functions->getMatchingFunctionNames($type_string, $offset, $file_path, $this);
+
+        $namespace_map = [];
+        if ($aliases) {
+            $namespace_map += $aliases->uses_flipped;
+            if ($aliases->namespace) {
+                $namespace_map[$aliases->namespace] = '';
+            }
+        }
+
+        // Sort the map by longest first, so we replace most specific
+        // used namespaces first.
+        ksort($namespace_map);
+        $namespace_map = array_reverse($namespace_map);
+
+        foreach ($functions as $function_lowercase => $function) {
+            // Transform FQFN relative to all uses namespaces
+            $function_name = $function->cased_name;
+            if (!$function_name) {
+                continue;
+            }
+            $in_namespace_map = false;
+            foreach ($namespace_map as $namespace_name => $namespace_alias) {
+                if (strpos($function_lowercase, $namespace_name . '\\') === 0) {
+                    $function_name = $namespace_alias . '\\' . substr($function_name, strlen($namespace_name) + 1);
+                    $in_namespace_map = true;
+                }
+            }
+            // If the function is not use'd, and it's not a global function
+            // prepend it with a backslash.
+            if (!$in_namespace_map && strpos($function_name, '\\') !== false) {
+                $function_name = '\\' . $function_name;
+            }
+            $completion_items[] = new \LanguageServerProtocol\CompletionItem(
+                $function_name,
+                \LanguageServerProtocol\CompletionItemKind::FUNCTION,
+                $function->getSignature(false),
+                $function->description,
+                null,
+                $function_name,
+                $function_name . (count($function->params) !== 0 ? '($0)' : '()'),
+                null,
+                null,
+                new Command('Trigger parameter hints', 'editor.action.triggerParameterHints'),
+                null,
+                2
+            );
+        }
+
+        return $completion_items;
+    }
+
+    /**
+     * @return list<\LanguageServerProtocol\CompletionItem>
+     */
+    public function getCompletionItemsForType(Type\Union $type): array
+    {
+        $completion_items = [];
+        foreach ($type->getAtomicTypes() as $atomic_type) {
+            if ($atomic_type instanceof Type\Atomic\TBool) {
+                $bools = (string) $atomic_type === 'bool' ? ['true', 'false'] : [(string) $atomic_type];
+                foreach ($bools as $property_name) {
+                    $completion_items[] = new \LanguageServerProtocol\CompletionItem(
+                        $property_name,
+                        \LanguageServerProtocol\CompletionItemKind::VALUE,
+                        'bool',
+                        null,
+                        null,
+                        null,
+                        $property_name
+                    );
+                }
+            } elseif ($atomic_type instanceof Type\Atomic\TLiteralString) {
+                $completion_items[] = new \LanguageServerProtocol\CompletionItem(
+                    $atomic_type->value,
+                    \LanguageServerProtocol\CompletionItemKind::VALUE,
+                    $atomic_type->getId(),
+                    null,
+                    null,
+                    null,
+                    "'$atomic_type->value'"
+                );
+            } elseif ($atomic_type instanceof Type\Atomic\TLiteralInt) {
+                $completion_items[] = new \LanguageServerProtocol\CompletionItem(
+                    (string) $atomic_type->value,
+                    \LanguageServerProtocol\CompletionItemKind::VALUE,
+                    $atomic_type->getId(),
+                    null,
+                    null,
+                    null,
+                    (string) $atomic_type->value
+                );
+            } elseif ($atomic_type instanceof Type\Atomic\TScalarClassConstant) {
+                $const = $atomic_type->fq_classlike_name . '::' . $atomic_type->const_name;
+                $completion_items[] = new \LanguageServerProtocol\CompletionItem(
+                    $const,
+                    \LanguageServerProtocol\CompletionItemKind::VALUE,
+                    $atomic_type->getId(),
+                    null,
+                    null,
+                    null,
+                    $const
+                );
+            }
+        }
+        return $completion_items;
+    }
+
+    /**
+     * @return list<\LanguageServerProtocol\CompletionItem>
+     */
+    public function getCompletionItemsForArrayKeys(
+        string $type_string
+    ) : array {
+        $completion_items = [];
+        $type = Type::parseString($type_string);
+        foreach ($type->getAtomicTypes() as $atomic_type) {
+            if ($atomic_type instanceof Type\Atomic\TKeyedArray) {
+                foreach ($atomic_type->properties as $property_name => $property) {
+                    $completion_items[] = new \LanguageServerProtocol\CompletionItem(
+                        (string) $property_name,
+                        \LanguageServerProtocol\CompletionItemKind::PROPERTY,
+                        (string) $property,
+                        null,
+                        null,
+                        null,
+                        "'$property_name'"
+                    );
+                }
+            }
+        }
         return $completion_items;
     }
 

@@ -7,6 +7,7 @@ use Psalm\Context;
 use Psalm\Internal\RuntimeCaches;
 use Psalm\Tests\Internal\Provider;
 use function strpos;
+use const DIRECTORY_SEPARATOR;
 
 class UnusedVariableTest extends TestCase
 {
@@ -931,6 +932,7 @@ class UnusedVariableTest extends TestCase
                         $i = 1;
                     };
                     $a();
+                    /** @psalm-suppress MixedArgument */
                     echo $i;',
             ],
             'regularVariableClosureUseInAddition' => [
@@ -1852,7 +1854,10 @@ class UnusedVariableTest extends TestCase
                             $hue = "goodbye";
                         }
 
-                        /** @psalm-suppress PossiblyUndefinedVariable */
+                        /**
+                         * @psalm-suppress PossiblyUndefinedVariable
+                         * @psalm-suppress MixedArgument
+                         */
                         echo $hue;
                     }'
             ],
@@ -1927,6 +1932,7 @@ class UnusedVariableTest extends TestCase
                         }
 
                         if (isset($j)) {
+                            /** @psalm-suppress MixedArgument */
                             echo $j;
                         }
                     }'
@@ -2011,6 +2017,7 @@ class UnusedVariableTest extends TestCase
                 '<?php
                     /**
                      * @psalm-suppress MixedAssignment
+                     * @psalm-suppress MixedArgument
                      * @param iterable<mixed, int> $keys
                      */
                     function foo(iterable $keys, int $colno) : void {
@@ -2182,6 +2189,16 @@ class UnusedVariableTest extends TestCase
                         print_r(...$d);
                     }'
             ],
+            'explicitSpread' => [
+                '<?php
+                    function f(): array {
+                        $s = [1, 2, 3];
+                        $b = ["a", "b", "c"];
+
+                        $r = [...$s, ...$b];
+                        return $r;
+                    }'
+            ],
             'funcGetArgs' => [
                 '<?php
                     function validate(bool $b, bool $c) : void {
@@ -2287,6 +2304,47 @@ class UnusedVariableTest extends TestCase
                              * @psalm-suppress MixedArrayAssignment
                              */
                             $item[0] = $item[1];
+                        }
+                    }'
+            ],
+            'usedThrow' => [
+                '<?php
+                    function f(Exception $e): void {
+                        throw $e;
+                    }
+                ',
+            ],
+            'usedThrowInReturnedCallable' => [
+                '<?php
+                    function createFailingFunction(RuntimeException $exception): Closure
+                    {
+                        return static function () use ($exception): void {
+                            throw $exception;
+                        };
+                    }
+                ',
+            ],
+            'usedInIntCastInAssignment' => [
+                '<?php
+                    /** @return mixed */
+                    function f() {
+                        $a = random_int(0, 10) >= 5 ? true : false;
+
+                        $b = (int) $a;
+
+                        return $b;
+                    }
+                '
+            ],
+            'promotedPropertiesAreNeverMarkedAsUnusedParams' => [
+                '<?php
+                    class Container {
+                        private function __construct(
+                            public float $value
+                        ) {}
+
+                        public static function fromValue(float $value): self {
+                            return new self($value);
                         }
                     }'
             ],
@@ -3103,6 +3161,158 @@ class UnusedVariableTest extends TestCase
                         $data[] = 1;
                     };',
                 'error_message' => 'UnusedVariable',
+            ],
+            'globalVariableUsage' => [
+                '<?php
+                    $a = "hello";
+                    function example() : void {
+                        global $a;
+                    }
+                    example();',
+                'error_message' => 'UnusedVariable',
+            ],
+            'warnAboutOriginalBadArray' => [
+                '<?php
+                    function takesArray(array $arr) : void {
+                        foreach ($arr as $a) {}
+                    }',
+                'error_message' => 'MixedAssignment - src' . DIRECTORY_SEPARATOR . 'somefile.php:3:42 - Unable to determine the type that $a is being assigned to. Consider improving the type at src' . DIRECTORY_SEPARATOR . 'somefile.php:2:47'
+            ],
+            'warnAboutOriginalBadFunctionCall' => [
+                '<?php
+                    function makeArray() : array {
+                        return ["hello"];
+                    }
+
+                    $arr = makeArray();
+
+                    foreach ($arr as $a) {
+                        echo $a;
+                    }',
+                'error_message' => 'MixedAssignment - src' . DIRECTORY_SEPARATOR . 'somefile.php:8:38 - Unable to determine the type that $a is being assigned to. Consider improving the type at src' . DIRECTORY_SEPARATOR . 'somefile.php:2:44'
+            ],
+            'warnAboutOriginalBadStaticCall' => [
+                '<?php
+                    class A {
+                        public static function makeArray() : array {
+                            return ["hello"];
+                        }
+                    }
+
+                    $arr = A::makeArray();
+
+                    foreach ($arr as $a) {
+                        echo $a;
+                    }',
+                'error_message' => 'MixedAssignment - src' . DIRECTORY_SEPARATOR . 'somefile.php:10:38 - Unable to determine the type that $a is being assigned to. Consider improving the type at src' . DIRECTORY_SEPARATOR . 'somefile.php:3:62'
+            ],
+            'warnAboutOriginalBadInstanceCall' => [
+                '<?php
+                    class A {
+                        public function makeArray() : array {
+                            return ["hello"];
+                        }
+                    }
+
+                    $arr = (new A)->makeArray();
+
+                    foreach ($arr as $a) {
+                        echo $a;
+                    }',
+                'error_message' => 'MixedAssignment - src' . DIRECTORY_SEPARATOR . 'somefile.php:10:38 - Unable to determine the type that $a is being assigned to. Consider improving the type at src' . DIRECTORY_SEPARATOR . 'somefile.php:3:55'
+            ],
+            'warnAboutDocblockReturnType' => [
+                '<?php
+                    /** @return array[] */
+                    function makeArray() : array {
+                        return [["hello"]];
+                    }
+
+                    $arr = makeArray();
+
+                    foreach ($arr as $some_arr) {
+                        foreach ($some_arr as $a) {
+                            echo $a;
+                        }
+                    }',
+                'error_message' => 'MixedAssignment - src' . DIRECTORY_SEPARATOR . 'somefile.php:10:47 - Unable to determine the type that $a is being assigned to. Consider improving the type at src' . DIRECTORY_SEPARATOR . 'somefile.php:2:33'
+            ],
+            'warnAboutMixedArgument' => [
+                '<?php
+                    function makeArray() : array {
+                        return ["hello"];
+                    }
+
+                    $arr = makeArray();
+
+                    /** @psalm-suppress MixedAssignment */
+                    foreach ($arr as $a) {
+                        echo $a;
+                    }',
+                'error_message' => 'MixedArgument - src' . DIRECTORY_SEPARATOR . 'somefile.php:10:30 - Argument 1 of echo cannot be mixed, expecting string. Consider improving the type at src' . DIRECTORY_SEPARATOR . 'somefile.php:2:44'
+            ],
+            'warnAboutMixedMethodCall' => [
+                '<?php
+                    function makeArray() : array {
+                        return ["hello"];
+                    }
+
+                    $arr = makeArray();
+
+                    /** @psalm-suppress MixedAssignment */
+                    foreach ($arr as $a) {
+                        $a->foo();
+                    }',
+                'error_message' => 'MixedMethodCall - src' . DIRECTORY_SEPARATOR . 'somefile.php:10:29 - Cannot determine the type of $a when calling method foo. Consider improving the type at src' . DIRECTORY_SEPARATOR . 'somefile.php:2:44'
+            ],
+            'warnAboutMixedReturnStatement' => [
+                '<?php
+                    function makeArray() : array {
+                        return ["hello"];
+                    }
+
+                    function foo() : string {
+                        $arr = makeArray();
+
+                        /** @psalm-suppress MixedAssignment */
+                        foreach ($arr as $a) {
+                            return $a;
+                        }
+
+                        return "";
+                    }',
+                'error_message' => 'MixedReturnStatement - src' . DIRECTORY_SEPARATOR . 'somefile.php:11:36 - Could not infer a return type. Consider improving the type at src' . DIRECTORY_SEPARATOR . 'somefile.php:2:44'
+            ],
+            'warnAboutIterableKeySource' => [
+                '<?php
+                    function foo(iterable $arr) : void {
+                        foreach ($arr as $key => $_) {}
+                    }',
+                'error_message' => 'MixedAssignment - src' . DIRECTORY_SEPARATOR . 'somefile.php:3:42 - Unable to determine the type that $key is being assigned to. Consider improving the type at src' . DIRECTORY_SEPARATOR . 'somefile.php:2:43'
+            ],
+            'warnAboutMixedKeySource' => [
+                '<?php
+                    /** @param mixed $arr */
+                    function foo($arr) : void {
+                        foreach ($arr as $key => $_) {}
+                    }',
+                'error_message' => 'MixedAssignment - src' . DIRECTORY_SEPARATOR . 'somefile.php:4:42 - Unable to determine the type that $key is being assigned to. Consider improving the type at src' . DIRECTORY_SEPARATOR . 'somefile.php:3:34'
+            ],
+            'warnAboutMixedArgumentTypeCoercionSource' => [
+                '<?php
+                    /** @param array<string> $arr */
+                    function takesArrayOfString(array $arr) : void {
+                        foreach ($arr as $a) {
+                            echo $a;
+                        }
+                    }
+
+                    /** @param mixed $a */
+                    function takesArray($a) : void {
+                        $arr = [$a];
+                        takesArrayOfString($arr);
+                    }',
+                'error_message' => 'MixedArgumentTypeCoercion - src' . DIRECTORY_SEPARATOR . 'somefile.php:12:44 - Argument 1 of takesArrayOfString expects array<array-key, string>, parent type array{mixed} provided. Consider improving the type at src' . DIRECTORY_SEPARATOR . 'somefile.php:10:41'
             ],
         ];
     }

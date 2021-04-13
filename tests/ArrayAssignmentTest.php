@@ -2,7 +2,6 @@
 namespace Psalm\Tests;
 
 use Psalm\Context;
-use Psalm\Issue\InvalidArrayOffset;
 
 class ArrayAssignmentTest extends TestCase
 {
@@ -437,6 +436,17 @@ class ArrayAssignmentTest extends TestCase
                     '$foo' => 'array{a: int, b: array{int, int}}',
                 ],
             ],
+            'objectLikeArrayIsNonEmpty' => [
+                '<?php
+                    /**
+                     * @param array{a?: string, b: string} $arg
+                     * @return non-empty-array<string, string>
+                     */
+                    function test(array $arg): array {
+                        return $arg;
+                    }
+                ',
+            ],
             'nestedTKeyedArrayAddition' => [
                 '<?php
                     $foo = [];
@@ -863,6 +873,13 @@ class ArrayAssignmentTest extends TestCase
                     '$f' => 'array{0: string}',
                 ],
             ],
+            'dontIncrementIntOffsetForKeyedItems' => [
+                '<?php
+                    $a = [1, "a" => 2, 3];',
+                'assertions' => [
+                    '$a' => 'array{0: int, 1: int, a: int}',
+                ],
+            ],
             'assignArrayOrSetNull' => [
                 '<?php
                     $a = [];
@@ -1201,6 +1218,7 @@ class ArrayAssignmentTest extends TestCase
                          */
                         private $ints = [];
 
+                        /** @no-named-arguments */
                         public function set(int ...$ints): void {
                             $this->ints = $ints;
                         }
@@ -1485,6 +1503,38 @@ class ArrayAssignmentTest extends TestCase
                     return [...$data];
                 }'
             ],
+            'unpackCanBeEmpty' => [
+                '<?php
+                    $x = [];
+                    $y = [];
+
+                    $x = [...$x, ...$y];
+
+                    $x ? 1 : 0;
+                ',
+            ],
+            'unpackEmptyKeepsCorrectKeys' => [
+                '<?php
+                    $a = [];
+                    $b = [1];
+                    $c = [];
+                    $d = [2];
+
+                    $e = [...$a, ...$b, ...$c, ...$d, 3];
+                ',
+                'assertions' => ['$e' => 'array{int, int, int}']
+            ],
+            'unpackNonObjectlikePreventsObjectlikeArray' => [
+                '<?php
+                    /** @return list<mixed> */
+                    function test(): array {
+                        return [];
+                    }
+
+                    $x = [...test(), "a" => "b"];
+                ',
+                'assertions' => ['$x' => 'non-empty-array<int|string, mixed>']
+            ],
             'ArrayOffsetNumericSupPHPINTMAX' => [
                 '<?php
                     $_a = [
@@ -1507,11 +1557,21 @@ class ArrayAssignmentTest extends TestCase
                         return $list;
                     }'
             ],
+            'ArrayCreateTemplateArrayKey' => [
+                '/**
+                  * @template K of array-key
+                  * @param K $key
+                  */
+                function with($key): void
+                {
+                    [$key => 123];
+                }',
+            ],
         ];
     }
 
     /**
-     * @return iterable<string,array{string,error_message:string,2?:string[],3?:bool,4?:string}>
+     * @return iterable<string,array{string,error_message:string,1?:string[],2?:bool,3?:string}>
      */
     public function providerInvalidCodeParse(): iterable
     {
@@ -1783,6 +1843,19 @@ class ArrayAssignmentTest extends TestCase
                     return [...$data];
                 }',
                 'error_message' => 'DuplicateArrayKey'
+            ],
+            'unpackArrayWithArrayKeyIntoArray' => [
+                '<?php
+
+                /**
+                 * @param array<array-key, mixed> $data
+                 * @return list<mixed>
+                 */
+                function unpackArray(array $data): array
+                {
+                    return [...$data];
+                }',
+                'error_message' => 'DuplicateArrayKey',
             ],
             'ArrayCreateOffsetObject' => [
                 '<?php

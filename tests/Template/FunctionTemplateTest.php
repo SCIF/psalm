@@ -954,7 +954,7 @@ class FunctionTemplateTest extends TestCase
                     }
 
                     /**
-                     * @return Generator<array<int>>
+                     * @return Generator<int, array<int>>
                      */
                     function genIters(): Generator {
                         yield [1,2,3];
@@ -1444,11 +1444,116 @@ class FunctionTemplateTest extends TestCase
 
                     $value = takesClosure(function(Foo $foo) : void {})(new Foo());'
             ],
+            'subtractTemplatedNull' => [
+                '<?php
+                    /**
+                     * @template T
+                     * @param T|null $var
+                     * @return T
+                     */
+                    function notNull($var) {
+                        if ($var === null) {
+                            throw new \InvalidArgumentException("");
+                        }
+
+                        return $var;
+                    }
+
+                    function takesNullableString(?string $s) : string {
+                        return notNull($s);
+                    }'
+            ],
+            'subtractTemplatedInt' => [
+                '<?php
+                    /**
+                     * @template T
+                     * @param T|int $var
+                     * @return T
+                     */
+                    function notNull($var) {
+                        if (\is_int($var)) {
+                            throw new \InvalidArgumentException("");
+                        }
+
+                        return $var;
+                    }
+
+                    function takesNullableString(string|int $s) : string {
+                        return notNull($s);
+                    }',
+                [],
+                [],
+                '8.0'
+            ],
+            'templateChildClass' => [
+                '<?php
+                    /** @template T */
+                    class Collection {
+                        /**
+                         * @param T $t
+                         */
+                        private function add($t) : void {}
+
+                        /**
+                         * @template TChild as T
+                         * @param TChild $default
+                         *
+                         * @return TChild
+                         */
+                        public function get($default)
+                        {
+                            $this->add($default);
+
+                            return $default;
+                        }
+                    }'
+            ],
+            'isArrayCheckOnTemplated' => [
+                '<?php
+                    /**
+                     * @template TIterable of iterable
+                     */
+                    function toList(iterable $iterable): void {
+                        if (is_array($iterable)) {}
+                    }'
+            ],
+            'SKIPPED-transformNestedTemplateWherePossible' => [
+                '<?php
+                    /**
+                     * @template TValue
+                     * @template TArray of non-empty-array<TValue>
+                     * @param TArray $arr
+                     * @return TValue
+                     */
+                    function toList(array $arr): array {
+                        return reset($arr);
+                    }'
+            ],
+            'callTemplatedFunctionWithTemplatedClassString' => [
+                '<?php
+                    /**
+                     * @template Ta of object
+                     * @psalm-param Ta $obj
+                     * @return Ta
+                     */
+                    function a(string $str, object $obj) {
+                        $class = get_class($obj);
+                        return deserialize_object($str, $class);
+                    }
+
+                    /**
+                     * @psalm-template Tb
+                     * @psalm-param class-string<Tb> $type
+                     * @psalm-return Tb
+                     * @psalm-suppress InvalidReturnType
+                     */
+                    function deserialize_object(string $data, string $type) {}'
+            ],
         ];
     }
 
     /**
-     * @return iterable<string,array{string,error_message:string,2?:string[],3?:bool,4?:string}>
+     * @return iterable<string,array{string,error_message:string,1?:string[],2?:bool,3?:string}>
      */
     public function providerInvalidCodeParse(): iterable
     {

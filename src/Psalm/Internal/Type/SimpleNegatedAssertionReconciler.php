@@ -582,8 +582,14 @@ class SimpleNegatedAssertionReconciler extends Reconciler
                 if ($existing_var_atomic_types['string'] instanceof Type\Atomic\TLowercaseString) {
                     $existing_var_type->addType(new Type\Atomic\TNonEmptyLowercaseString);
                 } else {
-                    $existing_var_type->addType(new Type\Atomic\TNonEmptyString);
+                    $existing_var_type->addType(new Type\Atomic\TNonFalsyString);
                 }
+            }
+
+            if ($existing_var_type->hasBool()) {
+                $existing_var_type->removeType('bool');
+
+                $existing_var_type->addType(new Type\Atomic\TTrue);
             }
 
             self::removeFalsyNegatedLiteralTypes(
@@ -701,7 +707,7 @@ class SimpleNegatedAssertionReconciler extends Reconciler
         }
 
         if (isset($existing_var_atomic_types['string'])) {
-            if (!$existing_var_atomic_types['string'] instanceof Type\Atomic\TNonEmptyString
+            if (!$existing_var_atomic_types['string'] instanceof Type\Atomic\TNonFalsyString
                 && !$existing_var_atomic_types['string'] instanceof Type\Atomic\TClassString
                 && !$existing_var_atomic_types['string'] instanceof Type\Atomic\TDependentGetClass
             ) {
@@ -712,7 +718,7 @@ class SimpleNegatedAssertionReconciler extends Reconciler
                 if ($existing_var_atomic_types['string'] instanceof Type\Atomic\TLowercaseString) {
                     $existing_var_type->addType(new Type\Atomic\TNonEmptyLowercaseString);
                 } else {
-                    $existing_var_type->addType(new Type\Atomic\TNonEmptyString);
+                    $existing_var_type->addType(new Type\Atomic\TNonFalsyString);
                 }
             } elseif ($existing_var_type->isSingle() && !$is_equality) {
                 if ($code_location && $key) {
@@ -1164,6 +1170,10 @@ class SimpleNegatedAssertionReconciler extends Reconciler
                 } elseif ($existing_var_type->from_calculation) {
                     $non_int_types[] = new TFloat();
                 }
+            } elseif ($type instanceof TNumeric) {
+                $did_remove_type = true;
+                $non_int_types[] = new TString();
+                $non_int_types[] = new TFloat();
             } else {
                 $non_int_types[] = $type;
             }
@@ -1255,6 +1265,10 @@ class SimpleNegatedAssertionReconciler extends Reconciler
                 if ($is_equality) {
                     $non_float_types[] = $type;
                 }
+            } elseif ($type instanceof TNumeric) {
+                $did_remove_type = true;
+                $non_float_types[] = new TString();
+                $non_float_types[] = new TInt();
             } else {
                 $non_float_types[] = $type;
             }

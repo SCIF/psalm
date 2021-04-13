@@ -1,10 +1,6 @@
 <?php
 namespace Psalm\Tests;
 
-use const DIRECTORY_SEPARATOR;
-use Psalm\Config;
-use Psalm\Context;
-
 class AttributeTest extends TestCase
 {
     use Traits\InvalidCodeAnalysisTestTrait;
@@ -121,11 +117,20 @@ class AttributeTest extends TestCase
                 [],
                 '8.0'
             ],
+            'allowsRepeatableFlag' => [
+                '<?php
+                    #[Attribute(Attribute::TARGET_ALL|Attribute::IS_REPEATABLE)] // results in int(127)
+                    class A {}
+                ',
+                [],
+                [],
+                '8.0'
+            ],
         ];
     }
 
     /**
-     * @return iterable<string,array{string,error_message:string,2?:string[],3?:bool,4?:string}>
+     * @return iterable<string,array{string,error_message:string,1?:string[],2?:bool,3?:string}>
      */
     public function providerInvalidCodeParse(): iterable
     {

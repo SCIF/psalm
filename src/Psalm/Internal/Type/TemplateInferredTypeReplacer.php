@@ -3,39 +3,16 @@
 namespace Psalm\Internal\Type;
 
 use Psalm\Codebase;
-use Psalm\CodeLocation;
-use Psalm\Internal\Analyzer\StatementsAnalyzer;
-use Psalm\Internal\Type\Comparator\CallableTypeComparator;
 use Psalm\Internal\Type\Comparator\UnionTypeComparator;
-use Psalm\Internal\Type\TemplateResult;
-use Psalm\Internal\Type\TypeCombiner;
-use Psalm\StatementsSource;
-use Psalm\Storage\FileStorage;
 use Psalm\Type;
 use Psalm\Type\Atomic;
-use Psalm\Type\Atomic\TFloat;
-use Psalm\Type\Atomic\TInt;
 use Psalm\Type\Atomic\TIterable;
-use Psalm\Type\Atomic\TLiteralFloat;
-use Psalm\Type\Atomic\TLiteralInt;
-use Psalm\Type\Atomic\TLiteralString;
 use Psalm\Type\Atomic\TNamedObject;
-use Psalm\Type\Atomic\TString;
 use Psalm\Type\Atomic\TTemplateParam;
 use Psalm\Type\Union;
-use function array_filter;
 use function array_merge;
 use function array_shift;
-use function array_unique;
 use function array_values;
-use function count;
-use function get_class;
-use function implode;
-use function is_string;
-use function reset;
-use function sort;
-use function strpos;
-use function strval;
 use function substr;
 
 class TemplateInferredTypeReplacer
@@ -252,7 +229,12 @@ class TemplateInferredTypeReplacer
                         if (UnionTypeComparator::isContainedBy(
                             $codebase,
                             new Type\Union([$candidate_atomic_type]),
-                            $atomic_type->conditional_type
+                            $atomic_type->conditional_type,
+                            false,
+                            false,
+                            null,
+                            false,
+                            false
                         )
                             && (!$candidate_atomic_type instanceof Type\Atomic\TInt
                                 || $atomic_type->conditional_type->getId() !== 'float')
@@ -261,7 +243,12 @@ class TemplateInferredTypeReplacer
                         } elseif (!UnionTypeComparator::isContainedBy(
                             $codebase,
                             $atomic_type->conditional_type,
-                            new Type\Union([$candidate_atomic_type])
+                            new Type\Union([$candidate_atomic_type]),
+                            false,
+                            false,
+                            null,
+                            false,
+                            false
                         )) {
                             $matching_else_types[] = $candidate_atomic_type;
                         }
@@ -274,7 +261,12 @@ class TemplateInferredTypeReplacer
                         && UnionTypeComparator::isContainedBy(
                             $codebase,
                             $if_candidate_type,
-                            $atomic_type->conditional_type
+                            $atomic_type->conditional_type,
+                            false,
+                            false,
+                            null,
+                            false,
+                            false
                         )
                     ) {
                         $if_template_type = clone $atomic_type->if_type;
@@ -297,7 +289,12 @@ class TemplateInferredTypeReplacer
                         && UnionTypeComparator::isContainedBy(
                             $codebase,
                             $else_candidate_type,
-                            $atomic_type->as_type
+                            $atomic_type->as_type,
+                            false,
+                            false,
+                            null,
+                            false,
+                            false
                         )
                     ) {
                         $else_template_type = clone $atomic_type->else_type;

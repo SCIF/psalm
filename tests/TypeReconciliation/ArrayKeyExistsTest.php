@@ -267,6 +267,24 @@ class ArrayKeyExistsTest extends \Psalm\Tests\TestCase
                         }
                     }',
             ],
+            'arrayKeyExistsVariable' => [
+                '<?php
+                    class pony
+                    {
+                    }
+                    /**
+                     * @param array{0?: string, test?: string, pony?: string} $params
+                     * @return string|null
+                     */
+                    function a(array $params = [])
+                    {
+                        foreach ([0, "test", pony::class] as $key) {
+                            if (\array_key_exists($key, $params)) {
+                                return $params[$key];
+                            }
+                        }
+                    }'
+            ],
             'noCrashOnArrayKeyExistsBracket' => [
                 '<?php
                     class MyCollection {
@@ -327,11 +345,39 @@ class ArrayKeyExistsTest extends \Psalm\Tests\TestCase
                         return 1;
                     }'
             ],
+            'comparesStringAndAllIntKeysCorrectly' => [
+                '<?php
+                    /**
+                     * @param array<1|2|3, string> $arr
+                     * @return bool
+                     */
+                    function checkArrayKeyExistsComparison(array $arr, string $key): bool
+                    {
+                        if (array_key_exists($key, $arr)) {
+                            return true;
+                        }
+                        return false;
+                    }'
+            ],
+            'comparesStringAndAllIntKeysCorrectlyNegated' => [
+                '<?php
+                    /**
+                     * @param array<1|2|3, string> $arr
+                     * @return bool
+                     */
+                    function checkArrayKeyExistsComparisonNegated(array $arr, string $key): bool
+                    {
+                        if (!array_key_exists($key, $arr)) {
+                            return false;
+                        }
+                        return true;
+                    }'
+            ],
         ];
     }
 
     /**
-     * @return iterable<string,array{string,error_message:string,2?:string[],3?:bool,4?:string}>
+     * @return iterable<string,array{string,error_message:string,1?:string[],2?:bool,3?:string}>
      */
     public function providerInvalidCodeParse(): iterable
     {

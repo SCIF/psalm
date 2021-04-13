@@ -835,6 +835,14 @@ class ArrayAccessTest extends TestCase
                         return $s["a"];
                     }',
             ],
+            'simpleXmlArrayFetchChildren' => [
+                '<?php
+                    function iterator(SimpleXMLElement $xml): iterable {
+                        foreach ($xml->children() as $img) {
+                            yield $img["src"] ?? "";
+                        }
+                    }',
+            ],
             'assertOnArrayAccess' => [
                 '<?php
                     class A {
@@ -979,7 +987,7 @@ class ArrayAccessTest extends TestCase
     }
 
     /**
-     * @return iterable<string,array{string,error_message:string,2?:string[],3?:bool,4?:string}>
+     * @return iterable<string,array{string,error_message:string,1?:string[],2?:bool,3?:string}>
      */
     public function providerInvalidCodeParse(): iterable
     {

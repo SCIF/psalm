@@ -24,7 +24,6 @@ use Psalm\Storage\FunctionLikeParameter;
 use Psalm\Storage\MethodStorage;
 use Psalm\Type;
 use function strtolower;
-use function is_string;
 use function in_array;
 use Psalm\Issue\MissingImmutableAnnotation;
 use function count;
@@ -680,15 +679,6 @@ class MethodComparator
 
         $guide_class_name = $guide_classlike_storage->name;
 
-        if ($implementer_classlike_storage->template_extended_params) {
-            self::transformTemplates(
-                $implementer_classlike_storage->template_extended_params,
-                $guide_class_name,
-                $guide_method_storage_param_type,
-                $codebase
-            );
-        }
-
         if ($implementer_classlike_storage->is_trait) {
             $implementer_called_class_storage = $codebase->classlike_storage_provider->get(
                 $implementer_called_class_name
@@ -735,6 +725,15 @@ class MethodComparator
                     $guide_method_storage_param_type->addType($as_t);
                 }
             }
+        }
+
+        if ($implementer_classlike_storage->template_extended_params) {
+            self::transformTemplates(
+                $implementer_classlike_storage->template_extended_params,
+                $guide_class_name,
+                $guide_method_storage_param_type,
+                $codebase
+            );
         }
 
         $union_comparison_results = new TypeComparisonResult();
@@ -919,7 +918,9 @@ class MethodComparator
         $implementer_method_storage_return_type = \Psalm\Internal\Type\TypeExpander::expandUnion(
             $codebase,
             $implementer_return_type,
-            $implementer_classlike_storage->name,
+            $implementer_classlike_storage->is_trait
+                ? $implementer_called_class_name
+                : $implementer_classlike_storage->name,
             $implementer_called_class_name,
             $implementer_classlike_storage->parent_class
         );

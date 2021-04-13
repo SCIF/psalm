@@ -81,8 +81,12 @@ class TArray extends \Psalm\Type\Atomic
         return true;
     }
 
-    public function getAssertionString(): string
+    public function getAssertionString(bool $exact = false): string
     {
-        return $this->getKey();
+        if (!$exact || $this->type_params[1]->isMixed()) {
+            return 'array';
+        }
+
+        return $this->toNamespacedString(null, [], null, false);
     }
 }

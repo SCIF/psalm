@@ -9,7 +9,8 @@ use function error_log;
 use LanguageServerProtocol\CompletionList;
 use LanguageServerProtocol\Hover;
 use LanguageServerProtocol\Location;
-use LanguageServerProtocol\MarkedString;
+use LanguageServerProtocol\MarkupContent;
+use LanguageServerProtocol\MarkupKind;
 use LanguageServerProtocol\Position;
 use LanguageServerProtocol\Range;
 use LanguageServerProtocol\TextDocumentIdentifier;
@@ -211,8 +212,14 @@ class TextDocument
             return new Success(null);
         }
 
-        $contents = [];
-        $contents[] = new MarkedString('php', $symbol_information);
+        $content = "```php\n" . $symbol_information['type'] . "\n```";
+        if (isset($symbol_information['description'])) {
+            $content .= "\n---\n" . $symbol_information['description'];
+        }
+        $contents = new MarkupContent(
+            MarkupKind::MARKDOWN,
+            $content
+        );
 
         return new Success(new Hover($contents, $range));
     }
@@ -249,18 +256,30 @@ class TextDocument
             return new Success([]);
         }
 
-        if (!$completion_data) {
+        $type_context = $this->codebase->getTypeContextAtPosition($file_path, $position);
+
+        if (!$completion_data && !$type_context) {
             error_log('completion not found at ' . $position->line . ':' . $position->character);
 
             return new Success([]);
         }
 
-        [$recent_type, $gap, $offset] = $completion_data;
+        if ($completion_data) {
+            [$recent_type, $gap, $offset] = $completion_data;
 
-        if ($gap === '->' || $gap === '::') {
-            $completion_items = $this->codebase->getCompletionItemsForClassishThing($recent_type, $gap);
+            if ($gap === '->' || $gap === '::') {
+                $completion_items = $this->codebase->getCompletionItemsForClassishThing($recent_type, $gap);
+            } elseif ($gap === '[') {
+                $completion_items = $this->codebase->getCompletionItemsForArrayKeys($recent_type);
+            } else {
+                $completion_items = $this->codebase->getCompletionItemsForPartialSymbol(
+                    $recent_type,
+                    $offset,
+                    $file_path
+                );
+            }
         } else {
-            $completion_items = $this->codebase->getCompletionItemsForPartialSymbol($recent_type, $offset, $file_path);
+            $completion_items = $this->codebase->getCompletionItemsForType($type_context);
         }
 
         return new Success(new CompletionList($completion_items, false));
@@ -283,7 +302,7 @@ class TextDocument
             return new Success(new \LanguageServerProtocol\SignatureHelp());
         }
 
-        $signature_information = $this->codebase->getSignatureInformation($argument_location[0]);
+        $signature_information = $this->codebase->getSignatureInformation($argument_location[0], $file_path);
 
         if (!$signature_information) {
             return new Success(new \LanguageServerProtocol\SignatureHelp());

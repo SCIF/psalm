@@ -20,14 +20,10 @@ use function preg_match;
 
 /**
  * @internal
+ * @extends FunctionLikeAnalyzer<PhpParser\Node\Expr\Closure|PhpParser\Node\Expr\ArrowFunction>
  */
 class ClosureAnalyzer extends FunctionLikeAnalyzer
 {
-    /**
-     * @var PhpParser\Node\Expr\Closure|PhpParser\Node\Expr\ArrowFunction
-     */
-    protected $function;
-
     /**
      * @param PhpParser\Node\Expr\Closure|PhpParser\Node\Expr\ArrowFunction $function
      */
@@ -137,7 +133,9 @@ class ClosureAnalyzer extends FunctionLikeAnalyzer
                     $context->vars_in_scope[$use_var_id] = Type::getMixed();
                 }
 
-                if ($statements_analyzer->data_flow_graph instanceof \Psalm\Internal\Codebase\VariableUseGraph) {
+                if ($statements_analyzer->data_flow_graph instanceof \Psalm\Internal\Codebase\VariableUseGraph
+                    && $context->hasVariable($use_var_id)
+                ) {
                     $parent_nodes = $context->vars_in_scope[$use_var_id]->parent_nodes;
 
                     foreach ($parent_nodes as $parent_node) {
@@ -190,8 +188,6 @@ class ClosureAnalyzer extends FunctionLikeAnalyzer
                             );
                         }
                     }
-                } else {
-                    $use_context->vars_in_scope[$use_var_id] = Type::getMixed();
                 }
 
                 $use_context->vars_possibly_in_scope[$use_var_id] = true;

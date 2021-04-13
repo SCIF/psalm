@@ -6,6 +6,8 @@ use Psalm\Codebase;
 use Psalm\Config;
 use Psalm\Internal\Analyzer\ProjectAnalyzer;
 use Psalm\Internal\Codebase\Analyzer;
+use Psalm\Internal\EventDispatcher;
+use Psalm\Internal\ExecutionEnvironment\BuildInfoCollector;
 use Psalm\IssueBuffer;
 use Psalm\Report\ReportOptions;
 
@@ -63,7 +65,10 @@ class IssueBufferTest extends TestCase
         $analyzer = $this->createMock(Analyzer::class);
         $analyzer->method('getTotalTypeCoverage')->willReturn([0, 0]);
 
+        $eventDispatcher = $this->createMock(EventDispatcher::class);
+
         $config = $this->createMock(Config::class);
+        $config->eventDispatcher = $eventDispatcher;
 
         $codebase = $this->createMock(Codebase::class);
         $codebase->analyzer = $analyzer;

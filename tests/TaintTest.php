@@ -467,6 +467,35 @@ class TaintTest extends TestCase
 
                     echo $a->x;'
             ],
+            'dontTaintSpecializedCallsForAnonymousInstance' => [
+                '<?php
+
+                    class StringRenderer {
+                        /** @psalm-taint-specialize */
+                        public function render(string $x) {
+                            return $x;
+                        }
+                    }
+
+                    $notEchoed = (new StringRenderer())->render($_GET["untrusted"]);
+                    echo (new StringRenderer())->render("a");'
+            ],
+            'dontTaintSpecializedCallsForStubMadeInstance' => [
+                '<?php
+
+                    class StringRenderer {
+                        /** @psalm-taint-specialize */
+                        public function render(string $x) {
+                            return $x;
+                        }
+                    }
+
+                    /** @psalm-suppress InvalidReturnType */
+                    function stub(): StringRenderer { }
+
+                    $notEchoed = stub()->render($_GET["untrusted"]);
+                    echo stub()->render("a");'
+            ],
             'suppressTaintedInput' => [
                 '<?php
                     function unsafe() {
@@ -1591,6 +1620,32 @@ class TaintTest extends TestCase
                     echo $a->isUnsafe();',
                 'error_message' => 'TaintedHtml',
             ],
+            'taintSpecializedMethodForAnonymousInstance' => [
+                '<?php
+                    /** @psalm-taint-specialize */
+                    class Unsafe {
+                        public function isUnsafe() {
+                            return $_GET["unsafe"];
+                        }
+                    }
+                    echo (new Unsafe())->isUnsafe();',
+                'error_message' => 'TaintedHtml',
+            ],
+            'taintSpecializedMethodForStubMadeInstance' => [
+                '<?php
+                    /** @psalm-taint-specialize */
+                    class Unsafe {
+                        public function isUnsafe() {
+                            return $_GET["unsafe"];
+                        }
+                    }
+
+                    /** @psalm-suppress InvalidReturnType */
+                    function stub(): Unsafe { }
+
+                    echo stub()->isUnsafe();',
+                'error_message' => 'TaintedHtml',
+            ],
             'doTaintSpecializedInstanceProperty' => [
                 '<?php
                     /** @psalm-taint-specialize */
@@ -1994,6 +2049,88 @@ class TaintTest extends TestCase
                     // technically a false-positive, but desired behaviour in lieu
                     // of better information
                     echo data($_GET, "x", "int");',
+                'error_message' => 'TaintedHtml',
+            ],
+            'psalmFlowOnInstanceMethod' => [
+                '<?php //--taint-analysis
+                    class Wdb {
+                        /**
+                          * @psalm-pure
+                          *
+                          * @param string $text
+                          * @return string
+                          * @psalm-flow ($text) -> return
+                          */
+                        public function esc_like($text) {}
+
+                        /**
+                          * @param string $query
+                          * @return int|bool
+                          *
+                          * @psalm-taint-sink sql $query
+                          */
+                        public function query($query){}
+                    }
+
+                    $wdb = new Wdb();
+
+                    $order = $wdb->esc_like($_GET["order"]);
+                    $res = $wdb->query("SELECT blah FROM tablea ORDER BY ". $order. " DESC");',
+                'error_message' => 'TaintedSql',
+            ],
+            'psalmFlowOnStaticMethod' => [
+                '<?php //--taint-analysis
+                    class Wdb {
+                        /**
+                          * @psalm-pure
+                          *
+                          * @param string $text
+                          * @return string
+                          * @psalm-flow ($text) -> return
+                          */
+                        public static function esc_like($text) {}
+
+                        /**
+                          * @param string $query
+                          * @return int|bool
+                          *
+                          * @psalm-taint-sink sql $query
+                          */
+                        public static function query($query){}
+                    }
+
+                    $order = Wdb::esc_like($_GET["order"]);
+                    $res = Wdb::query("SELECT blah FROM tablea ORDER BY ". $order. " DESC");',
+                'error_message' => 'TaintedSql',
+            ],
+            'taintArrayKey' => [
+                '<?php
+                    function doTheMagic(array $values) {
+                        foreach ($values as $key => $value) {
+                            echo $key . " " . $value;
+                        }
+                    }
+
+                    doTheMagic([(string)$_GET["bad"] => "foo"]);',
+                'error_message' => 'TaintedHtml',
+            ],
+            'taintArrayKeyWithExplicitSink' => [
+                '<?php
+                    /** @psalm-taint-sink html $values */
+                    function doTheMagic(array $values) {}
+
+                    doTheMagic([(string)$_GET["bad"] => "foo"]);',
+                'error_message' => 'TaintedHtml',
+            ],
+            'taintThroughReset' => [
+                '<?php
+                    function foo(array $arr) : void {
+                        if ($arr) {
+                            echo reset($arr);
+                        }
+                    }
+
+                    foo([$_GET["a"]]);',
                 'error_message' => 'TaintedHtml',
             ],
             /*

@@ -12,15 +12,14 @@ use Psalm\Type\Atomic\TScalarClassConstant;
 use function array_merge;
 use function array_search;
 use function array_keys;
-use function array_values;
-use function array_filter;
-use function is_string;
 
 class ClassTemplateParamCollector
 {
     /**
      * @param lowercase-string $method_name
-     * @return array<string, array<string, Type\Union>>|null
+     * @return array<string, non-empty-array<string, Type\Union>>|null
+     * @psalm-suppress MoreSpecificReturnType
+     * @psalm-suppress LessSpecificReturnStatement
      */
     public static function collect(
         Codebase $codebase,

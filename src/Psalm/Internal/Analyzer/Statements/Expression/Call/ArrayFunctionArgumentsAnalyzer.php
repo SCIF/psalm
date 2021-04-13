@@ -11,7 +11,6 @@ use Psalm\Internal\Analyzer\StatementsAnalyzer;
 use Psalm\Internal\Codebase\InternalCallMapHandler;
 use Psalm\Internal\Type\TypeCombiner;
 use Psalm\Internal\Type\TemplateStandinTypeReplacer;
-use Psalm\Internal\Type\TemplateInferredTypeReplacer;
 use Psalm\Internal\Type\Comparator\UnionTypeComparator;
 use Psalm\CodeLocation;
 use Psalm\Context;
@@ -23,6 +22,7 @@ use Psalm\Issue\TooFewArguments;
 use Psalm\Issue\TooManyArguments;
 use Psalm\Issue\ArgumentTypeCoercion;
 use Psalm\IssueBuffer;
+use Psalm\Node\Expr\VirtualArrayDimFetch;
 use Psalm\Type;
 use Psalm\Type\Atomic\TKeyedArray;
 use Psalm\Type\Atomic\TArray;
@@ -160,7 +160,7 @@ class ArrayFunctionArgumentsAnalyzer
 
                 ArrayAssignmentAnalyzer::analyze(
                     $statements_analyzer,
-                    new PhpParser\Node\Expr\ArrayDimFetch(
+                    new VirtualArrayDimFetch(
                         $args[0]->value,
                         null,
                         $args[$i]->value->getAttributes()

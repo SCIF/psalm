@@ -1006,11 +1006,39 @@ class IssetTest extends \Psalm\Tests\TestCase
                         echo $test[0];
                     }'
             ],
+            'issetOnStaticProperty' => [
+                '<?php
+                    class Singleton {
+                        private static self $instance;
+                        public function getInstance(): self {
+                            if (isset(self::$instance)) {
+                                return self::$instance;
+                            }
+                            return self::$instance = new self();
+                        }
+                        private function __construct() {}
+                    }
+                ',
+            ],
+            'negatedIssetOnStaticProperty' => [
+                '<?php
+                    class Singleton {
+                        private static self $instance;
+                        public function getInstance(): self {
+                            if (!isset(self::$instance)) {
+                                self::$instance = new self();
+                            }
+                            return self::$instance;
+                        }
+                        private function __construct() {}
+                    }
+                ',
+            ],
         ];
     }
 
     /**
-     * @return iterable<string,array{string,error_message:string,2?:string[],3?:bool,4?:string}>
+     * @return iterable<string,array{string,error_message:string,1?:string[],2?:bool,3?:string}>
      */
     public function providerInvalidCodeParse(): iterable
     {

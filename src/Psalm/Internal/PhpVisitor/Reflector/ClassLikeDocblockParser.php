@@ -164,6 +164,10 @@ class ClassLikeDocblockParser
             $info->consistent_constructor = true;
         }
 
+        if (isset($parsed_docblock->tags['psalm-consistent-templates'])) {
+            $info->consistent_templates = true;
+        }
+
         if (isset($parsed_docblock->tags['psalm-internal'])) {
             $psalm_internal = reset($parsed_docblock->tags['psalm-internal']);
             if ($psalm_internal) {
@@ -370,9 +374,12 @@ class ClassLikeDocblockParser
                 $php_string = '<?php class A { ' . $function_docblock . ' public ' . $function_string . '{} }';
 
                 try {
+                    $has_errors = false;
+
                     $statements = \Psalm\Internal\Provider\StatementsProvider::parseStatements(
                         $php_string,
-                        $codebase->php_major_version . '.' . $codebase->php_minor_version
+                        $codebase->php_major_version . '.' . $codebase->php_minor_version,
+                        $has_errors
                     );
                 } catch (\Exception $e) {
                     throw new DocblockParseException('Badly-formatted @method string ' . $method_entry);
@@ -409,6 +416,10 @@ class ClassLikeDocblockParser
 
         if (isset($parsed_docblock->tags['psalm-stub-override'])) {
             $info->stub_override = true;
+        }
+
+        if ($parsed_docblock->description) {
+            $info->description = $parsed_docblock->description;
         }
 
         self::addMagicPropertyToInfo($comment, $info, $parsed_docblock->tags, 'property');
