@@ -12,6 +12,7 @@ use Psalm\Internal\Type\TemplateResult;
 use Psalm\CodeLocation;
 use Psalm\Context;
 use Psalm\Issue\InvalidArgument;
+use Psalm\Issue\InvalidDocblock;
 use Psalm\Issue\InvalidScalarArgument;
 use Psalm\Issue\MixedArgumentTypeCoercion;
 use Psalm\Issue\ArgumentTypeCoercion;
@@ -622,10 +623,8 @@ class CallAnalyzer
     /**
      * @param PhpParser\Node\Identifier|PhpParser\Node\Name $expr
      * @param  \Psalm\Storage\Assertion[] $assertions
-     * @param  string $thisName
      * @param  list<PhpParser\Node\Arg> $args
-     * @param  array<string, array<string, TemplateBound>> $inferred_upper_bounds,
-     *
+     * @param  array<string, array<string, TemplateBound>> $inferred_upper_bounds
      */
     public static function applyAssertionsToContext(
         PhpParser\NodeAbstract $expr,
@@ -674,12 +673,13 @@ class CallAnalyzer
                 $var_id = is_numeric($var_id) ? (int) $var_id : $var_id;
 
                 if (!is_int($var_id) || !isset($args[$var_id])) {
-                    continue; // any chance to report malformed/not supported assertion?
+                    IssueBuffer::add(new InvalidDocblock('Variable ' . $var_id . ' is not an argument so cannot be asserted', new CodeLocation($statements_analyzer, $expr)));
+                    continue;
                 }
 
                 $arg_value = $args[$var_id]->value;
 
-                $arg_var_id = ExpressionIdentifier::getArrayVarId($arg_value, null, $statements_analyzer); // $c
+                $arg_var_id = ExpressionIdentifier::getArrayVarId($arg_value, null, $statements_analyzer);
 
                 if (!$arg_var_id) {
                     continue;
@@ -687,6 +687,7 @@ class CallAnalyzer
 
                 foreach ($context->vars_in_scope[$arg_var_id]->getAtomicTypes() as $type) {
                     if (!$type instanceof TNamedObject) {
+                        IssueBuffer::add(new InvalidDocblock('Variable ' . $var_id . ' is not an immutable object so assertion cannot be applied', new CodeLocation($statements_analyzer, $expr)));
                         continue 2;
                     }
 
@@ -694,10 +695,23 @@ class CallAnalyzer
                     $property_definition = $class_definition->properties[$property] ?? null;
 
                     if (!$property_definition instanceof PropertyStorage) {
-                        continue 2; // incorrect/not-existing property mentioned in assert-annotation
+                        IssueBuffer::add(
+                            new InvalidDocblock(
+                                sprintf('Property %s is not defined on variable %s so assertion cannot be applied', $property, $var_id),
+                                new CodeLocation($statements_analyzer, $expr)
+                            )
+                        );
+
+                        continue 2;
                     }
 
                     if (!$property_definition->readonly) {
+                        IssueBuffer::add(
+                            new InvalidDocblock(
+                                sprintf('Property %s of variable %s is not read-only/immutable so assertion cannot be applied', $property, $var_id),
+                                new CodeLocation($statements_analyzer, $expr)
+                            )
+                        );
                         continue 2;
                     }
                 }
