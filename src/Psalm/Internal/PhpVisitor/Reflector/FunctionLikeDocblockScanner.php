@@ -1156,6 +1156,14 @@ class FunctionLikeDocblockScanner
                         );
                         continue 2;
                     }
+
+                    if (strpos($assertion['param_name'], $param->name.'->') === 0) {
+                        $storage->if_true_assertions[] = new \Psalm\Storage\Assertion(
+                            str_replace($param->name, (string) $i, $assertion['param_name']),
+                            [$assertion_type_parts]
+                        );
+                        continue 2;
+                    }
                 }
 
                 $storage->if_true_assertions[] = new \Psalm\Storage\Assertion(
@@ -1191,6 +1199,14 @@ class FunctionLikeDocblockScanner
                     if ($param->name === $assertion['param_name']) {
                         $storage->if_false_assertions[] = new \Psalm\Storage\Assertion(
                             $i,
+                            [$assertion_type_parts]
+                        );
+                        continue 2;
+                    }
+
+                    if (strpos($assertion['param_name'], $param->name.'->') === 0) {
+                        $storage->if_false_assertions[] = new \Psalm\Storage\Assertion(
+                            str_replace($param->name, (string) $i, $assertion['param_name']),
                             [$assertion_type_parts]
                         );
                         continue 2;

@@ -9,6 +9,7 @@ use Psalm\Internal\Type\Comparator\UnionTypeComparator;
 use Psalm\CodeLocation;
 use Psalm\FileSource;
 use Psalm\Issue\DocblockTypeContradiction;
+use Psalm\Issue\InvalidDocblock;
 use Psalm\Issue\RedundantIdentityWithTrue;
 use Psalm\Issue\RedundantCondition;
 use Psalm\Issue\RedundantConditionGivenDocblockType;
@@ -16,6 +17,7 @@ use Psalm\Issue\TypeDoesNotContainNull;
 use Psalm\Issue\TypeDoesNotContainType;
 use Psalm\Issue\UnevaluatedCode;
 use Psalm\IssueBuffer;
+use Psalm\Storage\PropertyStorage;
 use Psalm\Type;
 
 use function substr;
@@ -975,6 +977,58 @@ class AssertionFinder
                     if ($var_id) {
                         $if_types[$var_id] = [[$assertion->rule[0][0]]];
                     }
+                } elseif (str_contains($assertion->var_id, '->')) {
+                    [$var_id, $property] = explode('->', $assertion->var_id);
+
+                    $var_id = is_numeric($var_id) ? (int) $var_id : $var_id;
+                    $args = $expr->args;
+
+                    if (!is_int($var_id) || !isset($args[$var_id])) {
+                        IssueBuffer::add(new InvalidDocblock('Variable ' . $var_id . ' is not an argument so cannot be asserted', new CodeLocation($source, $expr)));
+                        continue;
+                    }
+
+                    $arg_value = $args[$var_id]->value;
+
+                    $arg_var_id = ExpressionIdentifier::getArrayVarId($arg_value, null, $source);
+
+                    if (!$arg_var_id) {
+                        continue;
+                    }
+
+                    foreach ($source->getFileAnalyzer()->context->vars_in_scope[$arg_var_id]->getAtomicTypes() as $type) {
+                        if (!$type instanceof Type\Atomic\TNamedObject) {
+                            IssueBuffer::add(new InvalidDocblock('Variable ' . $var_id . ' is not an immutable object so assertion cannot be applied', new CodeLocation($source, $expr)));
+                            continue 2;
+                        }
+
+                        $class_definition = $source->getCodebase()->classlike_storage_provider->get($type->value);
+                        $property_definition = $class_definition->properties[$property] ?? null;
+
+                        if (!$property_definition instanceof PropertyStorage) {
+                            IssueBuffer::add(
+                                new InvalidDocblock(
+                                    sprintf('Property %s is not defined on variable %s so assertion cannot be applied', $property, $var_id),
+                                    new CodeLocation($source, $expr)
+                                )
+                            );
+
+                            continue 2;
+                        }
+
+                        if (!$property_definition->readonly) {
+                            IssueBuffer::add(
+                                new InvalidDocblock(
+                                    sprintf('Property %s of variable %s is not read-only/immutable so assertion cannot be applied', $property, $var_id),
+                                    new CodeLocation($source, $expr)
+                                )
+                            );
+                            continue 2;
+                        }
+                    }
+
+                    $assertion_var_id = str_replace((string) $var_id, $arg_var_id, $assertion->var_id);
+                    $if_types[$assertion_var_id] = [[$assertion->rule[0][0]]];
                 } elseif (\is_string($assertion->var_id)
                     && (
                         $expr instanceof PhpParser\Node\Expr\MethodCall
@@ -1048,6 +1102,27 @@ class AssertionFinder
                             $if_types[$var_id] = [['!' . $assertion->rule[0][0]]];
                         }
                     }
+                } elseif (str_contains($assertion->var_id, '->')) {
+                    [$var_id, $property] = explode('->', $assertion->var_id);
+
+                    $var_id = is_numeric($var_id) ? (int) $var_id : $var_id;
+                    $args = $expr->args;
+
+                    if (!is_int($var_id) || !isset($args[$var_id])) {
+                        //                        IssueBuffer::add(new InvalidDocblock('Variable ' . $var_id . ' is not an argument so cannot be asserted', new CodeLocation($statements_analyzer, $expr)));
+                        continue;
+                    }
+
+                    $arg_value = $args[$var_id]->value;
+
+                    $arg_var_id = ExpressionIdentifier::getArrayVarId($arg_value, null, $source);
+
+                    if (!$arg_var_id) {
+                        continue;
+                    }
+
+                    $assertion_var_id = str_replace((string) $var_id, $arg_var_id, $assertion->var_id);
+                    $if_types[$assertion_var_id] = [['!' . $assertion->rule[0][0]]];
                 } elseif (\is_string($assertion->var_id)
                     && (
                         $expr instanceof PhpParser\Node\Expr\MethodCall
