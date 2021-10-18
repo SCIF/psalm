@@ -103,7 +103,7 @@ class LanguageServer extends AdvancedJsonRpc\Dispatcher
         $this->protocolReader = $reader;
         $this->protocolReader->on(
             'close',
-            function (): void {
+            static function (): void {
                 $this->shutdown();
                 $this->exit();
             }
@@ -114,7 +114,7 @@ class LanguageServer extends AdvancedJsonRpc\Dispatcher
                 /**
                  * @return \Generator<int, \Amp\Promise, mixed, void>
                  */
-                function (Message $msg): \Generator {
+                static function (Message $msg): \Generator {
                     if (!$msg->body) {
                         return;
                     }
@@ -172,7 +172,7 @@ class LanguageServer extends AdvancedJsonRpc\Dispatcher
 
         $this->protocolReader->on(
             'readMessageGroup',
-            function (): void {
+            static function (): void {
                 $this->doAnalysis();
             }
         );
@@ -200,7 +200,7 @@ class LanguageServer extends AdvancedJsonRpc\Dispatcher
     ): Promise {
         return call(
             /** @return \Generator<int, true, mixed, InitializeResult> */
-            function () {
+            static function () {
                 $this->verboseLog("Initializing...");
                 $this->clientStatus('initializing');
 
@@ -354,7 +354,7 @@ class LanguageServer extends AdvancedJsonRpc\Dispatcher
 
         foreach ($uris as $file_path => $uri) {
             $diagnostics = array_map(
-                function (IssueData $issue_data) : Diagnostic {
+                static function (IssueData $issue_data) : Diagnostic {
                     //$check_name = $issue->check_name;
                     $description = $issue_data->message;
                     $severity = $issue_data->severity;

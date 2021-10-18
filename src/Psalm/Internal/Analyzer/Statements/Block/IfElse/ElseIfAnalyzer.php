@@ -89,7 +89,7 @@ class ElseIfAnalyzer
             /**
              * @return Clause
              */
-            function (Clause $c) use ($mixed_var_ids, $elseif_cond_id): Clause {
+            static function (Clause $c) use ($mixed_var_ids, $elseif_cond_id): Clause {
                 $keys = array_keys($c->possibilities);
 
                 $mixed_var_ids = \array_diff($mixed_var_ids, $keys);
@@ -111,7 +111,7 @@ class ElseIfAnalyzer
             /**
              * @return Clause
              */
-            function (Clause $c) use ($assigned_in_conditional_var_ids, $elseif_cond_id): Clause {
+            static function (Clause $c) use ($assigned_in_conditional_var_ids, $elseif_cond_id): Clause {
                 $keys = array_keys($c->possibilities);
 
                 foreach ($keys as $key) {
@@ -144,7 +144,7 @@ class ElseIfAnalyzer
             $elseif_context_clauses = array_values(
                 array_filter(
                     $elseif_context_clauses,
-                    function ($c) use ($reconciled_expression_clauses): bool {
+                    static function ($c) use ($reconciled_expression_clauses): bool {
                         return !in_array($c->hash, $reconciled_expression_clauses);
                     }
                 )
@@ -158,7 +158,7 @@ class ElseIfAnalyzer
         try {
             if (array_filter(
                 $entry_clauses,
-                function ($clause): bool {
+                static function ($clause): bool {
                     return (bool)$clause->possibilities;
                 }
             )) {
@@ -168,7 +168,7 @@ class ElseIfAnalyzer
                      * @param array<string> $carry
                      * @return array<string>
                      */
-                    function (array $carry, Clause $clause): array {
+                    static function (array $carry, Clause $clause): array {
                         return array_merge($carry, array_keys($clause->possibilities));
                     },
                     []

@@ -52,7 +52,7 @@ class ClientHandler
             /**
              * @return \Generator<int, \Amp\Promise, mixed, \Amp\Promise<mixed>>
              */
-            function () use ($id, $method, $params): \Generator {
+            static function () use ($id, $method, $params): \Generator {
                 yield $this->protocolWriter->write(
                     new Message(
                         new AdvancedJsonRpc\Request($id, $method, (object) $params)
@@ -62,7 +62,7 @@ class ClientHandler
                 $deferred = new Deferred();
 
                 $listener =
-                    function (Message $msg) use ($id, $deferred, &$listener): void {
+                    static function (Message $msg) use ($id, $deferred, &$listener): void {
                         error_log('request handler');
                         /**
                          * @psalm-suppress UndefinedPropertyFetch

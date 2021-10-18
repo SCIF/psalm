@@ -26,7 +26,7 @@ class CodeClimateReport extends Report
         $options = $this->pretty ? Json::PRETTY : Json::DEFAULT;
 
         $issues_data = \array_map(
-            function (IssueData $issue): array {
+            static function (IssueData $issue): array {
                 /**
                  * map fields to new structure.
                  * Expected fields:

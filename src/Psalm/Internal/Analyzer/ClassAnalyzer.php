@@ -878,7 +878,7 @@ class ClassAnalyzer extends ClassLikeAnalyzer
             if ($property_type_location && !$fleshed_out_type->isMixed()) {
                 $stmt = array_filter(
                     $stmts,
-                    function ($stmt) use ($property_name): bool {
+                    static function ($stmt) use ($property_name): bool {
                         return $stmt instanceof PhpParser\Node\Stmt\Property
                             && isset($stmt->props[0]->name->name)
                             && $stmt->props[0]->name->name === $property_name;
@@ -1102,7 +1102,7 @@ class ClassAnalyzer extends ClassLikeAnalyzer
                 $constructor_storage = $constructor_class_storage->methods['__construct'];
 
                 $fake_constructor_params = array_map(
-                    function (FunctionLikeParameter $param) : PhpParser\Node\Param {
+                    static function (FunctionLikeParameter $param) : PhpParser\Node\Param {
                         $fake_param = (new PhpParser\Builder\Param($param->name));
                         if ($param->signature_type) {
                             $fake_param->setType((string)$param->signature_type);
@@ -1126,7 +1126,7 @@ class ClassAnalyzer extends ClassLikeAnalyzer
                 );
 
                 $fake_constructor_stmt_args = array_map(
-                    function (FunctionLikeParameter $param) : PhpParser\Node\Arg {
+                    static function (FunctionLikeParameter $param) : PhpParser\Node\Arg {
                         $attributes = $param->location
                             ? [
                                 'startFilePos' => $param->location->raw_file_start,
@@ -1948,7 +1948,7 @@ class ClassAnalyzer extends ClassLikeAnalyzer
         }
 
         $overridden_method_ids = array_map(
-            function ($method_id) {
+            static function ($method_id) {
                 return $method_id->__toString();
             },
             $overridden_method_ids

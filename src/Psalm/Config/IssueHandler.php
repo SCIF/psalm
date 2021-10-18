@@ -146,12 +146,12 @@ class IssueHandler
     {
         return array_filter(
             array_map(
-                function (string $file_name): string {
+                static function (string $file_name): string {
                     return substr($file_name, 0, -4);
                 },
                 scandir(dirname(__DIR__) . '/Issue', SCANDIR_SORT_NONE)
             ),
-            function (string $issue_name): bool {
+            static function (string $issue_name): bool {
                 return $issue_name !== ''
                     && $issue_name !== 'MethodIssue'
                     && $issue_name !== 'PropertyIssue'

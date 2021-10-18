@@ -71,7 +71,7 @@ class IfConditionalAnalyzer
                     $entry_clauses = array_values(
                         array_filter(
                             $entry_clauses,
-                            function (Clause $c) use ($changed_var_ids): bool {
+                            static function (Clause $c) use ($changed_var_ids): bool {
                                 return count($c->possibilities) > 1
                                     || $c->wedge
                                     || !isset($changed_var_ids[array_keys($c->possibilities)[0]]);
@@ -204,7 +204,7 @@ class IfConditionalAnalyzer
              *
              * @return true
              */
-            function (Type\Union $_): bool {
+            static function (Type\Union $_): bool {
                 return true;
             },
             array_diff_key(

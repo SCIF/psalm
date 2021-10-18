@@ -43,7 +43,7 @@ class ErrorBaseline
                 /**
                  * @param array{o:int, s:array<int, string>} $existingIssue
                  */
-                function (int $carry, array $existingIssue): int {
+                static function (int $carry, array $existingIssue): int {
                     return $carry + $existingIssue['o'];
                 },
                 0
@@ -189,7 +189,7 @@ class ErrorBaseline
              *
              * @return array<string,array<string,array{o:int, s:array<int, string>}>>
              */
-            function (array $carry, IssueData $issue): array {
+            static function (array $carry, IssueData $issue): array {
                 if ($issue->severity !== Config::REPORT_ERROR) {
                     return $carry;
                 }
@@ -251,7 +251,7 @@ class ErrorBaseline
                     ('php:' . PHP_VERSION),
                 ],
                 array_map(
-                    function (string $extension) : string {
+                    static function (string $extension) : string {
                         return $extension . ':' . phpversion($extension);
                     },
                     $extensions
@@ -295,7 +295,7 @@ class ErrorBaseline
             /**
              * @param string[] $matches
              */
-            function (array $matches) : string {
+            static function (array $matches) : string {
                 return
                     '<files' .
                     "\n  " .

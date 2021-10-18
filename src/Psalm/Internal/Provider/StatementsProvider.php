@@ -200,14 +200,14 @@ class StatementsProvider
                     );
 
                 $unchanged_members = array_map(
-                    function (int $_): bool {
+                    static function (int $_): bool {
                         return true;
                     },
                     array_flip($unchanged_members)
                 );
 
                 $unchanged_signature_members = array_map(
-                    function (int $_): bool {
+                    static function (int $_): bool {
                         return true;
                     },
                     array_flip($unchanged_signature_members)
@@ -216,7 +216,7 @@ class StatementsProvider
                 $file_path_hash = \md5($file_path);
 
                 $changed_members = array_map(
-                    function (string $key) use ($file_path_hash) : string {
+                    static function (string $key) use ($file_path_hash) : string {
                         if (strpos($key, 'use:') === 0) {
                             return $key . ':' . $file_path_hash;
                         }
@@ -232,7 +232,7 @@ class StatementsProvider
                      *
                      * @return bool
                      */
-                    function ($_): bool {
+                    static function ($_): bool {
                         return true;
                     },
                     array_flip($changed_members)

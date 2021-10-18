@@ -246,7 +246,7 @@ class FunctionLikeDocblockScanner
         if ($storage instanceof MethodStorage) {
             $storage->has_docblock_param_types = (bool) array_filter(
                 $storage->params,
-                function (FunctionLikeParameter $p): bool {
+                static function (FunctionLikeParameter $p): bool {
                     return $p->type !== null && $p->has_docblock_type;
                 }
             );
@@ -822,7 +822,7 @@ class FunctionLikeDocblockScanner
 
         $params_without_docblock_type = array_filter(
             $storage->params,
-            function (FunctionLikeParameter $p) : bool {
+            static function (FunctionLikeParameter $p) : bool {
                 return !$p->has_docblock_type && (!$p->type || $p->type->hasArray());
             }
         );

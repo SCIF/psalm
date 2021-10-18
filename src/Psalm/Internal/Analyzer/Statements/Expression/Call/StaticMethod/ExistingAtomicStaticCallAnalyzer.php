@@ -318,7 +318,7 @@ class ExistingAtomicStaticCallAnalyzer
                 $statements_analyzer->node_data->setIfTrueAssertions(
                     $stmt,
                     array_map(
-                        function (Assertion $assertion) use ($generic_params, $codebase) : Assertion {
+                        static function (Assertion $assertion) use ($generic_params, $codebase) : Assertion {
                             return $assertion->getUntemplatedCopy($generic_params, null, $codebase);
                         },
                         $method_storage->if_true_assertions
@@ -330,7 +330,7 @@ class ExistingAtomicStaticCallAnalyzer
                 $statements_analyzer->node_data->setIfFalseAssertions(
                     $stmt,
                     array_map(
-                        function (Assertion $assertion) use ($generic_params, $codebase) : Assertion {
+                        static function (Assertion $assertion) use ($generic_params, $codebase) : Assertion {
                             return $assertion->getUntemplatedCopy($generic_params, null, $codebase);
                         },
                         $method_storage->if_false_assertions

@@ -1582,7 +1582,7 @@ class ClassLikes
         if ($visibility === ReflectionProperty::IS_PUBLIC) {
             return \array_filter(
                 $storage->constants,
-                function ($constant) {
+                static function ($constant) {
                     return $constant->type
                         && $constant->visibility === ClassLikeAnalyzer::VISIBILITY_PUBLIC;
                 }
@@ -1592,7 +1592,7 @@ class ClassLikes
         if ($visibility === ReflectionProperty::IS_PROTECTED) {
             return \array_filter(
                 $storage->constants,
-                function ($constant) {
+                static function ($constant) {
                     return $constant->type
                         && ($constant->visibility === ClassLikeAnalyzer::VISIBILITY_PUBLIC
                             || $constant->visibility === ClassLikeAnalyzer::VISIBILITY_PROTECTED);
@@ -1602,7 +1602,7 @@ class ClassLikes
 
         return \array_filter(
             $storage->constants,
-            function ($constant) {
+            static function ($constant) {
                 return $constant->type !== null;
             }
         );

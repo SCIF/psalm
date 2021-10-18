@@ -563,7 +563,7 @@ class Populator
         $storage->constants = array_merge(
             \array_filter(
                 $parent_storage->constants,
-                function ($constant) {
+                static function ($constant) {
                     return $constant->visibility === ClassLikeAnalyzer::VISIBILITY_PUBLIC
                         || $constant->visibility === ClassLikeAnalyzer::VISIBILITY_PROTECTED;
                 }
@@ -624,7 +624,7 @@ class Populator
             $storage->constants = array_merge(
                 \array_filter(
                     $parent_interface_storage->constants,
-                    function ($constant) {
+                    static function ($constant) {
                         return $constant->visibility === ClassLikeAnalyzer::VISIBILITY_PUBLIC;
                     }
                 ),
@@ -730,7 +730,7 @@ class Populator
             $storage->constants = array_merge(
                 \array_filter(
                     $implemented_interface_storage->constants,
-                    function ($constant) {
+                    static function ($constant) {
                         return $constant->visibility === ClassLikeAnalyzer::VISIBILITY_PUBLIC;
                     }
                 ),

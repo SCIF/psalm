@@ -57,7 +57,7 @@ class ShowCommand extends Command
             /**
              * @return array{0: null|string, 1: string}
              */
-            function (string $class, ?string $package): array {
+            static function (string $class, ?string $package): array {
                 return [$package, $class];
             };
 

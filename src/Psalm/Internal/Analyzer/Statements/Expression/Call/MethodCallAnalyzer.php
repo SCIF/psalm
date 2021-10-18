@@ -221,7 +221,7 @@ class MethodCallAnalyzer extends \Psalm\Internal\Analyzer\Statements\Expression\
         if (count($possible_new_class_types) > 0) {
             $class_type = array_reduce(
                 $possible_new_class_types,
-                function (?Type\Union $type_1, Type\Union $type_2) use ($codebase): Type\Union {
+                static function (?Type\Union $type_1, Type\Union $type_2) use ($codebase): Type\Union {
                     return Type::combineUnionTypes($type_1, $type_2, $codebase);
                 }
             );

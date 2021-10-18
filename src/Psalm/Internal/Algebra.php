@@ -32,7 +32,7 @@ class Algebra
                  *
                  * @return list<non-empty-list<string>>
                  */
-                function (array $anded_types): array {
+                static function (array $anded_types): array {
                     if (count($anded_types) > 1) {
                         $new_anded_types = [];
 
@@ -193,7 +193,7 @@ class Algebra
                     $clause_var_possibilities = array_values(
                         array_filter(
                             $clause_b->possibilities[$clause_var],
-                            function (string $possible_type) use ($negated_clause_type): bool {
+                            static function (string $possible_type) use ($negated_clause_type): bool {
                                 return $possible_type !== $negated_clause_type;
                             }
                         )
@@ -300,7 +300,7 @@ class Algebra
                     // if there's only one active clause, return all the non-negation clause members ORed together
                     $things_that_can_be_said = array_filter(
                         $possible_types,
-                        function (string $possible_type): bool {
+                        static function (string $possible_type): bool {
                             return $possible_type[0] !== '!';
                         }
                     );
@@ -588,7 +588,7 @@ class Algebra
     {
         $clauses = array_filter(
             $clauses,
-            function ($clause) {
+            static function ($clause) {
                 return $clause->reconcilable;
             }
         );

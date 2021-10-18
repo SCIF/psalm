@@ -227,7 +227,7 @@ class ClosureAnalyzer extends FunctionLikeAnalyzer
         Context $context
     ): ?bool {
         $param_names = array_map(
-            function (PhpParser\Node\Param $p) : string {
+            static function (PhpParser\Node\Param $p) : string {
                 if (!$p->var instanceof PhpParser\Node\Expr\Variable
                     || !is_string($p->var->name)
                 ) {

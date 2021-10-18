@@ -87,7 +87,7 @@ class TernaryAnalyzer
                 /**
                  * @return \Psalm\Internal\Clause
                  */
-                function (\Psalm\Internal\Clause $c) use ($mixed_var_ids, $cond_id): \Psalm\Internal\Clause {
+                static function (\Psalm\Internal\Clause $c) use ($mixed_var_ids, $cond_id): \Psalm\Internal\Clause {
                     $keys = array_keys($c->possibilities);
 
                     $mixed_var_ids = \array_diff($mixed_var_ids, $keys);
@@ -123,7 +123,7 @@ class TernaryAnalyzer
             $ternary_clauses = array_values(
                 array_filter(
                     $ternary_clauses,
-                    function ($c) use ($reconciled_expression_clauses): bool {
+                    static function ($c) use ($reconciled_expression_clauses): bool {
                         return !\in_array($c->hash, $reconciled_expression_clauses);
                     }
                 )

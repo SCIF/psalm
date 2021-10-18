@@ -82,7 +82,7 @@ final class LanguageServer
         }
 
         array_map(
-            function (string $arg) use ($valid_long_options): void {
+            static function (string $arg) use ($valid_long_options): void {
                 if (strpos($arg, '--') === 0 && $arg !== '--') {
                     $arg_name = preg_replace('/=.*$/', '', substr($arg, 2));
 
@@ -210,7 +210,7 @@ HELP;
         $include_collector = new IncludeCollector();
 
         $first_autoloader = $include_collector->runAndCollect(
-            function () use ($current_dir, $options, $vendor_dir): ?\Composer\Autoload\ClassLoader {
+            static function () use ($current_dir, $options, $vendor_dir): ?\Composer\Autoload\ClassLoader {
                 return CliUtils::requireAutoloaders($current_dir, isset($options['r']), $vendor_dir);
             }
         );

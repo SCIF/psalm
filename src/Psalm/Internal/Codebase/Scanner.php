@@ -302,16 +302,18 @@ class Scanner
         return $has_changes;
     }
 
+    private function filesToBeScanned(string $file_path): bool
+    {
+        return $this->file_provider->fileExists($file_path)
+            && (!isset($this->scanned_files[$file_path])
+                || (isset($this->files_to_deep_scan[$file_path]) && !$this->scanned_files[$file_path]));
+    }
+
     private function scanFilePaths(int $pool_size) : bool
     {
-        $filetype_scanners = $this->config->getFiletypeScanners();
         $files_to_scan = array_filter(
             $this->files_to_scan,
-            function (string $file_path) : bool {
-                return $this->file_provider->fileExists($file_path)
-                    && (!isset($this->scanned_files[$file_path])
-                        || (isset($this->files_to_deep_scan[$file_path]) && !$this->scanned_files[$file_path]));
-            }
+            [$this, 'filesToBeScanned']
         );
 
         $this->files_to_scan = [];
@@ -319,17 +321,6 @@ class Scanner
         if (!$files_to_scan) {
             return false;
         }
-
-        $files_to_deep_scan = $this->files_to_deep_scan;
-
-        $scanner_worker =
-            function (int $_, string $file_path) use ($filetype_scanners, $files_to_deep_scan): void {
-                $this->scanFile(
-                    $file_path,
-                    $filetype_scanners,
-                    isset($files_to_deep_scan[$file_path])
-                );
-            };
 
         if (!$this->is_forked && $pool_size > 1 && count($files_to_scan) > 512) {
             $pool_size = ceil(min($pool_size, count($files_to_scan) / 256));
@@ -368,7 +359,7 @@ class Scanner
 
                     $this->progress->debug('Have initialised forked process for scanning' . PHP_EOL);
                 },
-                $scanner_worker,
+                \Closure::fromCallable([$this, 'scanAPath']),
                 /**
                  * @return PoolData
                  */
@@ -446,7 +437,7 @@ class Scanner
             $i = 0;
 
             foreach ($files_to_scan as $file_path => $_) {
-                $scanner_worker($i, $file_path);
+                $this->scanAPath($i, $file_path);
                 ++$i;
             }
         }
@@ -797,5 +788,13 @@ class Scanner
     public function isForked(): void
     {
         $this->is_forked = true;
+    }
+
+    private function scanAPath(int $_, string $file_path): void {
+        $this->scanFile(
+            $file_path,
+            $this->config->getFiletypeScanners(),
+            isset($this->files_to_deep_scan[$file_path])
+        );
     }
 }

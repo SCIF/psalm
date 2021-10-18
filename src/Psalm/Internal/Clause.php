@@ -133,13 +133,13 @@ class Clause
             /**
              * @param non-empty-list<string> $values
              */
-            function (string $var_id, array $values): string {
+            static function (string $var_id, array $values): string {
                 if ($var_id[0] === '*') {
                     $var_id = '<expr>';
                 }
 
                 $var_id_clauses = array_map(
-                    function (string $value) use ($var_id): string {
+                    static function (string $value) use ($var_id): string {
                         if ($value === 'falsy') {
                             return '!' . $var_id;
                         }

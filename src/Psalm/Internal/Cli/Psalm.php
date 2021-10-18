@@ -199,7 +199,7 @@ final class Psalm
 
         $include_collector = new IncludeCollector();
         $first_autoloader = $include_collector->runAndCollect(
-            function () use ($current_dir, $options, $vendor_dir): ?\Composer\Autoload\ClassLoader {
+            static function () use ($current_dir, $options, $vendor_dir): ?\Composer\Autoload\ClassLoader {
                 return CliUtils::requireAutoloaders($current_dir, isset($options['r']), $vendor_dir);
             }
         );
@@ -416,7 +416,7 @@ final class Psalm
     private static function validateCliArguments(array $args): void
     {
         array_map(
-            function (string $arg): void {
+            static function (string $arg): void {
                 if (strpos($arg, '--') === 0 && $arg !== '--') {
                     $arg_name = preg_replace('/=.*$/', '', substr($arg, 2));
 
@@ -484,7 +484,7 @@ final class Psalm
 
         $args = array_values(array_filter(
             $args,
-            function (string $arg): bool {
+            static function (string $arg): bool {
                 return $arg !== '--ansi'
                     && $arg !== '--no-ansi'
                     && $arg !== '-i'
@@ -1062,7 +1062,7 @@ final class Psalm
         if ($flow_graph !== null && $dump_taint_graph !== null) {
             file_put_contents($dump_taint_graph, "digraph Taints {\n\t".
                 implode("\n\t", array_map(
-                    function (array $edges) {
+                    static function (array $edges) {
                         return '"'.implode('" -> "', $edges).'"';
                     },
                     $flow_graph->summarizeEdges()

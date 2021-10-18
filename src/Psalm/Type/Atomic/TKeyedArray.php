@@ -75,17 +75,7 @@ class TKeyedArray extends \Psalm\Type\Atomic
     public function __toString(): string
     {
         $property_strings = array_map(
-            function ($name, Union $type): string {
-                if ($this->is_list && $this->sealed) {
-                    return (string) $type;
-                }
-
-                if (\is_string($name) && \preg_match('/[ "\'\\\\.\n:]/', $name)) {
-                    $name = '\'' . \str_replace("\n", '\n', \addslashes($name)) . '\'';
-                }
-
-                return $name . ($type->possibly_undefined ? '?' : '') . ': ' . $type;
-            },
+            [$this, 'getTypeName'],
             array_keys($this->properties),
             $this->properties
         );
@@ -156,7 +146,7 @@ class TKeyedArray extends \Psalm\Type\Atomic
                 implode(
                     ', ',
                     array_map(
-                        function (
+                        static function (
                             $name,
                             Union $type
                         ) use (
@@ -399,5 +389,20 @@ class TKeyedArray extends \Psalm\Type\Atomic
         }
 
         return new TNonEmptyList($this->getGenericValueType());
+    }
+
+    /**
+     * @param int|string $name
+     */
+    private function getTypeName($name, Union $type): string {
+        if ($this->is_list && $this->sealed) {
+            return (string) $type;
+        }
+
+        if (\is_string($name) && \preg_match('/[ "\'\\\\.\n:]/', $name)) {
+            $name = '\'' . \str_replace("\n", '\n', \addslashes($name)) . '\'';
+        }
+
+        return $name . ($type->possibly_undefined ? '?' : '') . ': ' . $type;
     }
 }

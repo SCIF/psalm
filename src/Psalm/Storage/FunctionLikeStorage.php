@@ -249,7 +249,7 @@ abstract class FunctionLikeStorage
         $symbol_text = 'function ' . $this->cased_name . '(' . ($newlines ? "\n" : '') . implode(
             ',' . ($newlines ? "\n" : ' '),
             array_map(
-                function (FunctionLikeParameter $param) use ($newlines) : string {
+                static function (FunctionLikeParameter $param) use ($newlines) : string {
                     return ($newlines ? '    ' : '') . ($param->type ?: 'mixed') . ' $' . $param->name;
                 },
                 $this->params

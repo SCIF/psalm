@@ -135,7 +135,7 @@ class ArrayFunctionArgumentsAnalyzer
 
         $unpacked_args = array_filter(
             $args,
-            function ($arg) {
+            static function ($arg) {
                 return $arg->unpack;
             }
         );

@@ -323,7 +323,7 @@ class ExpressionResolver
                 )
             ) {
                 $php_version_id = $codebase->php_major_version * 10000 + $codebase->php_minor_version * 100;
-                $evaluator = new ConstExprEvaluator(function (Expr $expr) use ($php_version_id) {
+                $evaluator = new ConstExprEvaluator(static function (Expr $expr) use ($php_version_id) {
                     if ($expr instanceof ConstFetch && $expr->name->parts === ['PHP_VERSION_ID']) {
                         return $php_version_id;
                     }

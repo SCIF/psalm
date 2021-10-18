@@ -994,7 +994,7 @@ class ForeachAnalyzer
                     : array_values(
                         array_map(
                             /** @param array<string, Type\Union> $arr */
-                            function (array $arr) use ($iterator_atomic_type) : Type\Union {
+                            static function (array $arr) use ($iterator_atomic_type) : Type\Union {
                                 return $arr[$iterator_atomic_type->value] ?? Type::getMixed();
                             },
                             $generic_storage->template_types

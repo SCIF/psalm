@@ -54,7 +54,7 @@ class ProtocolStreamReader implements ProtocolReader
              * @psalm-suppress MixedArgument in old Amp versions
              * @psalm-suppress MixedAssignment in old Amp versions
              */
-            function () use ($input) : \Generator {
+            static function () use ($input) : \Generator {
                 while ($this->is_accepting_new_requests) {
                     $read_promise = $input->read();
 

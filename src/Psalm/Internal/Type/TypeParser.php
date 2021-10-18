@@ -456,7 +456,7 @@ class TypeParser
         $potential_values = array_unique($potential_values);
 
         return array_map(
-            function ($int) {
+            static function ($int) {
                 return new TLiteralInt($int);
             },
             array_values($potential_values)
@@ -910,7 +910,7 @@ class TypeParser
         array $type_aliases
     ) {
         $intersection_types = array_map(
-            function (ParseTree $child_tree) use ($codebase, $template_type_map, $type_aliases) {
+            static function (ParseTree $child_tree) use ($codebase, $template_type_map, $type_aliases) {
                 $atomic_type = self::getTypeFromTree(
                     $child_tree,
                     $codebase,
@@ -1075,7 +1075,7 @@ class TypeParser
         /**
          * @return FunctionLikeParameter
          */
-            function (ParseTree $child_tree) use (
+            static function (ParseTree $child_tree) use (
                 $codebase,
                 $template_type_map,
                 $type_aliases

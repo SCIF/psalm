@@ -2051,7 +2051,7 @@ class Config
 
         if (file_exists($vendor_autoload_files_path)) {
             $this->include_collector->runAndCollect(
-                function () use ($vendor_autoload_files_path) {
+                static function () use ($vendor_autoload_files_path) {
                     /**
                      * @psalm-suppress UnresolvableInclude
                      * @var string[]
@@ -2071,11 +2071,7 @@ class Config
             $codebase->classlikes->forgetMissingClassLikes();
 
             $this->include_collector->runAndCollect(
-                function () {
-                    // do this in a separate method so scope does not leak
-                    /** @psalm-suppress UnresolvableInclude */
-                    require $this->autoloader;
-                }
+                [$this, 'requireAutoloader']
             );
         }
 
@@ -2261,5 +2257,11 @@ class Config
     public function getUniversalObjectCrates(): array
     {
         return array_map('strtolower', $this->universal_object_crates);
+    }
+
+    public function requireAutoloader(): void
+    {
+        /** @psalm-suppress UnresolvableInclude */
+        require $this->autoloader;
     }
 }

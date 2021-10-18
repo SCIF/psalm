@@ -59,9 +59,9 @@ class TemplateResult
         $this->template_types = $template_types;
 
         $this->lower_bounds = array_map(
-            function ($type_map) {
+            static function ($type_map) {
                 return array_map(
-                    function ($type) {
+                    static function ($type) {
                         return [new TemplateBound($type)];
                     },
                     $type_map

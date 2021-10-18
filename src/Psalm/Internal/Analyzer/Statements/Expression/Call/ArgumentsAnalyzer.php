@@ -328,9 +328,9 @@ class ArgumentsAnalyzer
 
         $replace_template_result = new \Psalm\Internal\Type\TemplateResult(
             array_map(
-                function ($template_map) use ($codebase) {
+                static function ($template_map) use ($codebase) {
                     return array_map(
-                        function ($lower_bounds) use ($codebase) {
+                        static function ($lower_bounds) use ($codebase) {
                             return \Psalm\Internal\Type\TemplateStandinTypeReplacer::getMostSpecificTypeFromBounds(
                                 $lower_bounds,
                                 $codebase

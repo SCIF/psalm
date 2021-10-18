@@ -59,7 +59,7 @@ class TObjectWithProperties extends TObject
                 /**
                  * @param  string|int $name
                  */
-                function ($name, Union $type): string {
+                static function ($name, Union $type): string {
                     return $name . ($type->possibly_undefined ? '?' : '') . ':' . $type;
                 },
                 array_keys($this->properties),
@@ -70,7 +70,7 @@ class TObjectWithProperties extends TObject
         $methods_string = implode(
             ', ',
             array_map(
-                function (string $name): string {
+                static function (string $name): string {
                     return $name . '()';
                 },
                 array_keys($this->methods)
@@ -97,7 +97,7 @@ class TObjectWithProperties extends TObject
                 /**
                  * @param  string|int $name
                  */
-                function ($name, Union $type): string {
+                static function ($name, Union $type): string {
                     return $name . ($type->possibly_undefined ? '?' : '') . ':' . $type->getId();
                 },
                 array_keys($this->properties),
@@ -108,7 +108,7 @@ class TObjectWithProperties extends TObject
         $methods_string = implode(
             ', ',
             array_map(
-                function (string $name): string {
+                static function (string $name): string {
                     return $name . '()';
                 },
                 array_keys($this->methods)
@@ -142,7 +142,7 @@ class TObjectWithProperties extends TObject
                         /**
                          * @param  string|int $name
                          */
-                        function (
+                        static function (
                             $name,
                             Union $type
                         ) use (

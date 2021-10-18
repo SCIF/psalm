@@ -269,9 +269,7 @@ class Analyzer
 
         $this->files_to_analyze = array_filter(
             $this->files_to_analyze,
-            function (string $file_path) : bool {
-                return $this->file_provider->fileExists($file_path);
-            }
+            [$this->file_provider, 'fileExists']
         );
 
         $this->doAnalysis($project_analyzer, $pool_size);
@@ -412,7 +410,7 @@ class Analyzer
             // files up among a given number of child processes.
             $pool = new \Psalm\Internal\Fork\Pool(
                 $process_file_paths,
-                function (): void {
+                static function (): void {
                     $project_analyzer = ProjectAnalyzer::getInstance();
                     $codebase = $project_analyzer->getCodebase();
 
@@ -1447,7 +1445,7 @@ class Analyzer
 
         usort(
             $file_manipulations,
-            function (FileManipulation $a, FileManipulation $b): int {
+            static function (FileManipulation $a, FileManipulation $b): int {
                 if ($b->end === $a->end) {
                     if ($a->start === $b->start) {
                         return $b->insertion_text > $a->insertion_text ? 1 : -1;

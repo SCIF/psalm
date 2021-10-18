@@ -179,7 +179,7 @@ class ArrayMapReturnTypeProvider implements \Psalm\Plugin\EventHandler\FunctionR
                         /**
                         * @return Type\Union
                         */
-                        function (Type\Union $_) use ($mapping_return_type): Type\Union {
+                        static function (Type\Union $_) use ($mapping_return_type): Type\Union {
                             return clone $mapping_return_type;
                         },
                         $array_arg_atomic_type->properties

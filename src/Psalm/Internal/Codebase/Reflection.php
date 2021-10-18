@@ -415,7 +415,7 @@ class Reflection
             $type = \implode(
                 '|',
                 \array_map(
-                    function (\ReflectionNamedType $reflection) {
+                    static function (\ReflectionNamedType $reflection) {
                         return $reflection->getName();
                     },
                     $reflection_type->getTypes()

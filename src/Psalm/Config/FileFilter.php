@@ -413,7 +413,7 @@ class FileFilter
     private static function isRegularExpression(string $string) : bool
     {
         set_error_handler(
-            function () : bool {
+            static function () : bool {
                 return false;
             },
             E_WARNING

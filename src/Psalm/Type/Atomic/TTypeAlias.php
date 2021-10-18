@@ -49,7 +49,7 @@ class TTypeAlias extends \Psalm\Type\Atomic
             return $this->getKey() . '&' . implode(
                 '&',
                 array_map(
-                    function ($type) {
+                    static function ($type) {
                         return $type->getId(true);
                     },
                     $this->extra_types

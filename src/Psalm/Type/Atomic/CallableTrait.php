@@ -91,7 +91,7 @@ trait CallableTrait
                     /**
                      * @return string
                      */
-                    function (FunctionLikeParameter $param) use ($namespace, $aliased_classes, $this_class): string {
+                    static function (FunctionLikeParameter $param) use ($namespace, $aliased_classes, $this_class): string {
                         if (!$param->type) {
                             $type_string = 'mixed';
                         } else {

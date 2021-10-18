@@ -48,7 +48,7 @@ class Assertion
                  *
                  * @return array{0: string}
                  */
-                function (array $rules) use ($inferred_lower_bounds, $codebase) : array {
+                static function (array $rules) use ($inferred_lower_bounds, $codebase) : array {
                     $first_rule = $rules[0];
 
                     if ($inferred_lower_bounds) {
@@ -81,7 +81,7 @@ class Assertion
                             return [implode(
                                 '',
                                 array_map(
-                                    function ($f) {
+                                    static function ($f) {
                                         return $f[0];
                                     },
                                     $rule_tokens

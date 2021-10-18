@@ -318,7 +318,7 @@ class ExistingAtomicMethodCallAnalyzer extends CallAnalyzer
                 $statements_analyzer->node_data->setIfTrueAssertions(
                     $stmt,
                     array_map(
-                        function (Assertion $assertion) use (
+                        static function (Assertion $assertion) use (
                             $class_template_params,
                             $lhs_var_id,
                             $codebase
@@ -338,7 +338,7 @@ class ExistingAtomicMethodCallAnalyzer extends CallAnalyzer
                 $statements_analyzer->node_data->setIfFalseAssertions(
                     $stmt,
                     array_map(
-                        function (Assertion $assertion) use (
+                        static function (Assertion $assertion) use (
                             $class_template_params,
                             $lhs_var_id,
                             $codebase

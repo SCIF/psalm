@@ -507,9 +507,12 @@ class TaintFlowGraph extends DataFlowGraph
 
         return \array_filter(
             $generated_sources,
-            function ($new_source): bool {
-                return isset($this->forward_edges[$new_source->id]);
-            }
+            [$this, 'isForwardEgdeExists']
         );
+    }
+
+    private function isForwardEgdeExists(DataFlowNode $new_source): bool
+    {
+        return isset($this->forward_edges[$new_source->id]);
     }
 }

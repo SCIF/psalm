@@ -100,7 +100,7 @@ class AndAnalyzer
             $context_clauses = array_values(
                 array_filter(
                     $context_clauses,
-                    function ($c) use ($reconciled_expression_clauses): bool {
+                    static function ($c) use ($reconciled_expression_clauses): bool {
                         return !\in_array($c->hash, $reconciled_expression_clauses);
                     }
                 )
@@ -206,7 +206,7 @@ class AndAnalyzer
             $if_context->reconciled_expression_clauses = array_merge(
                 $if_context->reconciled_expression_clauses,
                 array_map(
-                    function ($c) {
+                    static function ($c) {
                         return $c->hash;
                     },
                     $partitioned_clauses[1]

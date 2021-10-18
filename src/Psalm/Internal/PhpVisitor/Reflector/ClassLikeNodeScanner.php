@@ -393,7 +393,7 @@ class ClassLikeNodeScanner
 
                 \usort(
                     $docblock_info->templates,
-                    function (array $l, array $r) : int {
+                    static function (array $l, array $r) : int {
                         return $l[4] > $r[4] ? 1 : -1;
                     }
                 );
@@ -755,24 +755,7 @@ class ClassLikeNodeScanner
         }
 
         $converted_aliases = \array_map(
-            function (TypeAlias\InlineTypeAlias $t): ?TypeAlias\ClassTypeAlias {
-                try {
-                    $union = TypeParser::parseTokens(
-                        $t->replacement_tokens,
-                        null,
-                        [],
-                        $this->type_aliases
-                    );
-
-                    $union->setFromDocblock();
-
-                    return new TypeAlias\ClassTypeAlias(
-                        \array_values($union->getAtomicTypes())
-                    );
-                } catch (\Exception $e) {
-                    return null;
-                }
-            },
+            [$this, 'convertClassAliases'],
             $this->classlike_type_aliases
         );
 
@@ -1740,5 +1723,24 @@ class ClassLikeNodeScanner
         }
 
         return $type_alias_tokens;
+    }
+
+    private function convertClassAliases(TypeAlias\InlineTypeAlias $t): ?TypeAlias\ClassTypeAlias {
+        try {
+            $union = TypeParser::parseTokens(
+                $t->replacement_tokens,
+                null,
+                [],
+                $this->type_aliases
+            );
+
+            $union->setFromDocblock();
+
+            return new TypeAlias\ClassTypeAlias(
+                \array_values($union->getAtomicTypes())
+            );
+        } catch (\Exception $e) {
+            return null;
+        }
     }
 }

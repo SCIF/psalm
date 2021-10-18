@@ -733,14 +733,14 @@ class AssignmentAnalyzer
 
         $unspecialized_parent_nodes = \array_filter(
             $parent_nodes,
-            function ($parent_node) {
+            static function ($parent_node) {
                 return !$parent_node->specialization_key;
             }
         );
 
         $specialized_parent_nodes = \array_filter(
             $parent_nodes,
-            function ($parent_node) {
+            static function ($parent_node) {
                 return (bool) $parent_node->specialization_key;
             }
         );

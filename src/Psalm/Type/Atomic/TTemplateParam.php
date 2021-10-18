@@ -60,7 +60,7 @@ class TTemplateParam extends \Psalm\Type\Atomic
     {
         if ($this->extra_types) {
             return '(' . $this->param_name . ':' . $this->defining_class . ' as ' . $this->as->getId()
-                . ')&' . implode('&', array_map(function ($type) {
+                . ')&' . implode('&', array_map(static function ($type) {
                     return $type->getId(true);
                 }, $this->extra_types));
         }

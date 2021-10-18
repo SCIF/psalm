@@ -441,7 +441,7 @@ class NewAnalyzer extends \Psalm\Internal\Analyzer\Statements\Expression\CallAna
                     $statements_analyzer->node_data->setIfTrueAssertions(
                         $stmt,
                         \array_map(
-                            function ($assertion) use ($generic_params, $codebase) {
+                            static function ($assertion) use ($generic_params, $codebase) {
                                 return $assertion->getUntemplatedCopy($generic_params, null, $codebase);
                             },
                             $method_storage->if_true_assertions
@@ -453,7 +453,7 @@ class NewAnalyzer extends \Psalm\Internal\Analyzer\Statements\Expression\CallAna
                     $statements_analyzer->node_data->setIfFalseAssertions(
                         $stmt,
                         \array_map(
-                            function ($assertion) use ($generic_params, $codebase) {
+                            static function ($assertion) use ($generic_params, $codebase) {
                                 return $assertion->getUntemplatedCopy($generic_params, null, $codebase);
                             },
                             $method_storage->if_false_assertions
@@ -477,9 +477,9 @@ class NewAnalyzer extends \Psalm\Internal\Analyzer\Statements\Expression\CallAna
                             $template_name,
                             $storage->template_extended_params,
                             array_map(
-                                function ($type_map) use ($codebase) {
+                                static function ($type_map) use ($codebase) {
                                     return array_map(
-                                        function ($bounds) use ($codebase) {
+                                        static function ($bounds) use ($codebase) {
                                             return TemplateStandinTypeReplacer::getMostSpecificTypeFromBounds(
                                                 $bounds,
                                                 $codebase
@@ -534,7 +534,7 @@ class NewAnalyzer extends \Psalm\Internal\Analyzer\Statements\Expression\CallAna
                 $fq_class_name,
                 array_values(
                     array_map(
-                        function ($map) {
+                        static function ($map) {
                             return clone reset($map);
                         },
                         $storage->template_types

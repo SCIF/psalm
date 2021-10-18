@@ -867,9 +867,9 @@ class CallAnalyzer
 
         if ($type_assertions) {
             $template_type_map = array_map(
-                function ($type_map) use ($codebase) {
+                static function ($type_map) use ($codebase) {
                     return array_map(
-                        function ($bounds) use ($codebase) {
+                        static function ($bounds) use ($codebase) {
                             return TemplateStandinTypeReplacer::getMostSpecificTypeFromBounds(
                                 $bounds,
                                 $codebase
@@ -1089,7 +1089,7 @@ class CallAnalyzer
                 if (count($lower_bounds) > 1) {
                     $bounds_with_equality = array_filter(
                         $lower_bounds,
-                        function ($lower_bound) {
+                        static function ($lower_bound) {
                             return (bool)$lower_bound->equality_bound_classlike;
                         }
                     );
@@ -1100,7 +1100,7 @@ class CallAnalyzer
 
                     $equality_types = array_unique(
                         array_map(
-                            function ($bound_with_equality) {
+                            static function ($bound_with_equality) {
                                 return $bound_with_equality->type->getId();
                             },
                             $bounds_with_equality

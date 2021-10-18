@@ -1059,7 +1059,7 @@ class TemplateStandinTypeReplacer
 
         usort(
             $lower_bounds,
-            function (TemplateBound $bound_a, TemplateBound $bound_b) {
+            static function (TemplateBound $bound_a, TemplateBound $bound_b) {
                 return $bound_b->appearance_depth <=> $bound_a->appearance_depth;
             }
         );

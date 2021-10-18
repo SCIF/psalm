@@ -1160,7 +1160,7 @@ class TypeCombiner
 
                 $all_nonnegative = !array_filter(
                     $combination->ints,
-                    function ($int): bool {
+                    static function ($int): bool {
                         return $int->value < 0;
                     }
                 );
@@ -1200,7 +1200,7 @@ class TypeCombiner
                 if ($combination->ints) {
                     $all_nonnegative = !array_filter(
                         $combination->ints,
-                        function ($int): bool {
+                        static function ($int): bool {
                             return $int->value < 0;
                         }
                     );
@@ -1378,7 +1378,7 @@ class TypeCombiner
             ) {
                 $combination->objectlike_entries = array_filter(
                     $combination->objectlike_entries,
-                    function (Type\Union $type): bool {
+                    static function (Type\Union $type): bool {
                         return !$type->possibly_undefined;
                     }
                 );

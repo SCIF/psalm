@@ -357,7 +357,7 @@ class AtomicStaticCallAnalyzer
                         $mixin_candidates[] = clone $mixin_candidate;
                     }
 
-                    $mixin_candidates_no_generic = array_filter($mixin_candidates, function ($check): bool {
+                    $mixin_candidates_no_generic = array_filter($mixin_candidates, static function ($check): bool {
                         return !($check instanceof Type\Atomic\TGenericObject);
                     });
 
@@ -531,7 +531,7 @@ class AtomicStaticCallAnalyzer
                 }
 
                 $array_values = array_map(
-                    function (PhpParser\Node\Arg $arg): PhpParser\Node\Expr\ArrayItem {
+                    static function (PhpParser\Node\Arg $arg): PhpParser\Node\Expr\ArrayItem {
                         return new VirtualArrayItem(
                             $arg->value,
                             null,

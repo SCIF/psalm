@@ -250,7 +250,7 @@ class MatchAnalyzer
                 if (isset($vars_in_scope_reconciled[$switch_var_id])) {
                     $array_literal_types = \array_filter(
                         $vars_in_scope_reconciled[$switch_var_id]->getAtomicTypes(),
-                        function ($type) {
+                        static function ($type) {
                             return $type instanceof Type\Atomic\TLiteralInt
                                 || $type instanceof Type\Atomic\TLiteralString
                                 || $type instanceof Type\Atomic\TLiteralFloat
@@ -302,7 +302,7 @@ class MatchAnalyzer
         }
 
         $array_items = array_map(
-            function ($cond): PhpParser\Node\Expr\ArrayItem {
+            static function ($cond): PhpParser\Node\Expr\ArrayItem {
                 return new VirtualArrayItem($cond, null, false, $cond->getAttributes());
             },
             $conds

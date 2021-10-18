@@ -38,7 +38,7 @@ trait HasIntersectionTrait
                  *
                  * @return string
                  */
-                function (Atomic $extra_type) use (
+                static function (Atomic $extra_type) use (
                     $namespace,
                     $aliased_classes,
                     $this_class,

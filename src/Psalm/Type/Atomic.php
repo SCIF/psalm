@@ -345,7 +345,7 @@ abstract class Atomic implements TypeNode
                 && ($this->as->hasNamedObjectType()
                     || array_filter(
                         $this->extra_types ?: [],
-                        function ($extra_type) {
+                        static function ($extra_type) {
                             return $extra_type->isNamedObjectType();
                         }
                     )
@@ -397,7 +397,7 @@ abstract class Atomic implements TypeNode
                     $this->extra_types
                     && array_filter(
                         $this->extra_types,
-                        function (Atomic $a) use ($codebase) : bool {
+                        static function (Atomic $a) use ($codebase) : bool {
                             return $a->hasTraversableInterface($codebase);
                         }
                     )
@@ -422,7 +422,7 @@ abstract class Atomic implements TypeNode
                     $this->extra_types
                     && array_filter(
                         $this->extra_types,
-                        function (Atomic $a) use ($codebase) : bool {
+                        static function (Atomic $a) use ($codebase) : bool {
                             return $a->hasCountableInterface($codebase);
                         }
                     )
@@ -463,7 +463,7 @@ abstract class Atomic implements TypeNode
                     $this->extra_types
                     && array_filter(
                         $this->extra_types,
-                        function (Atomic $a) use ($codebase) : bool {
+                        static function (Atomic $a) use ($codebase) : bool {
                             return $a->hasArrayAccessInterface($codebase);
                         }
                     )

@@ -220,7 +220,7 @@ class TypeExpander
                     if ($const_name_part) {
                         $matching_constants = \array_filter(
                             $matching_constants,
-                            function ($constant_name) use ($const_name_part): bool {
+                            static function ($constant_name) use ($const_name_part): bool {
                                 return $constant_name !== $const_name_part
                                     && \strpos($constant_name, $const_name_part) === 0;
                             }
@@ -578,7 +578,7 @@ class TypeExpander
             if ($container_class_storage->template_types
                 && \array_filter(
                     $container_class_storage->template_types,
-                    function ($type_map) {
+                    static function ($type_map) {
                         return !reset($type_map)->hasMixed();
                     }
                 )
@@ -587,7 +587,7 @@ class TypeExpander
                     $return_type->value,
                     \array_values(
                         \array_map(
-                            function ($type_map) {
+                            static function ($type_map) {
                                 return clone reset($type_map);
                             },
                             $container_class_storage->template_types

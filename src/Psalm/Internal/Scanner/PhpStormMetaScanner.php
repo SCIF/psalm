@@ -97,7 +97,7 @@ class PhpStormMetaScanner
                     /**
                      * @param list<PhpParser\Node\Arg> $call_args
                      */
-                    function (
+                    static function (
                         MethodReturnTypeProviderEvent $event
                     ) use (
                         $map,
@@ -153,7 +153,7 @@ class PhpStormMetaScanner
                     /**
                      * @param list<PhpParser\Node\Arg> $call_args
                      */
-                    function (
+                    static function (
                         MethodReturnTypeProviderEvent $event
                     ) use (
                         $type_offset,
@@ -190,7 +190,7 @@ class PhpStormMetaScanner
                     /**
                      * @param list<PhpParser\Node\Arg> $call_args
                      */
-                    function (
+                    static function (
                         MethodReturnTypeProviderEvent $event
                     ) use (
                         $element_type_offset,
@@ -255,7 +255,7 @@ class PhpStormMetaScanner
                      * @param non-empty-string $function_id
                      * @param list<PhpParser\Node\Arg> $call_args
                      */
-                    function (
+                    static function (
                         FunctionReturnTypeProviderEvent $event
                     ) use (
                         $map,
@@ -309,7 +309,7 @@ class PhpStormMetaScanner
                      * @param non-empty-string $function_id
                      * @param list<PhpParser\Node\Arg> $call_args
                      */
-                    function (
+                    static function (
                         FunctionReturnTypeProviderEvent $event
                     ) use (
                         $type_offset
@@ -343,7 +343,7 @@ class PhpStormMetaScanner
                      * @param non-empty-string $function_id
                      * @param list<PhpParser\Node\Arg> $call_args
                      */
-                    function (
+                    static function (
                         FunctionReturnTypeProviderEvent $event
                     ) use (
                         $element_type_offset
