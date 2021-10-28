@@ -1,6 +1,7 @@
 <?php
 namespace Psalm\Internal\Codebase;
 
+use Closure;
 use InvalidArgumentException;
 use PhpParser;
 use Psalm\Config;
@@ -332,46 +333,9 @@ class Analyzer
 
         $codebase = $project_analyzer->getCodebase();
 
-        $filetype_analyzers = $this->config->getFiletypeAnalyzers();
+        $analysis_worker = Closure::fromCallable([$this, 'analysisWorker']);
 
-        $analysis_worker =
-            /**
-             * @return list<\Psalm\Internal\Analyzer\IssueData>
-             */
-            function (int $_, string $file_path) use ($project_analyzer, $filetype_analyzers): array {
-                $file_analyzer = $this->getFileAnalyzer($project_analyzer, $file_path, $filetype_analyzers);
-
-                $this->progress->debug('Analyzing ' . $file_analyzer->getFilePath() . "\n");
-
-                $file_analyzer->analyze();
-                $file_analyzer->context = null;
-                $file_analyzer->clearSourceBeforeDestruction();
-                unset($file_analyzer);
-
-                return IssueBuffer::getIssuesDataForFile($file_path);
-            };
-
-        $task_done_closure =
-            /**
-             * @param array<IssueData> $issues
-             */
-            function (array $issues): void {
-                $has_error = false;
-                $has_info = false;
-
-                foreach ($issues as $issue) {
-                    if ($issue->severity === 'error') {
-                        $has_error = true;
-                        break;
-                    }
-
-                    if ($issue->severity === 'info') {
-                        $has_info = true;
-                    }
-                }
-
-                $this->progress->taskDone($has_error ? 2 : ($has_info ? 1 : 0));
-            };
+        $task_done_closure = Closure::fromCallable([$this, 'taskDoneClosure']);
 
         if ($pool_size > 1 && count($this->files_to_analyze) > $pool_size) {
             $shuffle_count = $pool_size + 1;
@@ -433,6 +397,8 @@ class Analyzer
                 $analysis_worker,
                 /** @return WorkerData */
                 function () {
+                    echo "3\n";
+
                     $project_analyzer = ProjectAnalyzer::getInstance();
                     $codebase = $project_analyzer->getCodebase();
                     $analyzer = $codebase->analyzer;
@@ -1623,5 +1589,43 @@ class Analyzer
         }
 
         return isset($this->analyzed_methods[$file_path][$method_id]);
+    }
+
+    /**
+     * @param array<IssueData> $issues
+     */
+    private function taskDoneClosure(array $issues): void {
+        $has_error = false;
+        $has_info = false;
+
+        foreach ($issues as $issue) {
+            if ($issue->severity === 'error') {
+                $has_error = true;
+                break;
+            }
+
+            if ($issue->severity === 'info') {
+                $has_info = true;
+            }
+        }
+
+        $this->progress->taskDone($has_error ? 2 : ($has_info ? 1 : 0));
+    }
+
+    /**
+     * @return list<\Psalm\Internal\Analyzer\IssueData>
+     */
+    private function analysisWorker(int $_, string $file_path): array
+    {
+        $file_analyzer = $this->getFileAnalyzer($project_analyzer, $file_path, $this->config->getFiletypeAnalyzers());
+
+        $this->progress->debug('Analyzing ' . $file_analyzer->getFilePath() . "\n");
+
+        $file_analyzer->analyze();
+        $file_analyzer->context = null;
+        $file_analyzer->clearSourceBeforeDestruction();
+        unset($file_analyzer);
+
+        return IssueBuffer::getIssuesDataForFile($file_path);
     }
 }

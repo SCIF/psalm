@@ -91,17 +91,7 @@ class TKeyedArray extends \Psalm\Type\Atomic
     public function getId(bool $nested = false): string
     {
         $property_strings = array_map(
-            function ($name, Union $type): string {
-                if ($this->is_list && $this->sealed) {
-                    return $type->getId();
-                }
-
-                if (\is_string($name) && \preg_match('/[ "\'\\\\.\n:]/', $name)) {
-                    $name = '\'' . \str_replace("\n", '\n', \addslashes($name)) . '\'';
-                }
-
-                return $name . ($type->possibly_undefined ? '?' : '') . ': ' . $type->getId();
-            },
+            [$this, 'getTypeName'],
             array_keys($this->properties),
             $this->properties
         );
