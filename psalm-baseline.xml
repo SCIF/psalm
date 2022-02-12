@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<files psalm-version="dev-master@485e516088a22efd18e902926a2efdad1b040d72">
+<files psalm-version="dev-master@ce643859134338d6527992a18bc64223866dd22e">
   <file src="examples/TemplateChecker.php">
     <PossiblyUndefinedIntArrayOffset occurrences="2">
       <code>$comment_block-&gt;tags['variablesfrom'][0]</code>
@@ -17,9 +17,6 @@
       <code>$matches[0]</code>
       <code>$symbol_parts[1]</code>
     </PossiblyUndefinedIntArrayOffset>
-    <PossiblyUnusedProperty occurrences="1">
-      <code>$analysis_php_version_id</code>
-    </PossiblyUnusedProperty>
   </file>
   <file src="src/Psalm/Config/FileFilter.php">
     <PossiblyUndefinedIntArrayOffset occurrences="1">
@@ -308,7 +305,7 @@
     </PossiblyUndefinedIntArrayOffset>
   </file>
   <file src="src/Psalm/Internal/Type/TypeParser.php">
-    <PossiblyUndefinedIntArrayOffset occurrences="9">
+    <PossiblyUndefinedIntArrayOffset occurrences="8">
       <code>$intersection_types[0]</code>
       <code>$parse_tree-&gt;children[0]</code>
       <code>$parse_tree-&gt;condition-&gt;children[0]</code>
@@ -316,14 +313,8 @@
       <code>array_keys($template_type_map[$array_param_name])[0]</code>
       <code>array_keys($template_type_map[$class_name])[0]</code>
       <code>array_keys($template_type_map[$fq_classlike_name])[0]</code>
-      <code>array_keys($template_type_map[$param_name])[0]</code>
       <code>array_keys($template_type_map[$template_param_name])[0]</code>
     </PossiblyUndefinedIntArrayOffset>
-  </file>
-  <file src="src/Psalm/Issue/MethodSignatureMustProvideReturnType.php">
-    <UnusedClass occurrences="1">
-      <code>MethodSignatureMustProvideReturnType</code>
-    </UnusedClass>
   </file>
   <file src="src/Psalm/Node/Stmt/VirtualClass.php">
     <PropertyNotSetInConstructor occurrences="1">
