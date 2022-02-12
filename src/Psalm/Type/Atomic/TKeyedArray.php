@@ -81,18 +81,23 @@ class TKeyedArray extends Atomic
 
     public function getId(bool $exact = true, bool $nested = false): string
     {
-        if ($exact) {
-            $property_strings = array_map(
-                [$this, 'getTypeNameExact'],
-                array_keys($this->properties),
-                $this->properties,
-            );
-        }  else {
-            $property_strings = array_map(
-                [$this, 'getTypeNameNotExact'],
-                array_keys($this->properties),
-                $this->properties,
-            );
+        $property_strings = [];
+
+        foreach ($this->properties as $name => $type) {
+            if ($this->is_list && $this->sealed) {
+                $property_strings[$name] = $type->getId($exact);
+                continue;
+            }
+
+            $class_string_suffix = '';
+            if (isset($this->class_strings[$name])) {
+                $class_string_suffix = '::class';
+            }
+
+            $name = $this->escapeAndQuote($name);
+
+            $property_strings[$name] = $name . $class_string_suffix . ($type->possibly_undefined ? '?' : '')
+                . ': ' . $type->getId($exact);
         }
 
         if (!$this->is_list) {
@@ -129,39 +134,27 @@ class TKeyedArray extends Atomic
             );
         }
 
-        return static::KEY . '{' .
-                implode(
-                    ', ',
-                    array_map(
-                        static function (
-                            $name,
-                            Union $type
-                        ) use (
-                            $namespace,
-                            $aliased_classes,
-                            $this_class,
-                            $use_phpdoc_format
-                        ): string {
-                            $class_string_suffix = '';
-                            if (isset($this->class_strings[$name])) {
-                                $class_string_suffix = '::class';
-                            }
+        $suffixed_properties = [];
 
-                            $name = $this->escapeAndQuote($name);
+        foreach ($this->properties as $name => $type) {
+            $class_string_suffix = '';
+            if (isset($this->class_strings[$name])) {
+                $class_string_suffix = '::class';
+            }
 
-                            return $name . $class_string_suffix . ($type->possibly_undefined ? '?' : '') . ': ' .
-                                $type->toNamespacedString(
-                                    $namespace,
-                                    $aliased_classes,
-                                    $this_class,
-                                    $use_phpdoc_format
-                                );
-                        },
-                        array_keys($this->properties),
-                        $this->properties
-                    )
-                ) .
-                '}';
+            $name = $this->escapeAndQuote($name);
+
+            $suffixed_properties[$name] = $name . $class_string_suffix . ($type->possibly_undefined ? '?' : '') . ': ' .
+                $type->toNamespacedString(
+                    $namespace,
+                    $aliased_classes,
+                    $this_class,
+                    false
+                );
+
+        }
+
+        return static::KEY . '{' . implode(', ', $suffixed_properties) . '}';
     }
 
     /**
@@ -392,41 +385,5 @@ class TKeyedArray extends Atomic
         }
 
         return $name;
-    }
-
-    /**
-     * @param int|string $name
-     */
-    private function getTypeName($name, Union $type, bool $exact): string
-    {
-        if ($this->is_list && $this->sealed) {
-            return $type->getId($exact);
-        }
-
-        $class_string_suffix = '';
-        if (isset($this->class_strings[$name])) {
-            $class_string_suffix = '::class';
-        }
-
-        $name = $this->escapeAndQuote($name);
-
-        return $name . $class_string_suffix . ($type->possibly_undefined ? '?' : '')
-            . ': ' . $type->getId($exact);
-    }
-
-    /**
-     * @param int|string $name
-     */
-    private function getTypeNameExact($name, Union $type): string
-    {
-        return $this->getTypeName($name, $type, true);
-    }
-
-    /**
-     * @param int|string $name
-     */
-    private function getTypeNameNotExact($name, Union $type): string
-    {
-        return $this->getTypeName($name, $type, false);
     }
 }
