@@ -403,7 +403,7 @@ class IntRangeTest extends TestCase
                     $a = getInt();
                     $_arr[$a] = 12;',
                 'assertions' => [
-                    '$_arr===' => 'non-empty-array<int<0, max>, "a"|"b"|"c"|12>'
+                    '$_arr===' => "non-empty-array<int<0, max>, 'a'|'b'|'c'|12>"
                 ]
             ],
             'integrateExistingArrayNegative' => [
@@ -418,7 +418,7 @@ class IntRangeTest extends TestCase
                     $a = getInt();
                     $_arr[$a] = 12;',
                 'assertions' => [
-                    '$_arr===' => 'non-empty-array<int<min, 2>, "a"|"b"|"c"|12>'
+                    '$_arr===' => "non-empty-array<int<min, 2>, 'a'|'b'|'c'|12>"
                 ]
             ],
             'SKIPPED-statementsInLoopAffectsEverything' => [
@@ -505,7 +505,7 @@ class IntRangeTest extends TestCase
                 'assertions' => [
                     '$b===' => 'int<-9, 9>',
                     '$c===' => 'int<0, 9>',
-                    '$d===' => '0|positive-int'
+                    '$d===' => 'int<0, max>'
                 ],
             ],
             'minus' => [
@@ -582,7 +582,7 @@ class IntRangeTest extends TestCase
                 'code' => '<?php
                     /** @return int<0, 10> */
                     function getInt(): int{ return rand(0, 10); }
-                    
+
                     $a = getInt();
                     $b = -$a;
                     $c = null;
@@ -704,6 +704,116 @@ class IntRangeTest extends TestCase
                     '$_arr===' => 'non-empty-array<int<0, max>, int<0, max>>',
                 ],
             ],
+            'noErrorPushingBigShapeIntoConstant' => [
+                'code' => '<?php
+                        class DocComment
+                            {
+                                private const PSALM_ANNOTATIONS = [
+                                    "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "",
+                                    "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""
+                                ];
+                            }',
+                'assertions' => [
+                ],
+            ],
+            'assertionsAndNegationsOnRanges' => [
+                'code' => '<?php
+                    /** @var int $int */
+                    $int = 1;
+                    $a = $b = $c = $d = $e = $f = $g = $h = $int;
+
+                    if ($a < 1) {
+                        $res1 = $a; //should be int<min, 0>
+                        throw new Exception();
+                    }
+
+                    $res2 = $a; //should be int<1, max>
+
+                    if ($b > 1) {
+                        $res3 = $b; //should be int<2, max>
+                        throw new Exception();
+                    }
+
+                    $res4 = $b; //should be int<min, 1>
+
+                    if ($c <= 1) {
+                        $res5 = $c; //should be int<min, 1>
+                        throw new Exception();
+                    }
+
+                    $res6 = $c; //should be int<2, max>
+
+                    if ($d >= 1) {
+                        $res7 = $d; //should be int<1, max>
+                        throw new Exception();
+                    }
+
+                    $res8 = $d; //should be int<min, 0>
+
+
+
+                    if (1 < $e) {
+                        $res9 = $e; //should be int<2, max>
+                        throw new Exception();
+                    }
+
+                    $res10 = $e; //should be int<min, 1>
+
+                    if (1 > $f) {
+                        $res11 = $f; //should be int<min, 0>
+                        throw new Exception();
+                    }
+
+                    $res12 = $f; //should be int<1, max>
+
+                    if (1 <= $g) {
+                        $res13 = $g; //should be int<1, max>
+                        throw new Exception();
+                    }
+
+                    $res14 = $g; //should be int<min, 0>
+
+                    if (1 >= $h) {
+                        $res15 = $h; //should be int<min, 1>
+                        throw new Exception();
+                    }
+
+                    $res16 = $h; //should be int<2, max>',
+                'assertions' => [
+                    //'$res1' => 'int<min, 0>',
+                    '$res2' => 'int<1, max>',
+                    //'$res3' => 'int<2, max>',
+                    '$res4' => 'int<min, 1>',
+                    //'$res5' => 'int<min, 1>',
+                    '$res6' => 'int<2, max>',
+                    //'$res7' => 'int<1, max>',
+                    '$res8' => 'int<min, 0>',
+
+                    //'$res9' => 'int<2, max>',
+                    '$res10' => 'int<min, 1>',
+                    //'$res11' => 'int<min, 0>',
+                    '$res12' => 'int<1, max>',
+                    //'$res13' => 'int<1, max>',
+                    '$res14' => 'int<min, 0>',
+                    //'$res15' => 'int<min, 1>',
+                    '$res16' => 'int<2, max>',
+
+                ],
+            ],
+            'arraykeyCanBeRange' => [
+                'code' => '<?php
+                    /**
+                     * @param array-key $key
+                     * @param positive-int $expected
+                     */
+                    function matches($key, int $expected): bool {
+                        if ($key !== $expected) {
+                            return false;
+                        }
+
+                        return true;
+                    }'
+            ]
         ];
     }
 

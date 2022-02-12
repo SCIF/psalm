@@ -4,7 +4,7 @@ namespace Psalm\Type\Atomic;
 
 use Psalm\Type\Atomic;
 
-class TTemplateIndexedAccess extends Atomic
+final class TTemplateIndexedAccess extends Atomic
 {
     /**
      * @var string
@@ -34,16 +34,6 @@ class TTemplateIndexedAccess extends Atomic
     public function getKey(bool $include_extra = true): string
     {
         return $this->array_param_name . '[' . $this->offset_param_name . ']';
-    }
-
-    public function __toString(): string
-    {
-        return $this->getKey();
-    }
-
-    public function getId(bool $nested = false): string
-    {
-        return $this->getKey();
     }
 
     /**

@@ -48,9 +48,9 @@ class FunctionCallTest extends TestCase
                     $c = $_GET["c"];
                     $c = is_numeric($c) ? abs($c) : null;',
                 'assertions' => [
-                    '$a' => 'int|positive-int',
+                    '$a' => 'int<0, max>',
                     '$b' => 'float',
-                    '$c' => 'float|int|null|positive-int',
+                    '$c' => 'float|int<0, max>|null',
                 ],
                 'ignored_issues' => ['MixedAssignment', 'MixedArgument'],
             ],
@@ -517,6 +517,9 @@ class FunctionCallTest extends TestCase
             ],
             'iteratorToArrayWithGetIterator' => [
                 'code' => '<?php
+                    /**
+                     * @implements IteratorAggregate<int, string>
+                     */
                     class C implements IteratorAggregate {
                         /**
                          * @return Traversable<int,string>
@@ -532,9 +535,12 @@ class FunctionCallTest extends TestCase
             ],
             'iteratorToArrayWithGetIteratorReturningList' => [
                 'code' => '<?php
+                    /**
+                     * @implements IteratorAggregate<int, string>
+                     */
                     class C implements IteratorAggregate {
                         /**
-                         * @return Traversable<int,string>
+                         * @return Traversable<int, string>
                          */
                         public function getIterator() {
                             yield 1 => "1";
@@ -1362,7 +1368,7 @@ class FunctionCallTest extends TestCase
                     $r = preg_match("{foo}", "foo", $matches, PREG_OFFSET_CAPTURE);',
                 'assertions' => [
                     '$r===' => '0|1|false',
-                    '$matches===' => 'array<array-key, array{string, int}>',
+                    '$matches===' => 'array<array-key, array{string, int<-1, max>}>',
                 ],
             ],
             'pregMatchWithFlagUnmatchedAsNull' => [
@@ -1378,7 +1384,7 @@ class FunctionCallTest extends TestCase
                     $r = preg_match("{foo}", "foo", $matches, PREG_OFFSET_CAPTURE | PREG_UNMATCHED_AS_NULL);',
                 'assertions' => [
                     '$r===' => '0|1|false',
-                    '$matches===' => 'array<array-key, array{null|string, int}>',
+                    '$matches===' => 'array<array-key, array{null|string, int<-1, max>}>',
                 ],
             ],
             'pregReplaceCallback' => [
@@ -1490,12 +1496,12 @@ class FunctionCallTest extends TestCase
                     /** @psalm-suppress MixedArgument */
                     $F3 = date("F", $_GET["F3"]);',
                 'assertions' => [
-                    '$y' => 'numeric-string',
-                    '$m' => 'numeric-string',
-                    '$F' => 'string',
-                    '$y2' => 'numeric-string',
-                    '$F2' => 'string',
-                    '$F3' => 'false|string',
+                    '$y===' => 'numeric-string',
+                    '$m===' => 'numeric-string',
+                    '$F===' => 'string',
+                    '$y2===' => 'numeric-string',
+                    '$F2===' => 'string',
+                    '$F3===' => 'false|string',
                 ]
             ],
             'sscanfReturnTypeWithTwoParameters' => [
@@ -1799,6 +1805,51 @@ class FunctionCallTest extends TestCase
                 'assertions' => [
                     '$a===' => 'float(10.36)',
                 ],
+            ],
+            'allowConstructorAfterEnumExists' => [
+                'code' => '<?php
+                    function foo(string $s) : void {
+                        if (enum_exists($s)) {
+                            new $s();
+                        }
+                    }',
+                'assertions' => [],
+                'error_levels' => ['MixedMethodCall'],
+                'php_version' => '8.1',
+            ],
+            'refineWithEnumExists' => [
+                'code' => '<?php
+                    function foo(string $s) : void {
+                        if (enum_exists($s)) {
+                            new ReflectionClass($s);
+                        }
+                    }',
+                'assertions' => [],
+                'error_levels' => [],
+                'php_version' => '8.1',
+            ],
+            'refineWithClassExistsOrEnumExists' => [
+                'code' => '<?php
+                    function foo(string $s) : void {
+                        if (trait_exists($s) || enum_exists($s)) {
+                            new ReflectionClass($s);
+                        }
+                    }
+
+                    function bar(string $s) : void {
+                        if (enum_exists($s) || trait_exists($s)) {
+                            new ReflectionClass($s);
+                        }
+                    }
+
+                    function baz(string $s) : void {
+                        if (enum_exists($s) || interface_exists($s) || trait_exists($s)) {
+                            new ReflectionClass($s);
+                        }
+                    }',
+                'assertions' => [],
+                'error_levels' => [],
+                'php_version' => '8.1',
             ],
         ];
     }

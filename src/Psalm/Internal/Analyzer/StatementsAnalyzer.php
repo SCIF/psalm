@@ -23,7 +23,7 @@ use Psalm\Internal\Analyzer\Statements\ContinueAnalyzer;
 use Psalm\Internal\Analyzer\Statements\EchoAnalyzer;
 use Psalm\Internal\Analyzer\Statements\Expression\Assignment\InstancePropertyAssignmentAnalyzer;
 use Psalm\Internal\Analyzer\Statements\Expression\AssignmentAnalyzer;
-use Psalm\Internal\Analyzer\Statements\Expression\Fetch\ClassConstFetchAnalyzer;
+use Psalm\Internal\Analyzer\Statements\Expression\ClassConstAnalyzer;
 use Psalm\Internal\Analyzer\Statements\Expression\Fetch\ConstFetchAnalyzer;
 use Psalm\Internal\Analyzer\Statements\Expression\Fetch\VariableFetchAnalyzer;
 use Psalm\Internal\Analyzer\Statements\Expression\SimpleTypeInferer;
@@ -56,6 +56,7 @@ use Psalm\Issue\UnusedVariable;
 use Psalm\IssueBuffer;
 use Psalm\NodeTypeProvider;
 use Psalm\Plugin\EventHandler\Event\AfterStatementAnalysisEvent;
+use Psalm\Plugin\EventHandler\Event\BeforeStatementAnalysisEvent;
 use Psalm\Type;
 use UnexpectedValueException;
 
@@ -131,9 +132,9 @@ class StatementsAnalyzer extends SourceAnalyzer
     private $unused_var_locations = [];
 
     /**
-     * @var ?array<string, bool>
+     * @var array<string, true>
      */
-    public $byref_uses;
+    public $byref_uses = [];
 
     /**
      * @var ParsedDocblock|null
@@ -214,7 +215,6 @@ class StatementsAnalyzer extends SourceAnalyzer
             && $codebase->find_unused_variables
             && $context->check_variables
         ) {
-            //var_dump($this->data_flow_graph);
             $this->checkUnreferencedVars($stmts, $context);
         }
 
@@ -354,6 +354,10 @@ class StatementsAnalyzer extends SourceAnalyzer
         Context $context,
         ?Context $global_context
     ): ?bool {
+        if (self::dispatchBeforeStatementAnalysis($stmt, $context, $statements_analyzer) === false) {
+            return false;
+        }
+
         $ignore_variable_property = false;
         $ignore_variable_method = false;
 
@@ -577,7 +581,7 @@ class StatementsAnalyzer extends SourceAnalyzer
         } elseif ($stmt instanceof PhpParser\Node\Stmt\Property) {
             InstancePropertyAssignmentAnalyzer::analyzeStatement($statements_analyzer, $stmt, $context);
         } elseif ($stmt instanceof PhpParser\Node\Stmt\ClassConst) {
-            ClassConstFetchAnalyzer::analyzeClassConstAssignment($statements_analyzer, $stmt, $context);
+            ClassConstAnalyzer::analyzeAssignment($statements_analyzer, $stmt, $context);
         } elseif ($stmt instanceof PhpParser\Node\Stmt\Class_) {
             try {
                 $class_analyzer = new ClassAnalyzer(
@@ -620,23 +624,8 @@ class StatementsAnalyzer extends SourceAnalyzer
             }
         }
 
-        $codebase = $statements_analyzer->getCodebase();
-
-        $event = new AfterStatementAnalysisEvent(
-            $stmt,
-            $context,
-            $statements_analyzer,
-            $codebase,
-            []
-        );
-
-        if ($codebase->config->eventDispatcher->dispatchAfterStatementAnalysis($event) === false) {
+        if (self::dispatchAfterStatementAnalysis($stmt, $context, $statements_analyzer) === false) {
             return false;
-        }
-
-        $file_manipulations = $event->getFileReplacements();
-        if ($file_manipulations) {
-            FileManipulationBuffer::add($statements_analyzer->getFilePath(), $file_manipulations);
         }
 
         if ($new_issues) {
@@ -671,6 +660,58 @@ class StatementsAnalyzer extends SourceAnalyzer
             }
         }
 
+        return null;
+    }
+
+    private static function dispatchAfterStatementAnalysis(
+        PhpParser\Node\Stmt $stmt,
+        Context $context,
+        StatementsAnalyzer $statements_analyzer
+    ): ?bool {
+        $codebase = $statements_analyzer->getCodebase();
+
+        $event = new AfterStatementAnalysisEvent(
+            $stmt,
+            $context,
+            $statements_analyzer,
+            $codebase,
+            []
+        );
+
+        if ($codebase->config->eventDispatcher->dispatchAfterStatementAnalysis($event) === false) {
+            return false;
+        }
+
+        $file_manipulations = $event->getFileReplacements();
+        if ($file_manipulations) {
+            FileManipulationBuffer::add($statements_analyzer->getFilePath(), $file_manipulations);
+        }
+        return null;
+    }
+
+    private static function dispatchBeforeStatementAnalysis(
+        PhpParser\Node\Stmt $stmt,
+        Context $context,
+        StatementsAnalyzer $statements_analyzer
+    ): ?bool {
+        $codebase = $statements_analyzer->getCodebase();
+
+        $event = new BeforeStatementAnalysisEvent(
+            $stmt,
+            $context,
+            $statements_analyzer,
+            $codebase,
+            []
+        );
+
+        if ($codebase->config->eventDispatcher->dispatchBeforeStatementAnalysis($event) === false) {
+            return false;
+        }
+
+        $file_manipulations = $event->getFileReplacements();
+        if ($file_manipulations) {
+            FileManipulationBuffer::add($statements_analyzer->getFilePath(), $file_manipulations);
+        }
         return null;
     }
 
@@ -790,7 +831,7 @@ class StatementsAnalyzer extends SourceAnalyzer
             $assignment_node = DataFlowNode::getForAssignment($var_id, $original_location);
 
             if (!isset($this->byref_uses[$var_id])
-                && !isset($context->vars_from_global[$var_id])
+                && !isset($context->referenced_globals[$var_id])
                 && !VariableFetchAnalyzer::isSuperGlobal($var_id)
                 && $this->data_flow_graph instanceof VariableUseGraph
                 && !$this->data_flow_graph->isVariableUsed($assignment_node)
@@ -955,7 +996,7 @@ class StatementsAnalyzer extends SourceAnalyzer
     }
 
     /**
-     * @param array<string, bool> $byref_uses
+     * @param array<string, true> $byref_uses
      */
     public function setByRefUses(array $byref_uses): void
     {

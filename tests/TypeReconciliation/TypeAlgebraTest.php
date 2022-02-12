@@ -12,25 +12,23 @@ class TypeAlgebraTest extends TestCase
     use ValidCodeAnalysisTestTrait;
 
     /**
-     * @return iterable<string,array{code:string,assertions?:array<string,string>,ignored_issues?:list<string>}>
+     * @return iterable<string,array{code:string,assertions?:array<string,string>,ignored_issues?:list<string>,php_version?:string}>
      */
     public function providerValidCodeParse(): iterable
     {
         return [
             'twoVarLogicSimple' => [
                 'code' => '<?php
-                    function takesString(string $s): void {}
-
-                    function foo(?string $a, ?string $b): void {
+                    function foo(?string $a, ?string $b): string {
                         if ($a !== null || $b !== null) {
                             if ($a !== null) {
-                                $c = $a;
+                                return $a;
                             } else {
-                                $c = $b;
+                                return $b;
                             }
-
-                            takesString($c);
                         }
+
+                        return "foo";
                     }',
             ],
             'threeVarLogic' => [
@@ -1037,7 +1035,10 @@ class TypeAlgebraTest extends TestCase
                         }
 
                         return $c;
-                    }'
+                    }',
+                'assertions' => [],
+                'ignored_issues' => [],
+                'php_version' => '8.0',
             ],
             'dependentType' => [
                 'code' => '<?php
@@ -1159,6 +1160,26 @@ class TypeAlgebraTest extends TestCase
                         }
                     }'
             ],
+            'combineTwoOrredClausesWithUnnecessaryTerm' => [
+                'code' => '<?php
+                    function foo(bool $a, bool $b, bool $c): void {
+                        if (($a && $b) || (!$a && $c)) {
+                            //
+                        } else {
+                            if ($c) {}
+                        }
+                    }'
+            ],
+            'combineTwoOrredClausesWithMoreComplexUnnecessaryTerm' => [
+                'code' => '<?php
+                    function foo(bool $a, bool $b, bool $c): void {
+                        if ((!$a && !$b) || ($a && $b) || ($a && $c)) {
+                            throw new \Exception();
+                        }
+
+                        if ($a) {}
+                    }'
+            ],
         ];
     }
 
@@ -1191,8 +1212,6 @@ class TypeAlgebraTest extends TestCase
             ],
             'threeVarLogicWithException' => [
                 'code' => '<?php
-                    function takesString(string $s): void {}
-
                     function foo(?string $a, ?string $b, ?string $c): void {
                         if ($a !== null || $b !== null || $c !== null) {
                             if ($c !== null) {
@@ -1206,11 +1225,9 @@ class TypeAlgebraTest extends TestCase
                             } else {
                                 $d = $c;
                             }
-
-                            takesString($d);
                         }
                     }',
-                'error_message' => 'PossiblyNullArgument',
+                'error_message' => 'RedundantCondition',
             ],
             'invertedTwoVarLogicNotNestedWithVarChange' => [
                 'code' => '<?php

@@ -20,7 +20,7 @@ use function implode;
 /**
  * Denotes an object with specified member variables e.g. `object{foo:int, bar:string}`.
  */
-class TObjectWithProperties extends TObject
+final class TObjectWithProperties extends TObject
 {
     use HasIntersectionTrait;
 
@@ -46,7 +46,7 @@ class TObjectWithProperties extends TObject
         $this->methods = $methods;
     }
 
-    public function __toString(): string
+    public function getId(bool $exact = true, bool $nested = false): string
     {
         $extra_types = '';
 
@@ -60,41 +60,8 @@ class TObjectWithProperties extends TObject
                 /**
                  * @param  string|int $name
                  */
-                static fn($name, Union $type): string => $name . ($type->possibly_undefined ? '?' : '') . ':' . $type,
-                array_keys($this->properties),
-                $this->properties
-            )
-        );
-
-        $methods_string = implode(
-            ', ',
-            array_map(
-                static fn(string $name): string => $name . '()',
-                array_keys($this->methods)
-            )
-        );
-
-        return 'object{'
-            . $properties_string . ($methods_string && $properties_string ? ', ' : '')
-            . $methods_string
-            . '}' . $extra_types;
-    }
-
-    public function getId(bool $nested = false): string
-    {
-        $extra_types = '';
-
-        if ($this->extra_types) {
-            $extra_types = '&' . implode('&', $this->extra_types);
-        }
-
-        $properties_string = implode(
-            ', ',
-            array_map(
-                /**
-                 * @param  string|int $name
-                 */
-                static fn($name, Union $type): string => $name . ($type->possibly_undefined ? '?' : '') . ':' . $type->getId(),
+                static fn($name, Union $type): string => $name . ($type->possibly_undefined ? '?' : '') . ':'
+                    . $type->getId($exact),
                 array_keys($this->properties),
                 $this->properties
             )

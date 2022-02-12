@@ -5,7 +5,7 @@ namespace Psalm\Type\Atomic;
 /**
  * Denotes an integer value where the exact numeric value is known.
  */
-class TLiteralInt extends TInt
+final class TLiteralInt extends TInt
 {
     /** @var int */
     public $value;
@@ -20,8 +20,12 @@ class TLiteralInt extends TInt
         return 'int(' . $this->value . ')';
     }
 
-    public function getId(bool $nested = false): string
+    public function getId(bool $exact = true, bool $nested = false): string
     {
+        if (!$exact) {
+            return 'int';
+        }
+
         return (string) $this->value;
     }
 

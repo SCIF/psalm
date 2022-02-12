@@ -7,8 +7,6 @@ use Psalm\Exception\CodeException;
 use Psalm\Tests\Traits\InvalidCodeAnalysisTestTrait;
 use Psalm\Tests\Traits\ValidCodeAnalysisTestTrait;
 
-use function class_exists;
-
 use const DIRECTORY_SEPARATOR;
 
 class MethodSignatureTest extends TestCase
@@ -18,10 +16,6 @@ class MethodSignatureTest extends TestCase
 
     public function testExtendSoapClientWithDocblockTypes(): void
     {
-        if (class_exists('SoapClient') === false) {
-            $this->markTestSkipped('Cannot run test, base class "SoapClient" does not exist!');
-        }
-
         $this->addFile(
             'somefile.php',
             '<?php
@@ -52,10 +46,6 @@ class MethodSignatureTest extends TestCase
 
     public function testExtendSoapClientWithNoDocblockTypes(): void
     {
-        if (class_exists('SoapClient') === false) {
-            $this->markTestSkipped('Cannot run test, base class "SoapClient" does not exist!');
-        }
-
         $this->addFile(
             'somefile.php',
             '<?php
@@ -78,10 +68,6 @@ class MethodSignatureTest extends TestCase
 
     public function testExtendSoapClientWithParamType(): void
     {
-        if (class_exists('SoapClient') === false) {
-            $this->markTestSkipped('Cannot run test, base class "SoapClient" does not exist!');
-        }
-
         $this->addFile(
             'somefile.php',
             '<?php
@@ -249,9 +235,6 @@ class MethodSignatureTest extends TestCase
     {
         $this->expectExceptionMessage('ImplementedParamTypeMismatch');
         $this->expectException(CodeException::class);
-        if (class_exists('SoapClient') === false) {
-            $this->markTestSkipped('Cannot run test, base class "SoapClient" does not exist!');
-        }
 
         $this->addFile(
             'somefile.php',
@@ -285,10 +268,6 @@ class MethodSignatureTest extends TestCase
     {
         $this->expectException(CodeException::class);
         $this->expectExceptionMessage('MethodSignatureMismatch');
-
-        if (class_exists('SoapClient') === false) {
-            $this->markTestSkipped('Cannot run test, base class "SoapClient" does not exist!');
-        }
 
         $this->addFile(
             'somefile.php',
@@ -625,6 +604,9 @@ class MethodSignatureTest extends TestCase
             ],
             'allowMixedExtensionOfIteratorAggregate' => [
                 'code' => '<?php
+                    /**
+                     * @psalm-suppress MissingTemplateParam
+                     */
                     class C implements IteratorAggregate {
                         public function getIterator(): Iterator {
                             return new ArrayIterator([]);
@@ -1567,6 +1549,35 @@ class MethodSignatureTest extends TestCase
                     }
                 ',
                 'error_message' => 'MethodSignatureMismatch',
+            ],
+            'SKIPPED-noMixedTypehintInDescendant' => [
+                'code' => '<?php
+                    class a {
+                        public function test(): mixed {
+                            return 0;
+                        }
+                    }
+                    class b extends a {
+                        public function test() {
+                            return 0;
+                        }
+                    }
+                ',
+                'error_message' => 'MethodSignatureMismatch',
+                'ignored_issues' => [],
+                '8.0'
+            ],
+            'noTypehintInNativeDescendant' => [
+                'code' => '<?php
+                    class a implements JsonSerializable {
+                        public function jsonSerialize() {
+                            return 0;
+                        }
+                    }
+                ',
+                'error_message' => 'MethodSignatureMustProvideReturnType',
+                'ignored_issues' => [],
+                '8.1'
             ],
         ];
     }

@@ -371,7 +371,7 @@ class ArrayAssignmentTest extends TestCase
                     $a = [];
                     $a["foo"] = ["bar" => "baz"];',
                 'assertions' => [
-                    '$a' => 'non-empty-array<string, non-empty-array<string, string>>',
+                    '$a' => 'array{foo: array{bar: string}}<string, array<string, string>>',
                 ],
             ],
             'additionWithEmpty' => [
@@ -689,6 +689,9 @@ class ArrayAssignmentTest extends TestCase
             ],
             'implementsArrayAccess' => [
                 'code' => '<?php
+                    /**
+                     * @implements \ArrayAccess<array-key, mixed>
+                     */
                     class A implements \ArrayAccess {
                         /**
                          * @param  string|int $offset
@@ -734,6 +737,9 @@ class ArrayAssignmentTest extends TestCase
             ],
             'implementsArrayAccessInheritingDocblock' => [
                 'code' => '<?php
+                    /**
+                     * @implements \ArrayAccess<string, mixed>
+                     */
                     class A implements \ArrayAccess
                     {
                         /**
@@ -1514,9 +1520,8 @@ class ArrayAssignmentTest extends TestCase
                     $y = [];
 
                     $x = [...$x, ...$y];
-
-                    $x ? 1 : 0;
                 ',
+                'assertions' => ['$x' => 'array<never, never>']
             ],
             'unpackEmptyKeepsCorrectKeys' => [
                 'code' => '<?php

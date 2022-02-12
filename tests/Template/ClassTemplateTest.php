@@ -14,7 +14,7 @@ class ClassTemplateTest extends TestCase
     use ValidCodeAnalysisTestTrait;
 
     /**
-     * @return iterable<string,array{code:string,assertions?:array<string,string>,ignored_issues?:list<string>}>
+     * @return iterable<string,array{code:string,assertions?:array<string,string>,ignored_issues?:list<string>,php_version?:string}>
      */
     public function providerValidCodeParse(): iterable
     {
@@ -531,24 +531,37 @@ class ClassTemplateTest extends TestCase
                     /**
                      * @template TKey
                      * @template TValue
+                     * 
+                     * @extends \IteratorAggregate<TKey, TValue>
                      */
                     interface ICollection extends \IteratorAggregate {
                         /** @return \Traversable<TKey,TValue> */
                         public function getIterator();
                     }
 
+                    /**
+                     * @template TKey as array-key
+                     * @template TValue
+                     * 
+                     * @implements ICollection<TKey, TValue>
+                     */
                     class Collection implements ICollection {
-                        /** @var array */
+                        /** @var array<TKey, TValue> */
                         private $data;
+                        /**
+                         * @param array<TKey, TValue> $data
+                         */
                         public function __construct(array $data) {
                             $this->data = $data;
                         }
+                        /**
+                         * @return \Traversable<TKey, TValue>
+                         */
                         public function getIterator(): \Traversable {
                             return new \ArrayIterator($this->data);
                         }
                     }
 
-                    /** @var ICollection<string, int> */
                     $c = new Collection(["a" => 1]);
 
                     foreach ($c as $k => $v) { atan($v); strlen($k); }',
@@ -862,6 +875,7 @@ class ClassTemplateTest extends TestCase
                     }
 
                     /**
+                     * @psalm-suppress MissingTemplateParam
                      * @template TKey
                      * @template TValue
                      */
@@ -926,6 +940,8 @@ class ClassTemplateTest extends TestCase
                     /**
                      * @template TKey
                      * @template Tv
+                     * 
+                     * @psalm-suppress MissingTemplateParam
                      */
                     class KeyValueContainer extends ValueContainer
                     {
@@ -985,6 +1001,9 @@ class ClassTemplateTest extends TestCase
                         }
                     }
 
+                    /**
+                     * @psalm-suppress MissingTemplateParam
+                     */
                     class AppUser extends User {}
 
                     $au = new AppUser(-1);
@@ -1049,7 +1068,7 @@ class ClassTemplateTest extends TestCase
 
                     $c = new C();',
                 'assertions' => [
-                    '$c===' => 'C<"hello">',
+                    '$c===' => "C<'hello'>",
                 ],
             ],
             'SKIPPED-templateDefaultConstant' => [
@@ -1732,6 +1751,7 @@ class ClassTemplateTest extends TestCase
                         function foo();
                     }
 
+                    /** @psalm-suppress MissingTemplateParam */
                     interface IChild extends IParent {}
 
                     class C {}
@@ -1766,6 +1786,8 @@ class ClassTemplateTest extends TestCase
                      * @psalm-param class-string<T> $className
                      *
                      * @psalm-return T&I<T>
+                     * 
+                     * @psalm-suppress MissingTemplateParam
                      */
                     function makeConcrete(string $className) : object
                     {
@@ -1926,6 +1948,7 @@ class ClassTemplateTest extends TestCase
                         /** @psalm-param T $val */
                         public function set($val) : void {
                             $this->value = $val;
+                            /** @psalm-suppress MissingTemplateParam */
                             new class extends Foo {};
                         }
 
@@ -3490,6 +3513,9 @@ class ClassTemplateTest extends TestCase
                     function foo(Collection $c, Collection $d): object {
                         return rand(0, 1) ? $c->get() : $d->get();
                     }',
+                    'assertions' => [],
+                    'ignored_issues' => [],
+                    'php_version' => '8.0',
             ],
             'allowCovariantBoundsMismatchDifferentContainers' => [
                 'code' => '<?php
@@ -3525,6 +3551,9 @@ class ClassTemplateTest extends TestCase
                     function foo(Collection1 $c, Collection2 $d): object {
                         return rand(0, 1) ? $c->get() : $d->get();
                     }',
+                    'assertions' => [],
+                    'ignored_issues' => [],
+                    'php_version' => '8.0',
             ],
             'allowCovariantBoundsMismatchContainerAndObject' => [
                 'code' => '<?php
@@ -3556,6 +3585,9 @@ class ClassTemplateTest extends TestCase
                     function foo(object $c, Collection $d): object {
                         return rand(0, 1) ? $c : $d->get();
                     }',
+                    'assertions' => [],
+                    'ignored_issues' => [],
+                    'php_version' => '8.0',
             ],
             'allowCompatibleGenerics' => [
                 'code' => '<?php
@@ -3619,6 +3651,44 @@ class ClassTemplateTest extends TestCase
                     $container->set(new A());
                     foo($container->get());
                 '
+            ],
+            'refineTemplateTypeOfUnion' => [
+                'code' => '<?php
+                    /** @psalm-template T as One|Two|Three */
+                    class A {
+                        /** @param T $t */
+                        public function __construct(
+                            private object $t
+                        ) {}
+
+                        public function foo(): void {
+                            if ($this->t instanceof One || $this->t instanceof Two) {}
+                        }
+                    }
+
+                    final class One {}
+                    final class Two {}
+                    final class Three {}',
+            ],
+            'refineTemplateTypeOfUnionMoreComplex' => [
+                'code' => '<?php
+                    /** @psalm-template T as One|Two|Three */
+                    class A {
+                        /** @param T $t */
+                        public function __construct(
+                            private object $t
+                        ) {}
+
+                        public function foo(): void {
+                            if ($this->t instanceof One && rand(0, 1)) {}
+
+                            if ($this->t instanceof Two) {}
+                        }
+                    }
+
+                    final class One {}
+                    final class Two {}
+                    final class Three {}',
             ],
         ];
     }
@@ -3912,7 +3982,7 @@ class ClassTemplateTest extends TestCase
                     $mario = new CharacterRow(["id" => 5, "name" => "Mario", "height" => 3.5]);
 
                     $mario->ame = "Luigi";',
-                'error_message' => 'InvalidArgument - src' . DIRECTORY_SEPARATOR . 'somefile.php:47:29 - Argument 1 of CharacterRow::__set expects "height"|"id"|"name", "ame" provided',
+                'error_message' => 'InvalidArgument - src' . DIRECTORY_SEPARATOR . "somefile.php:47:29 - Argument 1 of CharacterRow::__set expects 'height'|'id'|'name', 'ame' provided",
             ],
             'specialiseTypeBeforeReturning' => [
                 'code' => '<?php
@@ -4395,9 +4465,32 @@ class ClassTemplateTest extends TestCase
 
                     /** @var Container<A> $container */
                     $container = new Container();
-                    $container->set(new B());
-                ',
+                    $container->set(new B());',
                 'error_message' => 'InvalidArgument',
+            ],
+            'refineTemplateTypeOfUnionAccurately' => [
+                'code' => '<?php
+                    /** @psalm-template T as One|Two|Three */
+                    class A {
+                        /** @param T $t */
+                        public function __construct(
+                            private object $t
+                        ) {}
+
+                        /** @return int */
+                        public function foo() {
+                            if ($this->t instanceof One || $this->t instanceof Two) {
+                                return $this->t;
+                            }
+
+                            throw new \Exception();
+                        }
+                    }
+
+                    final class One {}
+                    final class Two {}
+                    final class Three {}',
+                'error_message' => 'InvalidReturnStatement - src' . DIRECTORY_SEPARATOR . 'somefile.php:12:40 - The inferred type \'T:A as One|Two\' ',
             ],
         ];
     }

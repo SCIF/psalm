@@ -8,7 +8,7 @@ use function min;
 /**
  * Denotes an interval of integers between two bounds
  */
-class TIntRange extends TInt
+final class TIntRange extends TInt
 {
     public const BOUND_MIN = 'min';
     public const BOUND_MAX = 'max';
@@ -26,11 +26,6 @@ class TIntRange extends TInt
     {
         $this->min_bound = $min_bound;
         $this->max_bound = $max_bound;
-    }
-
-    public function __toString(): string
-    {
-        return $this->getKey();
     }
 
     public function getKey(bool $include_extra = true): string
@@ -125,10 +120,6 @@ class TIntRange extends TInt
     {
         if ($int_atomic instanceof TIntRange) {
             return $int_atomic;
-        }
-
-        if ($int_atomic instanceof TPositiveInt) {
-            return new TIntRange(1, null);
         }
 
         if ($int_atomic instanceof TLiteralInt) {

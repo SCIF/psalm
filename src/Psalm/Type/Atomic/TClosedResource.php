@@ -7,19 +7,9 @@ use Psalm\Type\Atomic;
 /**
  * Denotes the `resource` type that has been closed (e.g. a file handle through `fclose()`).
  */
-class TClosedResource extends Atomic
+final class TClosedResource extends Atomic
 {
-    public function __toString(): string
-    {
-        return 'closed-resource';
-    }
-
     public function getKey(bool $include_extra = true): string
-    {
-        return 'closed-resource';
-    }
-
-    public function getId(bool $nested = false): string
     {
         return 'closed-resource';
     }

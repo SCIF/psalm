@@ -8,7 +8,7 @@ use function substr;
  * Represents the type that is the result of a bitmask combination of its parameters.
  * `int-mask<1, 2, 4>` corresponds to `0|1|2|3|4|5|6|7`
  */
-class TIntMask extends TInt
+final class TIntMask extends TInt
 {
     /** @var non-empty-array<TLiteralInt|TClassConstant> */
     public $values;
@@ -30,12 +30,12 @@ class TIntMask extends TInt
         return 'int-mask<' . substr($s, 0, -2) . '>';
     }
 
-    public function getId(bool $nested = false): string
+    public function getId(bool $exact = true, bool $nested = false): string
     {
         $s = '';
 
         foreach ($this->values as $value) {
-            $s .= $value->getId() . ', ';
+            $s .= $value->getId($exact) . ', ';
         }
 
         return 'int-mask<' . substr($s, 0, -2) . '>';

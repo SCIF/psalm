@@ -21,6 +21,8 @@
             <xs:element name="ignoreExceptions" type="ExceptionsType" minOccurs="0" maxOccurs="1" />
             <xs:element name="globals" type="GlobalsType" minOccurs="0" maxOccurs="1" />
             <xs:element name="universalObjectCrates" type="UniversalObjectCratesType" minOccurs="0" maxOccurs="1" />
+            <xs:element name="enableExtensions" type="ExtensionsType" minOccurs="0" maxOccurs="1" />
+            <xs:element name="disableExtensions" type="ExtensionsType" minOccurs="0" maxOccurs="1" />
         </xs:choice>
 
         <xs:attribute name="autoloader" type="xs:string" />
@@ -47,19 +49,11 @@
         <xs:attribute name="ignoreInternalFunctionNullReturn" type="xs:boolean" default="true" />
         <xs:attribute name="includePhpVersionsInErrorBaseline" type="xs:boolean" default="false" />
         <xs:attribute name="inferPropertyTypesFromConstructor" type="xs:boolean" default="true" />
-        <xs:attribute name="loadXdebugStub" type="xs:boolean">
-            <xs:annotation>
-                <xs:documentation xml:lang="en">
-                    Default is runtime-specific: if not present, Psalm will only load the Xdebug stub if psalm has unloaded the extension.
-                </xs:documentation>
-            </xs:annotation>
-        </xs:attribute>
         <xs:attribute name="memoizeMethodCallResults" type="xs:boolean" default="false" />
         <xs:attribute name="rememberPropertyAssignmentsAfterCall" type="xs:boolean" default="true" />
         <xs:attribute name="resolveFromConfigFile" type="xs:boolean" default="true" />
         <xs:attribute name="strictBinaryOperands" type="xs:boolean" default="false" />
         <xs:attribute name="throwExceptionOnError" type="xs:boolean" default="false" />
-        <xs:attribute name="totallyTyped" type="xs:boolean" default="false" />
         <xs:attribute name="errorLevel" type="xs:integer" default="2" />
         <xs:attribute name="reportMixedIssues" type="xs:boolean" default="true" />
         <xs:attribute name="useDocblockTypes" type="xs:boolean" default="true" />
@@ -76,6 +70,7 @@
         <xs:attribute name="reportInfo" type="xs:boolean" default="true" />
         <xs:attribute name="restrictReturnTypes" type="xs:boolean" default="false" />
         <xs:attribute name="limitMethodComplexity" type="xs:boolean" default="false" />
+        <xs:attribute name="disableSuppressAll" type="xs:boolean" default="false" />
         <xs:attribute name="triggerErrorExits" type="TriggerErrorExitsType" default="default" />
     </xs:complexType>
 
@@ -193,9 +188,9 @@
 
     <xs:complexType name="IssueHandlersType">
         <xs:choice minOccurs="0" maxOccurs="unbounded">
-            <xs:element name="PluginIssue" type="PluginIssueHandlerType" minOccurs="0" />
             <xs:element name="AbstractInstantiation" type="IssueHandlerType" minOccurs="0" />
             <xs:element name="AbstractMethodCall" type="IssueHandlerType" minOccurs="0" />
+            <xs:element name="AmbiguousConstantInheritance" type="ClassConstantIssueHandlerType" minOccurs="0" />
             <xs:element name="ArgumentTypeCoercion" type="ArgumentIssueHandlerType" minOccurs="0" />
             <xs:element name="AssignmentToVoid" type="IssueHandlerType" minOccurs="0" />
             <xs:element name="CircularReference" type="IssueHandlerType" minOccurs="0" />
@@ -255,6 +250,7 @@
             <xs:element name="InvalidCatch" type="ClassIssueHandlerType" minOccurs="0" />
             <xs:element name="InvalidClass" type="ClassIssueHandlerType" minOccurs="0" />
             <xs:element name="InvalidClone" type="IssueHandlerType" minOccurs="0" />
+            <xs:element name="InvalidConstantAssignmentValue" type="ClassConstantIssueHandlerType" minOccurs="0" />
             <xs:element name="InvalidDocblock" type="IssueHandlerType" minOccurs="0" />
             <xs:element name="InvalidDocblockParamName" type="IssueHandlerType" minOccurs="0" />
             <xs:element name="InvalidEnumBackingType" type="ClassIssueHandlerType" minOccurs="0" />
@@ -286,12 +282,14 @@
             <xs:element name="InvalidToString" type="IssueHandlerType" minOccurs="0" />
             <xs:element name="InvalidTraversableImplementation" type="ClassIssueHandlerType" minOccurs="0" />
             <xs:element name="InvalidTypeImport" type="IssueHandlerType" minOccurs="0" />
+            <xs:element name="LessSpecificClassConstantType" type="ClassConstantIssueHandlerType" minOccurs="0" />
             <xs:element name="LessSpecificImplementedReturnType" type="IssueHandlerType" minOccurs="0" />
             <xs:element name="LessSpecificReturnStatement" type="IssueHandlerType" minOccurs="0" />
             <xs:element name="LessSpecificReturnType" type="IssueHandlerType" minOccurs="0" />
             <xs:element name="LoopInvalidation" type="IssueHandlerType" minOccurs="0" />
             <xs:element name="MethodSignatureMismatch" type="IssueHandlerType" minOccurs="0" />
             <xs:element name="MethodSignatureMustOmitReturnType" type="IssueHandlerType" minOccurs="0" />
+            <xs:element name="MethodSignatureMustProvideReturnType" type="IssueHandlerType" minOccurs="0" />
             <xs:element name="MismatchingDocblockParamType" type="IssueHandlerType" minOccurs="0" />
             <xs:element name="MismatchingDocblockPropertyType" type="IssueHandlerType" minOccurs="0" />
             <xs:element name="MismatchingDocblockReturnType" type="IssueHandlerType" minOccurs="0" />
@@ -331,10 +329,10 @@
             <xs:element name="NamedArgumentNotAllowed" type="ArgumentIssueHandlerType" minOccurs="0" />
             <xs:element name="NoEnumProperties" type="ClassIssueHandlerType" minOccurs="0" />
             <xs:element name="NoInterfaceProperties" type="ClassIssueHandlerType" minOccurs="0" />
-            <xs:element name="NonStaticSelfCall" type="IssueHandlerType" minOccurs="0" />
-            <xs:element name="NoValue" type="IssueHandlerType" minOccurs="0" />
             <xs:element name="NonInvariantDocblockPropertyType" type="IssueHandlerType" minOccurs="0" />
             <xs:element name="NonInvariantPropertyType" type="IssueHandlerType" minOccurs="0" />
+            <xs:element name="NonStaticSelfCall" type="IssueHandlerType" minOccurs="0" />
+            <xs:element name="NoValue" type="IssueHandlerType" minOccurs="0" />
             <xs:element name="NullableReturnStatement" type="IssueHandlerType" minOccurs="0" />
             <xs:element name="NullArgument" type="ArgumentIssueHandlerType" minOccurs="0" />
             <xs:element name="NullArrayAccess" type="IssueHandlerType" minOccurs="0" />
@@ -345,11 +343,13 @@
             <xs:element name="NullPropertyAssignment" type="PropertyIssueHandlerType" minOccurs="0" />
             <xs:element name="NullPropertyFetch" type="PropertyIssueHandlerType" minOccurs="0" />
             <xs:element name="NullReference" type="IssueHandlerType" minOccurs="0" />
+            <xs:element name="OverriddenInterfaceConstant" type="ClassConstantIssueHandlerType" minOccurs="0" />
             <xs:element name="OverriddenMethodAccess" type="IssueHandlerType" minOccurs="0" />
             <xs:element name="OverriddenPropertyAccess" type="PropertyIssueHandlerType" minOccurs="0" />
             <xs:element name="ParadoxicalCondition" type="IssueHandlerType" minOccurs="0" />
             <xs:element name="ParamNameMismatch" type="IssueHandlerType" minOccurs="0" />
             <xs:element name="ParentNotFound" type="IssueHandlerType" minOccurs="0" />
+            <xs:element name="PluginIssue" type="PluginIssueHandlerType" minOccurs="0" />
             <xs:element name="PossibleRawObjectIteration" type="IssueHandlerType" minOccurs="0" />
             <xs:element name="PossiblyFalseArgument" type="ArgumentIssueHandlerType" minOccurs="0" />
             <xs:element name="PossiblyFalseIterator" type="IssueHandlerType" minOccurs="0" />
@@ -400,9 +400,10 @@
             <xs:element name="RedundantConditionGivenDocblockType" type="IssueHandlerType" minOccurs="0" />
             <xs:element name="RedundantFunctionCall" type="IssueHandlerType" minOccurs="0" />
             <xs:element name="RedundantFunctionCallGivenDocblockType" type="IssueHandlerType" minOccurs="0" />
-            <xs:element name="RedundantPropertyInitializationCheck" type="IssueHandlerType" minOccurs="0" />
             <xs:element name="RedundantIdentityWithTrue" type="IssueHandlerType" minOccurs="0" />
+            <xs:element name="RedundantPropertyInitializationCheck" type="IssueHandlerType" minOccurs="0" />
             <xs:element name="ReferenceConstraintViolation" type="IssueHandlerType" minOccurs="0" />
+            <xs:element name="ReferenceReusedFromConfusingScope" type="IssueHandlerType" minOccurs="0" />
             <xs:element name="ReservedWord" type="IssueHandlerType" minOccurs="0" />
             <xs:element name="StringIncrement" type="IssueHandlerType" minOccurs="0" />
             <xs:element name="TaintedCallable" type="IssueHandlerType" minOccurs="0" />
@@ -457,9 +458,10 @@
             <xs:element name="UnnecessaryVarAnnotation" type="IssueHandlerType" minOccurs="0" />
             <xs:element name="UnrecognizedExpression" type="IssueHandlerType" minOccurs="0" />
             <xs:element name="UnrecognizedStatement" type="IssueHandlerType" minOccurs="0" />
+            <xs:element name="UnresolvableConstant" type="IssueHandlerType" minOccurs="0" />
             <xs:element name="UnresolvableInclude" type="IssueHandlerType" minOccurs="0" />
-            <xs:element name="UnsafeInstantiation" type="IssueHandlerType" minOccurs="0" />
             <xs:element name="UnsafeGenericInstantiation" type="IssueHandlerType" minOccurs="0" />
+            <xs:element name="UnsafeInstantiation" type="IssueHandlerType" minOccurs="0" />
             <xs:element name="UnusedClass" type="ClassIssueHandlerType" minOccurs="0" />
             <xs:element name="UnusedClosureParam" type="IssueHandlerType" minOccurs="0" />
             <xs:element name="UnusedConstructor" type="MethodIssueHandlerType" minOccurs="0" />
@@ -601,6 +603,24 @@
         <xs:attribute name="errorLevel" type="ErrorLevelType" />
     </xs:complexType>
 
+    <xs:complexType name="ClassConstantIssueHandlerType">
+        <xs:sequence>
+            <xs:element name="errorLevel" minOccurs="0" maxOccurs="unbounded">
+                <xs:complexType>
+                    <xs:choice maxOccurs="unbounded">
+                        <xs:element name="directory" minOccurs="0" maxOccurs="unbounded" type="NameAttributeType" />
+                        <xs:element name="file" minOccurs="0" maxOccurs="unbounded" type="NameAttributeType" />
+                        <xs:element name="referencedConstant" minOccurs="0" maxOccurs="unbounded" type="NameAttributeType" />
+                    </xs:choice>
+
+                    <xs:attribute name="type" type="ErrorLevelType" use="required" />
+                </xs:complexType>
+            </xs:element>
+        </xs:sequence>
+
+        <xs:attribute name="errorLevel" type="ErrorLevelType" />
+    </xs:complexType>
+
     <xs:complexType name="VariableIssueHandlerType">
         <xs:sequence>
             <xs:element name="errorLevel" minOccurs="0" maxOccurs="unbounded">
@@ -651,4 +671,29 @@
             <xs:enumeration value="always"/>
         </xs:restriction>
     </xs:simpleType>
+
+    <xs:complexType name="ExtensionsType">
+        <xs:sequence>
+            <xs:element name="extension" maxOccurs="unbounded" type="ExtensionAttributeType" />
+        </xs:sequence>
+    </xs:complexType>
+
+    <xs:simpleType name="ExtensionType">
+        <xs:restriction base="xs:string">
+            <xs:enumeration value="decimal"/>
+            <xs:enumeration value="dom"/>
+            <xs:enumeration value="ds"/>
+            <xs:enumeration value="geos"/>
+            <xs:enumeration value="gmp"/>
+            <xs:enumeration value="mongodb"/>
+            <xs:enumeration value="mysqli"/>
+            <xs:enumeration value="pdo"/>
+            <xs:enumeration value="soap"/>
+            <xs:enumeration value="xdebug"/>
+        </xs:restriction>
+    </xs:simpleType>
+
+    <xs:complexType name="ExtensionAttributeType">
+        <xs:attribute name="name" type="ExtensionType" use="required" />
+    </xs:complexType>
 </xs:schema>

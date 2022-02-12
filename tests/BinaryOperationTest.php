@@ -8,8 +8,6 @@ use Psalm\Exception\CodeException;
 use Psalm\Tests\Traits\InvalidCodeAnalysisTestTrait;
 use Psalm\Tests\Traits\ValidCodeAnalysisTestTrait;
 
-use function class_exists;
-
 use const DIRECTORY_SEPARATOR;
 
 class BinaryOperationTest extends TestCase
@@ -19,10 +17,6 @@ class BinaryOperationTest extends TestCase
 
     public function testGMPOperations(): void
     {
-        if (class_exists('GMP') === false) {
-            $this->markTestSkipped('Cannot run test, base class "GMP" does not exist!');
-        }
-
         $this->addFile(
             'somefile.php',
             '<?php
@@ -88,10 +82,6 @@ class BinaryOperationTest extends TestCase
 
     public function testDecimalOperations(): void
     {
-        if (!class_exists('Decimal\\Decimal')) {
-            $this->markTestSkipped('Cannot run test, base class "Decimal\\Decimal" does not exist!');
-        }
-
         $this->addFile(
             'somefile.php',
             '<?php
@@ -260,7 +250,7 @@ class BinaryOperationTest extends TestCase
     }
 
     /**
-     * @return iterable<string,array{code:string,assertions?:array<string,string>,ignored_issues?:list<string>}>
+     * @return iterable<string,array{code:string,assertions?:array<string,string>,ignored_issues?:list<string>,php_version?:string}>
      */
     public function providerValidCodeParse(): iterable
     {
@@ -818,6 +808,9 @@ class BinaryOperationTest extends TestCase
                             return 0;
                         }
                     }',
+                'assertions' => [],
+                'ignored_issues' => [],
+                'php_version' => '8.0',
             ],
             'NumericStringIncrementLiteral' => [
                 'code' => '<?php
@@ -842,6 +835,21 @@ class BinaryOperationTest extends TestCase
                     function example(object $foo): string
                     {
                         return ($foo instanceof FooInterface ? $foo->toString() : null) ?? "Not a stringable foo";
+                    }',
+            ],
+            'handleLiteralInequalityWithInts' => [
+                'code' => '<?php
+
+                    /**
+                     * @param int<0, max> $i
+                     * @return int<1, max>
+                     */
+                    function toPositiveInt(int $i): int
+                    {
+                        if ($i !== 0) {
+                            return $i;
+                        }
+                        return 1;
                     }',
             ],
         ];

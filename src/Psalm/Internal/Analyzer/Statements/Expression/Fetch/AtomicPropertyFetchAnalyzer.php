@@ -74,6 +74,7 @@ class AtomicPropertyFetchAnalyzer
 {
     /**
      * @param array<string> $invalid_fetch_types $invalid_fetch_types
+     * @psalm-suppress ComplexMethod
      */
     public static function analyze(
         StatementsAnalyzer $statements_analyzer,
@@ -802,13 +803,13 @@ class AtomicPropertyFetchAnalyzer
         }
 
         if ($class_storage->specialize_instance) {
-            $var_id = ExpressionIdentifier::getArrayVarId(
+            $var_id = ExpressionIdentifier::getExtendedVarId(
                 $stmt->var,
                 null,
                 $statements_analyzer
             );
 
-            $var_property_id = ExpressionIdentifier::getArrayVarId(
+            $var_property_id = ExpressionIdentifier::getExtendedVarId(
                 $stmt,
                 null,
                 $statements_analyzer
@@ -863,7 +864,7 @@ class AtomicPropertyFetchAnalyzer
                 $type->parent_nodes = [$property_node->id => $property_node];
             }
         } else {
-            $var_property_id = ExpressionIdentifier::getArrayVarId(
+            $var_property_id = ExpressionIdentifier::getExtendedVarId(
                 $stmt,
                 null,
                 $statements_analyzer
@@ -1007,7 +1008,10 @@ class AtomicPropertyFetchAnalyzer
                 }
             }
 
-            if (!$class_exists) {
+            if (!$class_exists &&
+                //interfaces can't have properties. Except when they do... In PHP Core, they can
+                !in_array($fq_class_name, ['UnitEnum', 'BackedEnum'], true)
+            ) {
                 if (IssueBuffer::accepts(
                     new NoInterfaceProperties(
                         'Interfaces cannot have properties',

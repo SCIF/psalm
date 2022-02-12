@@ -15,7 +15,9 @@ use Psalm\Plugin\EventHandler\AfterFunctionCallAnalysisInterface;
 use Psalm\Plugin\EventHandler\AfterFunctionLikeAnalysisInterface;
 use Psalm\Plugin\EventHandler\AfterMethodCallAnalysisInterface;
 use Psalm\Plugin\EventHandler\AfterStatementAnalysisInterface;
+use Psalm\Plugin\EventHandler\BeforeAddIssueInterface;
 use Psalm\Plugin\EventHandler\BeforeFileAnalysisInterface;
+use Psalm\Plugin\EventHandler\BeforeStatementAnalysisInterface;
 use Psalm\Plugin\EventHandler\Event\AddRemoveTaintsEvent;
 use Psalm\Plugin\EventHandler\Event\AfterAnalysisEvent;
 use Psalm\Plugin\EventHandler\Event\AfterClassLikeAnalysisEvent;
@@ -29,7 +31,9 @@ use Psalm\Plugin\EventHandler\Event\AfterFunctionCallAnalysisEvent;
 use Psalm\Plugin\EventHandler\Event\AfterFunctionLikeAnalysisEvent;
 use Psalm\Plugin\EventHandler\Event\AfterMethodCallAnalysisEvent;
 use Psalm\Plugin\EventHandler\Event\AfterStatementAnalysisEvent;
+use Psalm\Plugin\EventHandler\Event\BeforeAddIssueEvent;
 use Psalm\Plugin\EventHandler\Event\BeforeFileAnalysisEvent;
+use Psalm\Plugin\EventHandler\Event\BeforeStatementAnalysisEvent;
 use Psalm\Plugin\EventHandler\Event\StringInterpreterEvent;
 use Psalm\Plugin\EventHandler\RemoveTaintsInterface;
 use Psalm\Plugin\EventHandler\StringInterpreterInterface;
@@ -37,6 +41,7 @@ use Psalm\Type\Atomic\TLiteralString;
 
 use function array_merge;
 use function count;
+use function is_bool;
 use function is_subclass_of;
 
 /**
@@ -81,6 +86,13 @@ class EventDispatcher
     public $after_expression_checks = [];
 
     /**
+     * Static methods to be called before statement checks are processed
+     *
+     * @var list<class-string<BeforeStatementAnalysisInterface>>
+     */
+    public $before_statement_checks = [];
+
+    /**
      * Static methods to be called after statement checks have completed
      *
      * @var list<class-string<AfterStatementAnalysisInterface>>
@@ -121,6 +133,11 @@ class EventDispatcher
      * @var list<class-string<AfterCodebasePopulatedInterface>>
      */
     public $after_codebase_populated = [];
+
+    /**
+     * @var list<class-string<BeforeAddIssueInterface>>
+     */
+    private array $before_add_issue = [];
 
     /**
      * Static methods to be called after codebase has been populated
@@ -185,6 +202,10 @@ class EventDispatcher
             $this->after_expression_checks[] = $class;
         }
 
+        if (is_subclass_of($class, BeforeStatementAnalysisInterface::class)) {
+            $this->before_statement_checks[] = $class;
+        }
+
         if (is_subclass_of($class, AfterStatementAnalysisInterface::class)) {
             $this->after_statement_checks[] = $class;
         }
@@ -207,6 +228,10 @@ class EventDispatcher
 
         if (is_subclass_of($class, AfterCodebasePopulatedInterface::class)) {
             $this->after_codebase_populated[] = $class;
+        }
+
+        if (is_subclass_of($class, BeforeAddIssueInterface::class)) {
+            $this->before_add_issue[] = $class;
         }
 
         if (is_subclass_of($class, AfterAnalysisInterface::class)) {
@@ -271,6 +296,16 @@ class EventDispatcher
         return null;
     }
 
+    public function dispatchBeforeStatementAnalysis(BeforeStatementAnalysisEvent $event): ?bool
+    {
+        foreach ($this->before_statement_checks as $handler) {
+            if ($handler::beforeStatementAnalysis($event) === false) {
+                return false;
+            }
+        }
+        return null;
+    }
+
     public function dispatchAfterStatementAnalysis(AfterStatementAnalysisEvent $event): ?bool
     {
         foreach ($this->after_statement_checks as $handler) {
@@ -328,6 +363,17 @@ class EventDispatcher
         foreach ($this->after_codebase_populated as $handler) {
             $handler::afterCodebasePopulated($event);
         }
+    }
+
+    public function dispatchBeforeAddIssue(BeforeAddIssueEvent $event): ?bool
+    {
+        foreach ($this->before_add_issue as $handler) {
+            $result = $handler::beforeAddIssue($event);
+            if (is_bool($result)) {
+                return $result;
+            }
+        }
+        return null;
     }
 
     public function dispatchAfterAnalysis(AfterAnalysisEvent $event): void

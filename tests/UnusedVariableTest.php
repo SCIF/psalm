@@ -35,7 +35,6 @@ class UnusedVariableTest extends TestCase
             )
         );
 
-        $this->project_analyzer->setPhpVersion('7.4', 'tests');
         $this->project_analyzer->getCodebase()->reportUnusedVariables();
     }
 
@@ -46,12 +45,14 @@ class UnusedVariableTest extends TestCase
      * @param array<string> $error_levels
      *
      */
-    public function testValidCode($code, array $error_levels = []): void
+    public function testValidCode($code, array $error_levels = [], string $php_version = '7.4'): void
     {
         $test_name = $this->getTestName();
         if (strpos($test_name, 'SKIPPED-') !== false) {
             $this->markTestSkipped('Skipped due to a bug.');
         }
+
+        $this->project_analyzer->setPhpVersion($php_version, 'tests');
 
         $file_path = self::$src_dir_path . 'somefile.php';
 
@@ -82,7 +83,9 @@ class UnusedVariableTest extends TestCase
         }
 
         $this->expectException(CodeException::class);
-        $this->expectExceptionMessageRegExp('/\b' . preg_quote($error_message, '/') . '\b/');
+        $this->expectExceptionMessageMatches('/\b' . preg_quote($error_message, '/') . '\b/');
+
+        $this->project_analyzer->setPhpVersion('7.4', 'tests');
 
         $file_path = self::$src_dir_path . 'somefile.php';
 
@@ -99,7 +102,7 @@ class UnusedVariableTest extends TestCase
     }
 
     /**
-     * @return array<string, array{code:string,ignored_issues?:list<string>}>
+     * @return array<string, array{code:string,ignored_issues?:list<string>,php_version?:string}>
      */
     public function providerValidCodeParse(): array
     {
@@ -1522,7 +1525,10 @@ class UnusedVariableTest extends TestCase
                         }
                     }
 
-                    /** @param mixed $p */
+                    /**
+                     * @param mixed $p
+                     * @psalm-suppress UnusedParam
+                     */
                     function takes_ref(&$p): void {}'
             ],
             'passedByRefArrayOffset' => [
@@ -1952,6 +1958,23 @@ class UnusedVariableTest extends TestCase
                         $arr[0] = $b;
                     }'
             ],
+            'byRefDeeplyNestedArrayParam' => [
+                'code' => '<?php
+                    /** @param non-empty-list<non-empty-list<int>> $arr */
+                    function foo(array &$arr): void {
+                        $b = 5;
+                        $arr[0][0] = $b;
+                    }'
+            ],
+            'nestedReferencesToByRefParam' => [
+                'code' => '<?php
+                    /** @param non-empty-list<non-empty-list<int>> $arr */
+                    function foo(array &$arr): void {
+                        $a = &$arr[0];
+                        $b = &$a[0];
+                        $b = 5;
+                    }'
+            ],
             'byRefNestedArrayInForeach' => [
                 'code' => '<?php
                     function foo(array $arr): array {
@@ -2232,6 +2255,7 @@ class UnusedVariableTest extends TestCase
                 'code' => '<?php
                     /**
                      * @psalm-immutable
+                     * @psalm-suppress MissingTemplateParam
                      */
                     class A implements IteratorAggregate
                     {
@@ -2371,7 +2395,9 @@ class UnusedVariableTest extends TestCase
                                 return 2;
                             }
                         }
-                    }'
+                    }',
+                'error_levels' => [],
+                'php_version' => '8.0',
             ],
             'concatWithUnknownProperty' => [
                 'code' => '<?php
@@ -2435,6 +2461,94 @@ class UnusedVariableTest extends TestCase
 
                         $a = false;
                     }'
+            ],
+            'referenceUseUsesReferencedVariable' => [
+                'code' => '<?php
+                    $a = 1;
+                    $b = &$a;
+                    echo $b;
+                ',
+            ],
+            'referenceAssignmentToNonReferenceCountsAsUse' => [
+                'code' => '<?php
+                    $b = &$a;
+                    $b = 2;
+                    echo $a;
+                ',
+                'assertions' => [
+                    '$b===' => '2',
+                    '$a===' => '2',
+                ],
+            ],
+            'referenceUsedAfterVariableReassignment' => [
+                'code' => '<?php
+                    $b = &$a;
+                    $a = 2;
+                    echo $a;
+                    $b = 3;
+                    echo $a;
+                ',
+            ],
+            'referenceUsedInForeach' => [
+                'code' => '<?php
+                    foreach ([1, 2, 3] as &$var) {
+                        $var += 1;
+                    }
+                ',
+            ],
+            'SKIPPED-referenceUsedInDestructuredForeach' => [
+                'code' => '<?php
+                    foreach ([[1, 2], [3, 4]] as [&$a, $_]) {
+                        $a += 1;
+                    }
+                ',
+            ],
+            'arrayWithReferenceIsUsed' => [
+                'code' => '<?php
+                    /** @var non-empty-list<int> */
+                    $arr = [1];
+                    $arr[1] = &$arr[0];
+
+                    takesArray($arr);
+
+                    function takesArray(array $_arr): void {}
+                ',
+            ],
+            'arrayWithVariableOffsetAssignedToReferenceUsesVariableOffset' => [
+                'code' => '<?php
+                    /** @var non-empty-list<int> */
+                    $arr = [1];
+                    $int = 1;
+                    $arr[$int] = &$arr[0];
+
+                    takesArray($arr);
+
+                    function takesArray(array $_arr): void {}
+                ',
+            ],
+            'usedPlusInAddition' => [
+                'code' => '<?php
+                    function takesAnInt(): void {
+                        $i = 0;
+
+                        while (rand(0, 1)) {
+                            if (($i = $i + 1) > 10) {
+                                break;
+                            } else {}
+                        }
+                    }',
+            ],
+            'usedPlusInUnaryAddition' => [
+                'code' => '<?php
+                    function takesAnInt(): void {
+                        $i = 0;
+
+                        while (rand(0, 1)) {
+                            if (++$i > 10) {
+                                break;
+                            } else {}
+                        }
+                    }',
             ],
         ];
     }
@@ -3415,6 +3529,98 @@ class UnusedVariableTest extends TestCase
                         takesArrayOfString($arr);
                     }',
                 'error_message' => 'MixedArgumentTypeCoercion - src' . DIRECTORY_SEPARATOR . 'somefile.php:12:44 - Argument 1 of takesArrayOfString expects array<array-key, string>, parent type array{mixed} provided. Consider improving the type at src' . DIRECTORY_SEPARATOR . 'somefile.php:10:41'
+            ],
+            'referenceReassignmentUnusedVariable' => [
+                'code' => '<?php
+                    $a = $b = 1;
+                    $c = &$a;
+                    $c = &$b;
+                    $c = 2;
+
+                    echo $a + $b + $c;
+                ',
+                'error_message' => 'UnusedVariable - src' . DIRECTORY_SEPARATOR . 'somefile.php:3:21 - $c',
+            ],
+            'referenceAssignmentIsNotUsed' => [
+                'code' => '<?php
+                    $a = 1;
+                    $b = &$a;
+                ',
+                'error_message' => 'UnusedVariable - src' . DIRECTORY_SEPARATOR . 'somefile.php:2:21 - $a',
+            ],
+            'unusedReferenceToPreviouslyUsedVariable' => [
+                'code' => '<?php
+                    $a = 1;
+                    echo $a;
+                    $b = &$a;
+                ',
+                'error_message' => 'UnusedVariable - src' . DIRECTORY_SEPARATOR . 'somefile.php:4:21 - $b',
+            ],
+            'SKIPPED-unusedReferenceToSubsequentlyUsedVariable' => [ // Not easy to do the way it's currently set up
+                'code' => '<?php
+                    $a = 1;
+                    $b = &$a;
+                    echo $a;
+                ',
+                'error_message' => 'UnusedVariable - src' . DIRECTORY_SEPARATOR . 'somefile.php:3:21 - $b',
+            ],
+            'unusedReferenceInForeach' => [
+                'code' => '<?php
+                    foreach ([1, 2, 3] as &$var) {
+                    }
+                ',
+                'error_message' => 'UnusedForeachValue',
+            ],
+            'SKIPPED-unusedReferenceInDestructuredForeach' => [
+                'code' => '<?php
+                    foreach ([[1, 2], [3, 4]] as [&$var, $_]) {
+                    }
+                ',
+                'error_message' => 'UnusedForeachValue',
+            ],
+            'unusedReturnByReference' => [
+                'code' => '<?php
+                    function &foo(): int
+                    {
+                        /** @var ?int */
+                        static $i;
+                        if ($i === null) {
+                            $i = 0;
+                        }
+                        return $i;
+                    }
+
+                    $bar = foo();
+                ',
+                'error_message' => 'UnusedVariable',
+            ],
+            'unusedPassByReference' => [
+                'code' => '<?php
+                    function foo(int &$arg): int
+                    {
+                        return 0;
+                    }
+                ',
+                'error_message' => 'UnusedParam',
+            ],
+            'SKIPPED-unusedGlobalVariable' => [
+                'code' => '<?php
+                    $a = 0;
+                    function foo(): void
+                    {
+                        global $a;
+                    }
+                ',
+                'error_message' => 'UnusedVariable - src' . DIRECTORY_SEPARATOR . 'somefile.php:2:21 - $a',
+            ],
+            'unusedUndeclaredGlobalVariable' => [
+                'code' => '<?php
+                    function foo(): void
+                    {
+                        global $a;
+                    }
+                ',
+                'error_message' => 'UnusedVariable',
             ],
         ];
     }

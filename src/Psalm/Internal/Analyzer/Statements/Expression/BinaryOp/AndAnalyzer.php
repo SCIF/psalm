@@ -139,6 +139,7 @@ class AndAnalyzer
                 $left_type_assertions,
                 $active_left_assertions,
                 $context->vars_in_scope,
+                $context->references_in_scope,
                 $changed_var_ids,
                 $left_referenced_var_ids,
                 $statements_analyzer,
@@ -149,10 +150,6 @@ class AndAnalyzer
             );
 
             $right_context->vars_in_scope = $right_vars_in_scope;
-
-            if ($context->if_scope) {
-                $context->if_scope->if_cond_changed_var_ids += $changed_var_ids;
-            }
         }
 
         $partitioned_clauses = Context::removeReconciledClauses($left_clauses, $changed_var_ids);
@@ -184,30 +181,26 @@ class AndAnalyzer
             );
         }
 
-        if ($context->if_context && !$context->inside_negation) {
+        if ($context->if_body_context && !$context->inside_negation) {
+            $if_body_context = $context->if_body_context;
             $context->vars_in_scope = $right_context->vars_in_scope;
-            $if_context = $context->if_context;
+            $if_body_context->vars_in_scope = array_merge(
+                $if_body_context->vars_in_scope,
+                $context->vars_in_scope
+            );
 
-            foreach ($right_context->vars_in_scope as $var_id => $type) {
-                if (!isset($if_context->vars_in_scope[$var_id])) {
-                    $if_context->vars_in_scope[$var_id] = $type;
-                } elseif (isset($context->vars_in_scope[$var_id])) {
-                    $if_context->vars_in_scope[$var_id] = $context->vars_in_scope[$var_id];
-                }
-            }
-
-            $if_context->referenced_var_ids = array_merge(
+            $if_body_context->referenced_var_ids = array_merge(
+                $if_body_context->referenced_var_ids,
                 $context->referenced_var_ids,
-                $if_context->referenced_var_ids
             );
 
-            $if_context->assigned_var_ids = array_merge(
+            $if_body_context->assigned_var_ids = array_merge(
+                $if_body_context->assigned_var_ids,
                 $context->assigned_var_ids,
-                $if_context->assigned_var_ids
             );
 
-            $if_context->reconciled_expression_clauses = array_merge(
-                $if_context->reconciled_expression_clauses,
+            $if_body_context->reconciled_expression_clauses = array_merge(
+                $if_body_context->reconciled_expression_clauses,
                 array_map(
                     /** @return string|int */
                     static fn(Clause $c) => $c->hash,
@@ -215,12 +208,12 @@ class AndAnalyzer
                 )
             );
 
-            $if_context->vars_possibly_in_scope = array_merge(
+            $if_body_context->vars_possibly_in_scope = array_merge(
+                $if_body_context->vars_possibly_in_scope,
                 $context->vars_possibly_in_scope,
-                $if_context->vars_possibly_in_scope
             );
 
-            $if_context->updateChecks($context);
+            $if_body_context->updateChecks($context);
         } else {
             $context->vars_in_scope = $left_context->vars_in_scope;
         }

@@ -10,6 +10,7 @@ use PhpParser\Node\Stmt\Function_;
 use Psalm\CodeLocation;
 use Psalm\Codebase;
 use Psalm\Context;
+use Psalm\Exception\UnresolvableConstantException;
 use Psalm\FileManipulation;
 use Psalm\Internal\Analyzer\FunctionLike\ReturnTypeAnalyzer;
 use Psalm\Internal\Analyzer\FunctionLike\ReturnTypeCollector;
@@ -38,6 +39,7 @@ use Psalm\Issue\MissingParamType;
 use Psalm\Issue\MissingThrowsDocblock;
 use Psalm\Issue\ReferenceConstraintViolation;
 use Psalm\Issue\ReservedWord;
+use Psalm\Issue\UnresolvableConstant;
 use Psalm\Issue\UnusedClosureParam;
 use Psalm\Issue\UnusedParam;
 use Psalm\IssueBuffer;
@@ -769,7 +771,7 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
 
             foreach ($context->vars_in_scope as $var => $_) {
                 if (strpos($var, '$this->') !== 0 && $var !== '$this') {
-                    unset($context->vars_in_scope[$var]);
+                    $context->removePossibleReference($var);
                 }
             }
 
@@ -850,10 +852,6 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
 
             if ($position === false) {
                 throw new UnexpectedValueException('$position should not be false here');
-            }
-
-            if ($storage->params[$position]->by_ref) {
-                continue;
             }
 
             if ($storage->params[$position]->promoted_property) {
@@ -982,6 +980,7 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
         $project_analyzer = $statements_analyzer->getProjectAnalyzer();
 
         foreach ($params as $offset => $function_param) {
+            $function_param_id = '$' . $function_param->name;
             $signature_type = $function_param->signature_type;
             $signature_type_location = $function_param->signature_type_location;
 
@@ -1013,17 +1012,32 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
             if ($function_param->type) {
                 $param_type = clone $function_param->type;
 
-                $param_type = TypeExpander::expandUnion(
-                    $codebase,
-                    $param_type,
-                    $context->self,
-                    $context->self,
-                    $this->getParentFQCLN(),
-                    true,
-                    false,
-                    false,
-                    true
-                );
+                try {
+                    $param_type = TypeExpander::expandUnion(
+                        $codebase,
+                        $param_type,
+                        $context->self,
+                        $context->self,
+                        $this->getParentFQCLN(),
+                        true,
+                        false,
+                        false,
+                        true,
+                        false,
+                        true,
+                    );
+                } catch (UnresolvableConstantException $e) {
+                    if ($function_param->type_location !== null) {
+                        IssueBuffer::maybeAdd(
+                            new UnresolvableConstant(
+                                "Could not resolve constant {$e->class_name}::{$e->const_name}",
+                                $function_param->type_location
+                            ),
+                            $storage->suppressed_issues,
+                            true
+                        );
+                    }
+                }
 
                 if ($function_param->type_location) {
                     if ($param_type->check(
@@ -1070,7 +1084,7 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
                         && !$function_param->type->isBool())
                 ) {
                     $param_assignment = DataFlowNode::getForAssignment(
-                        '$' . $function_param->name,
+                        $function_param_id,
                         $function_param->location
                     );
 
@@ -1088,16 +1102,6 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
                         $statements_analyzer->data_flow_graph->addPath($type_source, $param_assignment, 'param');
                     }
 
-                    if ($function_param->by_ref
-                        && $codebase->find_unused_variables
-                    ) {
-                        $statements_analyzer->data_flow_graph->addPath(
-                            $param_assignment,
-                            new DataFlowNode('variable-use', 'variable use', null),
-                            'variable-use'
-                        );
-                    }
-
                     if ($storage->variadic) {
                         $this->param_nodes += [$param_assignment->id => $param_assignment];
                     }
@@ -1106,18 +1110,19 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
                 }
             }
 
-            $context->vars_in_scope['$' . $function_param->name] = $var_type;
-            $context->vars_possibly_in_scope['$' . $function_param->name] = true;
+            $context->vars_in_scope[$function_param_id] = $var_type;
+            $context->vars_possibly_in_scope[$function_param_id] = true;
 
             if ($function_param->by_ref) {
-                $context->vars_in_scope['$' . $function_param->name]->by_ref = true;
+                $context->vars_in_scope[$function_param_id]->by_ref = true;
+                $context->references_to_external_scope[$function_param_id] = true;
             }
 
             $parser_param = $this->function->getParams()[$offset] ?? null;
 
             if ($function_param->location) {
                 $statements_analyzer->registerVariable(
-                    '$' . $function_param->name,
+                    $function_param_id,
                     $function_param->location,
                     null
                 );
@@ -1153,7 +1158,7 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
 
                     IssueBuffer::maybeAdd(
                         new MismatchingDocblockParamType(
-                            'Parameter $' . $function_param->name . ' has wrong type \'' . $param_type .
+                            'Parameter ' . $function_param_id . ' has wrong type \'' . $param_type .
                                 '\', should be \'' . $signature_type . '\'',
                             $function_param->type_location
                         ),
@@ -1252,13 +1257,6 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
                         $check_stmts = false;
                     }
                 }
-            }
-
-            if ($function_param->by_ref) {
-                // register by ref params as having been used, to avoid false positives
-                // @todo change the assignment analysis *just* for byref params
-                // so that we don't have to do this
-                $context->hasVariable('$' . $function_param->name);
             }
 
             foreach ($function_param->attributes as $attribute) {

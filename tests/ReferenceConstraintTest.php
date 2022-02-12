@@ -183,6 +183,19 @@ class ReferenceConstraintTest extends TestCase
                         array_walk_recursive($val, /** @param mixed $arg */ function (&$arg): void {});
                     }'
             ],
+            'investigateByrefArg' => [
+                'code' => '<?php
+                    class A {}
+                    function takesNullableObj(?A &$a): bool { return true; }
+
+                    $a = null;
+
+                    if (takesNullableObj($a) === false) {
+                        return;
+                    } else {}
+
+                    if ($a) {}',
+            ],
         ];
     }
 
@@ -285,6 +298,38 @@ class ReferenceConstraintTest extends TestCase
                         b($a ? $b : $c);
                     }',
                 'error_message' => 'InvalidPassByReference',
+            ],
+            'SKIPPED-referenceToTypedArrayConstrainsAssignment' => [
+                'code' => '<?php
+                    class Foo
+                    {
+                        /** @var list<int> */
+                        public array $arr = [];
+
+                        public function __construct()
+                        {
+                            assert(isset($this->arr[0]));
+                            $int = &$this->arr[0];
+                            $int = (string) $int;
+                        }
+                    }
+                ',
+                'error_message' => 'ReferenceConstraintViolation',
+            ],
+            'SKIPPED-referenceToTypedArrayConstrainsAssignmentWithNullReferenceInitialization' => [
+                'code' => '<?php
+                    class Foo
+                    {
+                        /** @var list<int> */
+                        public array $arr = [];
+
+                        public function __construct()
+                        {
+                            $int = &$this->arr[0]; // If $this->arr[0] isn\'t set, this will set it to null.
+                        }
+                    }
+                ',
+                'error_message' => 'PossiblyInvalidPropertyAssignmentValue',
             ],
         ];
     }

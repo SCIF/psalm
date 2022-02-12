@@ -26,6 +26,7 @@ class TList extends Atomic
      */
     public $type_param;
 
+    /** @var non-empty-lowercase-string */
     public const KEY = 'list';
 
     /**
@@ -36,16 +37,9 @@ class TList extends Atomic
         $this->type_param = $type_param;
     }
 
-    public function __toString(): string
+    public function getId(bool $exact = true, bool $nested = false): string
     {
-        /** @psalm-suppress MixedOperand */
-        return static::KEY . '<' . $this->type_param . '>';
-    }
-
-    public function getId(bool $nested = false): string
-    {
-        /** @psalm-suppress MixedOperand */
-        return static::KEY . '<' . $this->type_param->getId() . '>';
+        return static::KEY . '<' . $this->type_param->getId($exact) . '>';
     }
 
     public function __clone()
@@ -73,7 +67,6 @@ class TList extends Atomic
                 );
         }
 
-        /** @psalm-suppress MixedOperand */
         return static::KEY
             . '<'
             . $this->type_param->toNamespacedString(

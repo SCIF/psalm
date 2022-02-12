@@ -287,7 +287,7 @@ class GeneratorTest extends TestCase
                     $iterator = new NoRewindIterator(generator());
                     ',
                 'assertions' => [
-                    '$iterator' => 'NoRewindIterator<int, string>',
+                    '$iterator' => 'NoRewindIterator<int, string, Generator<int, string, mixed, mixed>>',
                 ]
             ],
             'detectYieldInNew' => [
@@ -296,7 +296,7 @@ class GeneratorTest extends TestCase
                     $_a = function() { return new RuntimeException(yield "a"); };
                     ',
                 'assertions' => [
-                    '$_a' => 'pure-Closure():Generator<int, "a", mixed, RuntimeException>',
+                    '$_a' => 'pure-Closure():Generator<int, string, mixed, RuntimeException>',
                 ]
             ],
             'detectYieldInArray' => [
@@ -305,7 +305,7 @@ class GeneratorTest extends TestCase
                     $_a = function() { return [yield "a"]; };
                     ',
                 'assertions' => [
-                    '$_a' => 'pure-Closure():Generator<int, "a", mixed, array{"a"}>',
+                    '$_a' => 'pure-Closure():Generator<int, string, mixed, array{string}>',
                 ]
             ],
         ];

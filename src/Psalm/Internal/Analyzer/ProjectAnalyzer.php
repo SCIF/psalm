@@ -59,6 +59,7 @@ use UnexpectedValueException;
 use function array_combine;
 use function array_diff;
 use function array_fill_keys;
+use function array_filter;
 use function array_keys;
 use function array_map;
 use function array_merge;
@@ -306,6 +307,7 @@ class ProjectAnalyzer
         $this->stdout_report_options = $stdout_report_options;
         $this->generated_report_options = $generated_report_options;
 
+        $this->config->processPluginFileExtensions($this);
         $file_extensions = $this->config->getFileExtensions();
 
         foreach ($this->config->getProjectDirectories() as $dir_name) {
@@ -589,7 +591,9 @@ class ProjectAnalyzer
                 break;
         }
 
-        return "Target PHP version: $version $source\n";
+        return "Target PHP version: $version $source Extensions enabled: "
+            . implode(", ", array_keys(array_filter($codebase->config->php_extensions))) . " (unsupported extensions: "
+            . implode(", ", array_keys($codebase->config->php_extensions_not_supported)) . ")\n";
     }
 
     public function check(string $base_dir, bool $is_diff = false): void

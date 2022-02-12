@@ -117,6 +117,12 @@ class ArrayAnalyzer
             $item_value_type = null;
         }
 
+        if ($item_key_type === null && $item_value_type === null) {
+            $statements_analyzer->node_data->setType($stmt, Type::getEmptyArray());
+
+            return true;
+        }
+
         // if this array looks like an object-like array, let's return that instead
         if ($item_value_type
             && $item_key_type
@@ -147,7 +153,7 @@ class ArrayAnalyzer
                 $array_type = new TList($item_value_type ?? Type::getMixed());
             } else {
                 $array_type = new TNonEmptyList($item_value_type ?? Type::getMixed());
-                /** @psalm-suppress PossiblyInvalidPropertyAssignmentValue */
+                /** @psalm-suppress InvalidPropertyAssignmentValue */
                 $array_type->count = count($array_creation_info->property_types);
             }
 
@@ -235,7 +241,7 @@ class ArrayAnalyzer
             $item_value_type ?? Type::getMixed(),
         ]);
 
-        /** @psalm-suppress PossiblyInvalidPropertyAssignmentValue */
+        /** @psalm-suppress InvalidPropertyAssignmentValue */
         $array_type->count = count($array_creation_info->property_types);
 
         $stmt_type = new Union([
@@ -461,19 +467,21 @@ class ArrayAnalyzer
         }
 
         if ($item->byRef) {
-            $var_id = ExpressionIdentifier::getArrayVarId(
+            $var_id = ExpressionIdentifier::getExtendedVarId(
                 $item->value,
                 $statements_analyzer->getFQCLN(),
                 $statements_analyzer
             );
 
             if ($var_id) {
-                $context->removeDescendents(
-                    $var_id,
-                    $context->vars_in_scope[$var_id] ?? null,
-                    null,
-                    $statements_analyzer
-                );
+                if (isset($context->vars_in_scope[$var_id])) {
+                    $context->removeDescendents(
+                        $var_id,
+                        $context->vars_in_scope[$var_id],
+                        null,
+                        $statements_analyzer
+                    );
+                }
 
                 $context->vars_in_scope[$var_id] = Type::getMixed();
             }

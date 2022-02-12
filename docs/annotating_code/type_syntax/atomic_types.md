@@ -10,6 +10,7 @@ Atomic types are the basic building block of all type information used in Psalm.
 - [string](scalar_types.md)
 - [class-string and class-string&lt;Foo&gt;](scalar_types.md#class-string-interface-string)
 - [trait-string](scalar_types.md#trait-string)
+- [enum-string](scalar_types.md#enum-string)
 - [callable-string](scalar_types.md#callable-string)
 - [numeric-string](scalar_types.md#numeric-string)
 - [literal-string](scalar_types.md#literal-string)
@@ -56,7 +57,7 @@ Atomic types are the basic building block of all type information used in Psalm.
 
 ### `mixed`
 
-This is the _top type_ in PHP's type system, and represents a lack of type information. Psalm warns about `mixed` types when the `totallyTyped` flag is turned on, or when you're on level 1.
+This is the _top type_ in PHP's type system, and represents a lack of type information. Psalm warns about `mixed` types when the `reportMixedIssues` flag is turned on, or when you're on level 1.
 
 ### `never`
 It can be aliased to `no-return` or `never-return` in docblocks. Note: it replaced the old `empty` type that used to exist in Psalm

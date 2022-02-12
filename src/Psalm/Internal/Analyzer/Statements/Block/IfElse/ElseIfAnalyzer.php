@@ -224,6 +224,7 @@ class ElseIfAnalyzer
                 $reconcilable_elseif_types,
                 $active_elseif_types,
                 $elseif_context->vars_in_scope,
+                $elseif_context->references_in_scope,
                 $newly_reconciled_var_ids,
                 $cond_referenced_var_ids,
                 $statements_analyzer,
@@ -252,7 +253,7 @@ class ElseIfAnalyzer
                             && !array_key_exists($var_id, $newly_reconciled_var_ids)
                             && !array_key_exists($var_id, $cond_referenced_var_ids)
                         ) {
-                            unset($elseif_context->vars_in_scope[$var_id]);
+                            $elseif_context->removePossibleReference($var_id);
                         }
                     }
                 }
@@ -270,6 +271,10 @@ class ElseIfAnalyzer
         ) === false
         ) {
             return false;
+        }
+
+        foreach ($elseif_context->parent_remove_vars as $var_id => $_) {
+            $outer_context->removeVarFromConflictingClauses($var_id);
         }
 
         /** @var array<string, int> */
@@ -353,6 +358,7 @@ class ElseIfAnalyzer
                     $negated_elseif_types,
                     [],
                     $pre_conditional_context->vars_in_scope,
+                    $pre_conditional_context->references_in_scope,
                     $newly_reconciled_var_ids,
                     [],
                     $statements_analyzer,
@@ -426,6 +432,12 @@ class ElseIfAnalyzer
         } catch (ComplicatedExpressionException $e) {
             $if_scope->negated_clauses = [];
         }
+
+        // Track references set in the elseif to make sure they aren't reused later
+        $outer_context->updateReferencesPossiblyFromConfusingScope(
+            $elseif_context,
+            $statements_analyzer
+        );
 
         return null;
     }

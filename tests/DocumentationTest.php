@@ -237,7 +237,7 @@ class DocumentationTest extends TestCase
         }
 
         $this->expectException(CodeException::class);
-        $this->expectExceptionMessageRegExp('/\b' . preg_quote($error_message, '/') . '\b/');
+        $this->expectExceptionMessageMatches('/\b' . preg_quote($error_message, '/') . '\b/');
 
         $codebase = $this->project_analyzer->getCodebase();
         $codebase->config->visitPreloadedStubFiles($codebase);
@@ -286,6 +286,10 @@ class DocumentationTest extends TestCase
                 case 'TraitMethodSignatureMismatch':
                     continue 2;
 
+                /** @todo reinstate this test when the issue is restored */
+                case 'MethodSignatureMustProvideReturnType':
+                    continue 2;
+
                 case 'InvalidFalsableReturnType':
                     $ignored_issues = ['FalsableReturnStatement'];
                     break;
@@ -315,6 +319,7 @@ class DocumentationTest extends TestCase
                     $ignored_issues = ['UnusedVariable'];
                     break;
 
+                case 'AmbiguousConstantInheritance':
                 case 'InvalidEnumBackingType':
                 case 'InvalidEnumCaseValue':
                 case 'DuplicateEnumCase':

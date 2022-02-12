@@ -59,6 +59,7 @@ class MagicMethodAnnotationTest extends TestCase
                     public function find() {}
                 }
 
+                /** @psalm-suppress MissingTemplateParam */
                 class B extends A {}
 
                 class Obj {}
@@ -819,6 +820,126 @@ class MagicMethodAnnotationTest extends TestCase
 
                     consumeInt(B::bar());'
             ],
+            'callUsingParent' => [
+                'code' => '<?php
+                    /**
+                     * @method static create(array $data)
+                     */
+                    class Model {
+                        public function __call(string $name, array $arguments) {
+                            /** @psalm-suppress UnsafeInstantiation */
+                            return new static;
+                        }
+                    }
+
+                    class BlahModel extends Model {
+                        /**
+                         * @param mixed $input
+                         * @return static
+                         */
+                        public function create($input): BlahModel
+                        {
+                            return parent::create([]);
+                        }
+                    }
+
+                    class FooModel extends Model {}
+
+                    function consumeFoo(FooModel $a): void {}
+                    function consumeBlah(BlahModel $a): void {}
+
+                    $b = new FooModel();
+                    consumeFoo($b->create([]));
+
+                    $d = new BlahModel();
+                    consumeBlah($d->create([]));'
+            ],
+            'returnThisShouldKeepGenerics' => [
+                'code' => '<?php
+                    /**
+                     * @template E
+                     * @method $this foo()
+                     */
+                    class A
+                    {
+                        public function __call(string $name, array $args) {}
+                    }
+
+                    /**
+                     * @template E
+                     * @method $this foo()
+                     */
+                    interface I {}
+
+                    class B {}
+
+                    /** @var A<B> $a */
+                    $a = new A();
+                    $b = $a->foo();
+
+                    /** @var I<B> $i */
+                    $c = $i->foo();',
+                [
+                    '$b' => 'A<B>&static',
+                    '$c' => 'I<B>&static',
+                ]
+            ],
+            'genericsOfInheritedMethodsShouldBeResolved' => [
+                'code' => '<?php
+                    /**
+                     * @template E
+                     * @method E get()
+                     */
+                    interface I {}
+
+                    /**
+                     * @template E
+                     * @implements I<E>
+                     */
+                    class A implements I
+                    {
+                        public function __call(string $name, array $args) {}
+                    }
+
+                    /**
+                     * @template E
+                     * @extends I<E>
+                     */
+                    interface I2 extends I {}
+
+                    class B {}
+
+                    /**
+                     * @template E
+                     * @method E get()
+                     */
+                    class C
+                    {
+                        public function __call(string $name, array $args) {}
+                    }
+
+                    /**
+                     * @template E
+                     * @extends C<E>
+                     */
+                    class D extends C {}
+
+                    /** @var A<B> $a */
+                    $a = new A();
+                    $b = $a->get();
+
+                    /** @var I2<B> $i */
+                    $c = $i->get();
+
+                    /** @var D<B> $d */
+                    $d = new D();
+                    $e = $d->get();',
+                'assertions' => [
+                    '$b' => 'B',
+                    '$c' => 'B',
+                    '$e' => 'B',
+                ]
+            ],
         ];
     }
 
@@ -999,6 +1120,29 @@ class MagicMethodAnnotationTest extends TestCase
                     class C {}',
                 'error_message' => 'InvalidDocblock',
             ],
+            'magicParentCallShouldNotPolluteContext' => [
+                'code' => '<?php
+                    /**
+                     * @method baz(): Foo
+                     */
+                    class Foo
+                    {
+                        public function __call()
+                        {
+                            return new self();
+                        }
+                    }
+
+                    class Bar extends Foo
+                    {
+                        public function baz(): Foo
+                        {
+                            parent::baz();
+                            return $__tmp_parent_var__;
+                        }
+                    }',
+                'error_message' => 'UndefinedVariable',
+            ]
         ];
     }
 

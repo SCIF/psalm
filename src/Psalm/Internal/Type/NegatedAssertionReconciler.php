@@ -11,7 +11,6 @@ use Psalm\Storage\Assertion;
 use Psalm\Storage\Assertion\IsClassNotEqual;
 use Psalm\Storage\Assertion\IsNotCountable;
 use Psalm\Storage\Assertion\IsNotIdentical;
-use Psalm\Storage\Assertion\IsNotPositiveNumeric;
 use Psalm\Storage\Assertion\IsNotType;
 use Psalm\Type;
 use Psalm\Type\Atomic;
@@ -23,16 +22,21 @@ use Psalm\Type\Atomic\TFalse;
 use Psalm\Type\Atomic\TFloat;
 use Psalm\Type\Atomic\TInt;
 use Psalm\Type\Atomic\TIterable;
+use Psalm\Type\Atomic\TKeyedArray;
+use Psalm\Type\Atomic\TList;
 use Psalm\Type\Atomic\TLiteralFloat;
 use Psalm\Type\Atomic\TLiteralInt;
 use Psalm\Type\Atomic\TLiteralString;
 use Psalm\Type\Atomic\TNamedObject;
 use Psalm\Type\Atomic\TNonEmptyString;
 use Psalm\Type\Atomic\TString;
+use Psalm\Type\Atomic\TTemplateParam;
 use Psalm\Type\Atomic\TTrue;
 use Psalm\Type\Reconciler;
 use Psalm\Type\Union;
 
+use function array_merge;
+use function array_values;
 use function count;
 use function get_class;
 use function strtolower;
@@ -85,10 +89,6 @@ class NegatedAssertionReconciler extends Reconciler
                 $code_location,
                 $suppressed_issues
             );
-        }
-
-        if ($is_equality && $assertion instanceof IsNotPositiveNumeric) {
-            return $existing_var_type;
         }
 
         $existing_var_atomic_types = $existing_var_type->getAtomicTypes();
@@ -162,6 +162,8 @@ class NegatedAssertionReconciler extends Reconciler
             return $existing_var_type;
         }
 
+        $codebase = $statements_analyzer->getCodebase();
+
         if ($assertion_type instanceof TNamedObject
             && strtolower($assertion_type->value) === 'traversable'
             && isset($existing_var_atomic_types['iterable'])
@@ -177,8 +179,9 @@ class NegatedAssertionReconciler extends Reconciler
                     clone $iterable->type_params[1],
                 ]
             ));
-        } elseif ($assertion_type instanceof TInt
+        } elseif ($assertion_type !== null && get_class($assertion_type) === TInt::class
             && isset($existing_var_type->getAtomicTypes()['array-key'])
+            && !$is_equality
         ) {
             $existing_var_type->removeType('array-key');
             $existing_var_type->addType(new TString);
@@ -193,9 +196,21 @@ class NegatedAssertionReconciler extends Reconciler
         ) {
             // checking if two types share a common parent is not enough to guarantee childs are instanceof each other
             // fall through
+        } elseif ($existing_var_type->isArray()
+            && ($assertion->getAtomicType() instanceof TArray
+                || $assertion->getAtomicType() instanceof TList
+                || $assertion->getAtomicType() instanceof TKeyedArray)
+        ) {
+            //if both types are arrays, try to combine them
+            $combined_type = TypeCombiner::combine(
+                array_merge(array_values($existing_var_type->getAtomicTypes()), [$assertion->getAtomicType()]),
+                $codebase,
+            );
+            $existing_var_type->removeType('array');
+            if ($combined_type->isSingle()) {
+                $existing_var_type->addType($combined_type->getSingleAtomic());
+            }
         } elseif (!$is_equality) {
-            $codebase = $statements_analyzer->getCodebase();
-
             $assertion_type = $assertion->getAtomicType();
 
             // if there wasn't a direct hit, go deeper, eliminating subtypes
@@ -206,13 +221,14 @@ class NegatedAssertionReconciler extends Reconciler
                             continue;
                         }
 
-                        if (AtomicTypeComparator::isContainedBy(
-                            $codebase,
-                            $existing_var_type_part,
-                            $assertion_type,
-                            false,
-                            false
-                        )) {
+                        if (!$existing_var_type_part instanceof TTemplateParam
+                            && AtomicTypeComparator::isContainedBy(
+                                $codebase,
+                                $existing_var_type_part,
+                                $assertion_type,
+                                false,
+                                false
+                            )) {
                             $existing_var_type->removeType($part_name);
                         } elseif (AtomicTypeComparator::isContainedBy(
                             $codebase,
@@ -307,13 +323,49 @@ class NegatedAssertionReconciler extends Reconciler
         if ($assertion_type instanceof TLiteralInt) {
             if ($existing_var_type->hasInt()) {
                 if ($existing_var_type->getLiteralInts()) {
-                    if (!$existing_var_type->hasPositiveInt()) {
-                        $did_match_literal_type = true;
-                    }
+                    $did_match_literal_type = true;
 
                     if ($existing_var_type->removeType($assertion_type->getKey())) {
                         $did_remove_type = true;
                     }
+                }
+
+                $existing_range_types = $existing_var_type->getRangeInts();
+
+                if ($existing_range_types) {
+                    foreach ($existing_range_types as $int_key => $literal_type) {
+                        if ($literal_type->contains($assertion_type->value)) {
+                            $did_remove_type = true;
+                            $existing_var_type->removeType($int_key);
+                            if ($literal_type->min_bound === null
+                                || $literal_type->min_bound <= $assertion_type->value - 1
+                            ) {
+                                $existing_var_type->addType(new Type\Atomic\TIntRange(
+                                    $literal_type->min_bound,
+                                    $assertion_type->value - 1
+                                ));
+                            }
+                            if ($literal_type->max_bound === null
+                                || $literal_type->max_bound >= $assertion_type->value + 1
+                            ) {
+                                $existing_var_type->addType(new Type\Atomic\TIntRange(
+                                    $assertion_type->value + 1,
+                                    $literal_type->max_bound
+                                ));
+                            }
+                        }
+                    }
+                }
+
+                if (isset($existing_var_type->getAtomicTypes()['int'])
+                    && get_class($existing_var_type->getAtomicTypes()['int']) === Type\Atomic\TInt::class
+                ) {
+                    $did_remove_type = true;
+                    //this may be used to generate a range containing any int except the one that was asserted against
+                    //but this is failing some tests
+                    /*$existing_var_type->removeType('int');
+                    $existing_var_type->addType(new Type\Atomic\TIntRange(null, $assertion_type->value - 1));
+                    $existing_var_type->addType(new Type\Atomic\TIntRange($assertion_type->value + 1, null));*/
                 }
             } else {
                 $scalar_var_type = clone $assertion_type;

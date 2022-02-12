@@ -11,7 +11,7 @@ use Psalm\Type\Atomic\TNamedObject;
 use Psalm\Type\Atomic\TTemplateParam;
 use Psalm\Type\Union;
 
-class ClassLikeStorage
+final class ClassLikeStorage
 {
     use CustomMetadataTrait;
 
@@ -237,6 +237,16 @@ class ClassLikeStorage
     public $pseudo_static_methods = [];
 
     /**
+     * Maps pseudo method names to the original declaring method identifier
+     * The key is the method name in lowercase, and the value is the original `MethodIdentifier` instance
+     *
+     * This property contains all pseudo methods declared on ancestors.
+     *
+     * @var array<lowercase-string, MethodIdentifier>
+     */
+    public $declaring_pseudo_method_ids = [];
+
+    /**
      * @var array<lowercase-string, MethodIdentifier>
      */
     public $declaring_method_ids = [];
@@ -351,9 +361,10 @@ class ClassLikeStorage
     public $template_extended_params;
 
     /**
-     * @var ?int
+     * @var array<string, int>|null
      */
-    public $template_extended_count;
+    public $template_type_extends_count;
+
 
     /**
      * @var array<string, int>|null
@@ -376,7 +387,7 @@ class ClassLikeStorage
     public $initialized_properties = [];
 
     /**
-     * @var array<string>
+     * @var array<string, true>
      */
     public $invalid_dependencies = [];
 

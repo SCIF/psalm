@@ -38,6 +38,7 @@ use Psalm\Node\VirtualIdentifier;
 use Psalm\Plugin\EventHandler\Event\AddRemoveTaintsEvent;
 use Psalm\Plugin\EventHandler\Event\AfterEveryFunctionCallAnalysisEvent;
 use Psalm\Storage\FunctionLikeParameter;
+use Psalm\Storage\FunctionStorage;
 use Psalm\Storage\Possibilities;
 use Psalm\Type;
 use Psalm\Type\Atomic;
@@ -166,12 +167,12 @@ class FunctionCallAnalyzer extends CallAnalyzer
             $set_inside_conditional = true;
         }
 
+        if (!$template_result) {
+            $template_result = new TemplateResult([], []);
+        }
+
         if (!$is_first_class_callable) {
             if (isset($function_call_info->function_storage->template_types)) {
-                if (!$template_result) {
-                    $template_result = new TemplateResult([], []);
-                }
-
                 $template_result->template_types += $function_call_info->function_storage->template_types ?: [];
             }
 
@@ -208,9 +209,7 @@ class FunctionCallAnalyzer extends CallAnalyzer
             }
         }
 
-        $already_inferred_lower_bounds = $template_result
-            ? $template_result->lower_bounds
-            : [];
+        $already_inferred_lower_bounds = $template_result->lower_bounds;
 
         $template_result = new TemplateResult([], []);
 
@@ -489,6 +488,8 @@ class FunctionCallAnalyzer extends CallAnalyzer
         $is_maybe_root_function = !$function_name instanceof PhpParser\Node\Name\FullyQualified
             && count($function_name->parts) === 1;
 
+        $args = $stmt->isFirstClassCallable() ? [] : $stmt->getArgs();
+
         if (!$function_call_info->in_call_map) {
             $predefined_functions = $codebase->config->getPredefinedFunctions();
             $is_predefined = isset($predefined_functions[strtolower($original_function_id)])
@@ -500,11 +501,10 @@ class FunctionCallAnalyzer extends CallAnalyzer
                     $function_call_info->function_id,
                     $code_location,
                     $is_maybe_root_function
-                ) === false
-                ) {
-                    if (ArgumentsAnalyzer::analyze(
+                ) === false) {
+                    if ($args && ArgumentsAnalyzer::analyze(
                         $statements_analyzer,
-                        $stmt->getArgs(),
+                        $args,
                         null,
                         null,
                         true,
@@ -526,51 +526,66 @@ class FunctionCallAnalyzer extends CallAnalyzer
         $function_call_info->defined_constants = [];
         $function_call_info->global_variables = [];
         $args = $stmt->isFirstClassCallable() ? [] : $stmt->getArgs();
+        $dynamic_function_storage = null;
+
+        if ($codebase->functions->dynamic_storage_provider->has($function_call_info->function_id)) {
+            $dynamic_function_storage = $codebase->functions->dynamic_storage_provider->getFunctionStorage(
+                $stmt,
+                $statements_analyzer,
+                $function_call_info->function_id,
+                $context,
+                $code_location
+            );
+        }
 
         if ($function_call_info->function_exists) {
+            if ($dynamic_function_storage) {
+                $function_call_info->function_storage = $dynamic_function_storage;
+                $function_call_info->function_params = $dynamic_function_storage->params;
+                $function_call_info->allow_named_args = $dynamic_function_storage->allow_named_arg_calls;
+                $function_call_info->defined_constants = $dynamic_function_storage->defined_constants;
+                $function_call_info->global_variables = $dynamic_function_storage->global_variables;
+            } elseif (!$function_call_info->in_call_map || $function_call_info->is_stubbed) {
+                try {
+                    $function_call_info->function_storage = $function_storage = $codebase_functions->getStorage(
+                        $statements_analyzer,
+                        strtolower($function_call_info->function_id)
+                    );
+
+                    $function_call_info->function_params = $function_call_info->function_storage->params;
+
+                    if (!$function_storage->allow_named_arg_calls) {
+                        $function_call_info->allow_named_args = false;
+                    }
+
+                    if (!$is_predefined) {
+                        $function_call_info->defined_constants = $function_storage->defined_constants;
+                        $function_call_info->global_variables = $function_storage->global_variables;
+                    }
+                } catch (UnexpectedValueException $e) {
+                    $function_call_info->function_params = [
+                        new FunctionLikeParameter('args', false, null, null, null, false, false, true)
+                    ];
+                }
+            } else {
+                $function_callable = InternalCallMapHandler::getCallableFromCallMapById(
+                    $codebase,
+                    $function_call_info->function_id,
+                    $args,
+                    $statements_analyzer->node_data
+                );
+
+                $function_call_info->function_params = $function_callable->params;
+            }
+
             if ($codebase->functions->params_provider->has($function_call_info->function_id)) {
                 $function_call_info->function_params = $codebase->functions->params_provider->getFunctionParams(
                     $statements_analyzer,
                     $function_call_info->function_id,
                     $args,
-                    null,
+                    $context,
                     $code_location
                 );
-            }
-
-            if ($function_call_info->function_params === null) {
-                if (!$function_call_info->in_call_map || $function_call_info->is_stubbed) {
-                    try {
-                        $function_call_info->function_storage = $function_storage = $codebase_functions->getStorage(
-                            $statements_analyzer,
-                            strtolower($function_call_info->function_id)
-                        );
-
-                        $function_call_info->function_params = $function_call_info->function_storage->params;
-
-                        if (!$function_storage->allow_named_arg_calls) {
-                            $function_call_info->allow_named_args = false;
-                        }
-
-                        if (!$is_predefined) {
-                            $function_call_info->defined_constants = $function_storage->defined_constants;
-                            $function_call_info->global_variables = $function_storage->global_variables;
-                        }
-                    } catch (UnexpectedValueException $e) {
-                        $function_call_info->function_params = [
-                            new FunctionLikeParameter('args', false, null, null, null, false, false, true)
-                        ];
-                    }
-                } else {
-                    $function_callable = InternalCallMapHandler::getCallableFromCallMapById(
-                        $codebase,
-                        $function_call_info->function_id,
-                        $args,
-                        $statements_analyzer->node_data
-                    );
-
-                    $function_call_info->function_params = $function_callable->params;
-                }
             }
 
             if ($codebase->store_node_types
@@ -649,14 +664,23 @@ class FunctionCallAnalyzer extends CallAnalyzer
                 }
 
                 if ($var_type_part instanceof TClosure || $var_type_part instanceof TCallable) {
-                    if (!$var_type_part->is_pure && ($context->pure || $context->mutation_free)) {
-                        IssueBuffer::maybeAdd(
-                            new ImpureFunctionCall(
-                                'Cannot call an impure function from a mutation-free context',
-                                new CodeLocation($statements_analyzer->getSource(), $stmt)
-                            ),
-                            $statements_analyzer->getSuppressedIssues()
-                        );
+                    if (!$var_type_part->is_pure) {
+                        if ($context->pure || $context->mutation_free) {
+                            IssueBuffer::maybeAdd(
+                                new ImpureFunctionCall(
+                                    'Cannot call an impure function from a mutation-free context',
+                                    new CodeLocation($statements_analyzer->getSource(), $stmt)
+                                ),
+                                $statements_analyzer->getSuppressedIssues()
+                            );
+                        }
+
+                        if (!$function_call_info->function_storage) {
+                            $function_call_info->function_storage = new FunctionStorage();
+                        }
+
+                        $function_call_info->function_storage->pure = false;
+                        $function_call_info->function_storage->mutation_free = false;
                     }
 
                     $function_call_info->function_params = $var_type_part->params;
@@ -938,6 +962,7 @@ class FunctionCallAnalyzer extends CallAnalyzer
                 $assert_type_assertions,
                 $assert_type_assertions,
                 $context->vars_in_scope,
+                $context->references_in_scope,
                 $changed_var_ids,
                 array_map(
                     static fn($_): bool => true,

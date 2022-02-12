@@ -2083,6 +2083,7 @@ class ConditionalTest extends TestCase
                         /**
                          * @psalm-suppress MixedReturnStatement
                          * @psalm-suppress MixedInferredReturnType
+                         * @psalm-suppress MixedArrayAccess
                          */
                         public static function get(string $k1, string $k2) : ?string {
                             if (!isset(static::$cache[$k1][$k2])) {
@@ -2679,7 +2680,7 @@ class ConditionalTest extends TestCase
                     $b = rand(0,1) ? "" : "a";
                     $b === "a" ? $_a = "Y" : $_a = "N";',
                 'assertions' => [
-                    '$_a===' => '"N"|"Y"',
+                    '$_a===' => "'N'|'Y'",
                 ]
             ],
             'assertionsWorksBothWays' => [
@@ -2717,7 +2718,7 @@ class ConditionalTest extends TestCase
                     }
 
                     if ($a >= 0) {
-                        /** @tmp-psalm-suppress PossiblyNullOperand this should be suppressed but assertions remove null for now */
+                        /** @psalm-suppress PossiblyNullOperand */
                         echo $a + 3;
                     }
 
@@ -2726,7 +2727,7 @@ class ConditionalTest extends TestCase
                     }
 
                     if (0 <= $a) {
-                        /** @tmp-psalm-suppress PossiblyNullOperand this should be suppressed but assertions remove null for now */
+                        /** @psalm-suppress PossiblyNullOperand */
                         echo $a + 3;
                     }
 
@@ -3239,6 +3240,27 @@ class ConditionalTest extends TestCase
                       }
                     }
                     ',
+                'error_message' => 'RedundantCondition',
+            ],
+            'impossibleConditionWithReference' => [
+                'code' => '<?php
+                    /** @param mixed $foo */
+                    function foobar($foo): bool
+                    {
+                        $bar = &$foo;
+                        return is_string($foo) && $bar === true;
+                    }
+                ',
+                'error_message' => 'TypeDoesNotContainType',
+            ],
+            'redundantConditionWithReference' => [
+                'code' => '<?php
+                    function foobar(string $foo): bool
+                    {
+                        $bar = &$foo;
+                        return is_string($foo) && is_string($bar);
+                    }
+                ',
                 'error_message' => 'RedundantCondition',
             ],
         ];

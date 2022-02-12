@@ -346,11 +346,23 @@ class ArgumentsAnalyzer
         $codebase = $statements_analyzer->getCodebase();
 
         try {
-            if ($function_like_call instanceof PhpParser\Node\Expr\FuncCall) {
+            if ($function_like_call instanceof PhpParser\Node\Expr\FuncCall &&
+                !$function_like_call->isFirstClassCallable()
+            ) {
                 $function_id = strtolower((string) $function_like_call->name->getAttribute('resolvedName'));
 
                 if (empty($function_id)) {
                     return null;
+                }
+
+                if ($codebase->functions->dynamic_storage_provider->has($function_id)) {
+                    return $codebase->functions->dynamic_storage_provider->getFunctionStorage(
+                        $function_like_call,
+                        $statements_analyzer,
+                        $function_id,
+                        $context,
+                        new CodeLocation($statements_analyzer, $function_like_call),
+                    );
                 }
 
                 return $codebase->functions->getStorage($statements_analyzer, $function_id);
@@ -687,7 +699,7 @@ class ArgumentsAnalyzer
         array $function_params,
         ?FunctionLikeStorage $function_storage,
         ?ClassLikeStorage $class_storage,
-        ?TemplateResult $class_template_result,
+        TemplateResult $template_result,
         CodeLocation $code_location,
         Context $context
     ): ?bool {
@@ -763,16 +775,12 @@ class ArgumentsAnalyzer
             ? $function_params[count($function_params) - 1]
             : null;
 
-        $template_result = null;
-
         $class_generic_params = [];
 
-        if ($class_template_result) {
-            foreach ($class_template_result->lower_bounds as $template_name => $type_map) {
-                foreach ($type_map as $class => $lower_bounds) {
-                    if (count($lower_bounds) === 1) {
-                        $class_generic_params[$template_name][$class] = clone reset($lower_bounds)->type;
-                    }
+        foreach ($template_result->lower_bounds as $template_name => $type_map) {
+            foreach ($type_map as $class => $lower_bounds) {
+                if (count($lower_bounds) === 1) {
+                    $class_generic_params[$template_name][$class] = clone reset($lower_bounds)->type;
                 }
             }
         }
@@ -787,7 +795,7 @@ class ArgumentsAnalyzer
                 $calling_class_storage,
                 $function_storage,
                 $class_generic_params,
-                $class_template_result,
+                $template_result,
                 $args,
                 $function_params,
                 $last_param
@@ -1291,6 +1299,7 @@ class ArgumentsAnalyzer
             || $arg->value instanceof PhpParser\Node\Expr\FuncCall
             || $arg->value instanceof PhpParser\Node\Expr\MethodCall
             || $arg->value instanceof PhpParser\Node\Expr\StaticCall
+            || $arg->value instanceof PhpParser\Node\Expr\ArrowFunction
             || $arg->value instanceof PhpParser\Node\Expr\New_
             || $arg->value instanceof PhpParser\Node\Expr\Cast
             || $arg->value instanceof PhpParser\Node\Expr\Assign
@@ -1528,7 +1537,7 @@ class ArgumentsAnalyzer
         ?ClassLikeStorage $calling_class_storage,
         FunctionLikeStorage $function_storage,
         array $class_generic_params,
-        ?TemplateResult $class_template_result,
+        ?TemplateResult $template_result,
         array $args,
         array $function_params,
         ?FunctionLikeParameter $last_param
@@ -1546,11 +1555,9 @@ class ArgumentsAnalyzer
             return null;
         }
 
-        if (!$class_template_result) {
+        if (!$template_result) {
             return new TemplateResult($template_types, []);
         }
-
-        $template_result = $class_template_result;
 
         if (!$template_result->template_types) {
             $template_result->template_types = $template_types;

@@ -14,7 +14,7 @@ class RedundantConditionTest extends TestCase
     use InvalidCodeAnalysisTestTrait;
 
     /**
-     * @return iterable<string,array{code:string,assertions?:array<string,string>,ignored_issues?:list<string>}>
+     * @return iterable<string,array{code:string,assertions?:array<string,string>,ignored_issues?:list<string>,php_version?:string}>
      */
     public function providerValidCodeParse(): iterable
     {
@@ -819,7 +819,10 @@ class RedundantConditionTest extends TestCase
                     function normalizeValue(bool|int|float|string $value): void
                     {
                         assert(is_string($value));
-                    }'
+                    }',
+                'assertions' => [],
+                'ignored_issues' => [],
+                'php_version' => '8.0',
             ],
             'NumericCanBeFalsy' => [
                 'code' => '<?php
@@ -830,7 +833,10 @@ class RedundantConditionTest extends TestCase
                             }
                         }
                         return false;
-                    }'
+                    }',
+                'assertions' => [],
+                'ignored_issues' => [],
+                'php_version' => '8.0',
             ],
             'NumericCanBeNotIntOrNotFloat' => [
                 'code' => '<?php
@@ -1517,6 +1523,19 @@ class RedundantConditionTest extends TestCase
                         if (!$p) {
                             throw new RuntimeException("");
                         }
+                        assert(!!$p);
+                    }',
+                'error_message' => 'RedundantCondition'
+            ],
+            'secondFalsyTwiceWithoutChangeWithElse' => [
+                'code' => '<?php
+                    /**
+                     * @param array{a?:int,b?:string} $p
+                     */
+                    function f(array $p) : void {
+                        if (!$p) {
+                            throw new RuntimeException("");
+                        } else {}
                         assert(!!$p);
                     }',
                 'error_message' => 'RedundantCondition'

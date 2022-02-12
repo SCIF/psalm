@@ -54,7 +54,6 @@ use Psalm\Type\Atomic\TNonEmptyString;
 use Psalm\Type\Atomic\TNull;
 use Psalm\Type\Atomic\TNumeric;
 use Psalm\Type\Atomic\TObject;
-use Psalm\Type\Atomic\TPositiveInt;
 use Psalm\Type\Atomic\TResource;
 use Psalm\Type\Atomic\TScalar;
 use Psalm\Type\Atomic\TString;
@@ -205,7 +204,6 @@ class SimpleNegatedAssertionReconciler extends Reconciler
                 $negated,
                 $code_location,
                 $suppressed_issues,
-                $failed_reconciliation,
                 $is_equality,
                 null
             );
@@ -219,7 +217,6 @@ class SimpleNegatedAssertionReconciler extends Reconciler
                 $negated,
                 $code_location,
                 $suppressed_issues,
-                $failed_reconciliation,
                 $is_equality,
                 $assertion->count
             );
@@ -511,7 +508,6 @@ class SimpleNegatedAssertionReconciler extends Reconciler
         bool $negated,
         ?CodeLocation $code_location,
         array $suppressed_issues,
-        int &$failed_reconciliation,
         bool $is_equality,
         ?int $min_count
     ): Union {
@@ -531,7 +527,16 @@ class SimpleNegatedAssertionReconciler extends Reconciler
                 $did_remove_type = true;
 
                 $existing_var_type->removeType('array');
-            } elseif (!($array_atomic_type instanceof TArray && $array_atomic_type->isEmptyArray())) {
+            } elseif ($array_atomic_type instanceof TKeyedArray) {
+                $did_remove_type = true;
+
+                foreach ($array_atomic_type->properties as $property_type) {
+                    if (!$property_type->possibly_undefined) {
+                        $did_remove_type = false;
+                        break;
+                    }
+                }
+            } elseif (!$array_atomic_type instanceof TArray || !$array_atomic_type->isEmptyArray()) {
                 $did_remove_type = true;
 
                 if (!$min_count) {
@@ -541,15 +546,6 @@ class SimpleNegatedAssertionReconciler extends Reconciler
                             new Union([new TNever()]),
                         ]
                     ));
-                }
-            } elseif ($array_atomic_type instanceof TKeyedArray) {
-                $did_remove_type = true;
-
-                foreach ($array_atomic_type->properties as $property_type) {
-                    if (!$property_type->possibly_undefined) {
-                        $did_remove_type = false;
-                        break;
-                    }
                 }
             }
 
@@ -1657,21 +1653,22 @@ class SimpleNegatedAssertionReconciler extends Reconciler
      */
     private static function reconcileIsLessThanOrEqualTo(
         IsLessThanOrEqualTo $assertion,
-        Union         $existing_var_type,
-        bool          $inside_loop,
-        string        $old_var_type_string,
-        ?string       $var_id,
-        bool          $negated,
-        ?CodeLocation $code_location,
-        array         $suppressed_issues
+        Union               $existing_var_type,
+        bool                $inside_loop,
+        string              $old_var_type_string,
+        ?string             $var_id,
+        bool                $negated,
+        ?CodeLocation       $code_location,
+        array               $suppressed_issues
     ): Union {
-        if ($assertion->value === null) {
-            return $existing_var_type;
-        }
-
-        $assertion_value = $assertion->value - 1;
+        $assertion_value = $assertion->value;
 
         $did_remove_type = false;
+
+        if ($existing_var_type->hasType('null') && $assertion->doesFilterNull()) {
+            $did_remove_type = true;
+            $existing_var_type->removeType('null');
+        }
 
         foreach ($existing_var_type->getAtomicTypes() as $atomic_type) {
             if ($inside_loop) {
@@ -1712,12 +1709,6 @@ class SimpleNegatedAssertionReconciler extends Reconciler
                         $existing_var_type->addType(new TIntRange($assertion_value, $atomic_type->value));
                     }
                 }*/
-            } elseif ($atomic_type instanceof TPositiveInt) {
-                $did_remove_type = true;
-                $existing_var_type->removeType($atomic_type->getKey());
-                if ($assertion_value >= 1) {
-                    $existing_var_type->addType(new TIntRange(1, $assertion_value));
-                }
             } elseif ($atomic_type instanceof TInt) {
                 $did_remove_type = true;
                 $existing_var_type->removeType($atomic_type->getKey());
@@ -1766,21 +1757,22 @@ class SimpleNegatedAssertionReconciler extends Reconciler
      */
     private static function reconcileIsGreaterThanOrEqualTo(
         IsGreaterThanOrEqualTo $assertion,
-        Union         $existing_var_type,
-        bool          $inside_loop,
-        string        $old_var_type_string,
-        ?string       $var_id,
-        bool          $negated,
-        ?CodeLocation $code_location,
-        array         $suppressed_issues
+        Union                  $existing_var_type,
+        bool                   $inside_loop,
+        string                 $old_var_type_string,
+        ?string                $var_id,
+        bool                   $negated,
+        ?CodeLocation          $code_location,
+        array                  $suppressed_issues
     ): Union {
-        if ($assertion->value === null) {
-            return $existing_var_type;
-        }
-
-        $assertion_value = $assertion->value + 1;
+        $assertion_value = $assertion->value;
 
         $did_remove_type = false;
+
+        if ($existing_var_type->hasType('null') && $assertion->doesFilterNull()) {
+            $did_remove_type = true;
+            $existing_var_type->removeType('null');
+        }
 
         foreach ($existing_var_type->getAtomicTypes() as $atomic_type) {
             if ($inside_loop) {
@@ -1818,12 +1810,6 @@ class SimpleNegatedAssertionReconciler extends Reconciler
                         $existing_var_type->addType(new TIntRange($assertion_value, $atomic_type->value));
                     }
                 }*/
-            } elseif ($atomic_type instanceof TPositiveInt) {
-                if ($assertion_value > 1) {
-                    $did_remove_type = true;
-                    $existing_var_type->removeType($atomic_type->getKey());
-                    $existing_var_type->addType(new TIntRange($assertion_value, null));
-                }
             } elseif ($atomic_type instanceof TInt) {
                 $did_remove_type = true;
                 $existing_var_type->removeType($atomic_type->getKey());

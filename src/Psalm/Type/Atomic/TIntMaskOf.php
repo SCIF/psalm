@@ -9,13 +9,13 @@ use Psalm\Type\Atomic;
  * This is the same concept as TIntMask but TIntMaskOf is used with with a reference to constants in code
  * `int-mask<MyClass::CLASS_CONSTANT_*>` will corresponds to `0|1|2|3|4|5|6|7` if there are three constant 1, 2 and 4
  */
-class TIntMaskOf extends TInt
+final class TIntMaskOf extends TInt
 {
-    /** @var TClassConstant|TKeyOfClassConstant|TValueOfClassConstant */
+    /** @var TClassConstant|TKeyOfArray|TValueOfArray */
     public $value;
 
     /**
-     * @param TClassConstant|TKeyOfClassConstant|TValueOfClassConstant $value
+     * @param TClassConstant|TKeyOfArray|TValueOfArray $value
      */
     public function __construct(Atomic $value)
     {
@@ -25,11 +25,6 @@ class TIntMaskOf extends TInt
     public function getKey(bool $include_extra = true): string
     {
         return 'int-mask-of<' . $this->value->getKey() . '>';
-    }
-
-    public function getId(bool $nested = false): string
-    {
-        return $this->getKey();
     }
 
     /**

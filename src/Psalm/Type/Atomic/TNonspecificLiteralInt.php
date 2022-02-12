@@ -6,9 +6,9 @@ namespace Psalm\Type\Atomic;
  * Denotes the `literal-int` type, where the exact value is unknown but
  * we know that the int is not from user input
  */
-class TNonspecificLiteralInt extends TInt
+final class TNonspecificLiteralInt extends TInt
 {
-    public function __toString(): string
+    public function getId(bool $exact = true, bool $nested = true): string
     {
         return 'literal-int';
     }

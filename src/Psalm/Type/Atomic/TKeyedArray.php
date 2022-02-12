@@ -64,6 +64,7 @@ class TKeyedArray extends Atomic
      */
     public $is_list = false;
 
+    /** @var non-empty-lowercase-string */
     public const KEY = 'array';
 
     /**
@@ -78,43 +79,34 @@ class TKeyedArray extends Atomic
         $this->class_strings = $class_strings;
     }
 
-    public function __toString(): string
+    public function getId(bool $exact = true, bool $nested = false): string
     {
-        $property_strings = array_map(
-            [$this, 'getTypeName'],
-            array_keys($this->properties),
-            $this->properties
-        );
+        if ($exact) {
+            $property_strings = array_map(
+                [$this, 'getTypeNameExact'],
+                array_keys($this->properties),
+                $this->properties,
+            );
+        }  else {
+            $property_strings = array_map(
+                [$this, 'getTypeNameNotExact'],
+                array_keys($this->properties),
+                $this->properties,
+            );
+        }
 
         if (!$this->is_list) {
             sort($property_strings);
         }
 
-        /** @psalm-suppress MixedOperand */
-        return static::KEY . '{' . implode(', ', $property_strings) . '}';
-    }
-
-    public function getId(bool $nested = false): string
-    {
-        $property_strings = array_map(
-            [$this, 'getTypeName'],
-            array_keys($this->properties),
-            $this->properties
-        );
-
-        if (!$this->is_list) {
-            sort($property_strings);
-        }
-
-        /** @psalm-suppress MixedOperand */
         return static::KEY . '{' .
                 implode(', ', $property_strings) .
                 '}'
                 . ($this->previous_value_type
                     && (!$this->previous_value_type->isMixed()
                         || ($this->previous_key_type && !$this->previous_key_type->isArrayKey()))
-                    ? '<' . ($this->previous_key_type ? $this->previous_key_type->getId() . ', ' : '')
-                        . $this->previous_value_type->getId() . '>'
+                    ? '<' . ($this->previous_key_type ? $this->previous_key_type->getId($exact) . ', ' : '')
+                        . $this->previous_value_type->getId($exact) . '>'
                     : '');
     }
 
@@ -137,7 +129,6 @@ class TKeyedArray extends Atomic
             );
         }
 
-        /** @psalm-suppress MixedOperand */
         return static::KEY . '{' .
                 implode(
                     ', ',
@@ -402,13 +393,14 @@ class TKeyedArray extends Atomic
 
         return $name;
     }
+
     /**
      * @param int|string $name
      */
-    private function getTypeName($name, Union $type): string
+    private function getTypeName($name, Union $type, bool $exact): string
     {
         if ($this->is_list && $this->sealed) {
-            return (string) $type;
+            return $type->getId($exact);
         }
 
         $class_string_suffix = '';
@@ -418,6 +410,23 @@ class TKeyedArray extends Atomic
 
         $name = $this->escapeAndQuote($name);
 
-        return $name.$class_string_suffix.($type->possibly_undefined ? '?' : '').': '.$type;
+        return $name . $class_string_suffix . ($type->possibly_undefined ? '?' : '')
+            . ': ' . $type->getId($exact);
+    }
+
+    /**
+     * @param int|string $name
+     */
+    private function getTypeNameExact($name, Union $type): string
+    {
+        return $this->getTypeName($name, $type, true);
+    }
+
+    /**
+     * @param int|string $name
+     */
+    private function getTypeNameNotExact($name, Union $type): string
+    {
+        return $this->getTypeName($name, $type, false);
     }
 }

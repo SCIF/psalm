@@ -10,7 +10,7 @@ use Psalm\NodeTypeProvider;
 use Psalm\StatementsSource;
 use Psalm\Storage\FunctionLikeStorage;
 
-class AfterFunctionLikeAnalysisEvent
+final class AfterFunctionLikeAnalysisEvent
 {
     /**
      * @var Node\FunctionLike
@@ -19,7 +19,7 @@ class AfterFunctionLikeAnalysisEvent
     /**
      * @var FunctionLikeStorage
      */
-    private $classlike_storage;
+    private $functionlike_storage;
     /**
      * @var StatementsSource
      */
@@ -45,10 +45,11 @@ class AfterFunctionLikeAnalysisEvent
      * Called after a statement has been checked
      *
      * @param  FileManipulation[]   $file_replacements
+     * @internal
      */
     public function __construct(
         Node\FunctionLike $stmt,
-        FunctionLikeStorage $classlike_storage,
+        FunctionLikeStorage $functionlike_storage,
         StatementsSource $statements_source,
         Codebase $codebase,
         array $file_replacements,
@@ -56,7 +57,7 @@ class AfterFunctionLikeAnalysisEvent
         Context $context
     ) {
         $this->stmt = $stmt;
-        $this->classlike_storage = $classlike_storage;
+        $this->functionlike_storage = $functionlike_storage;
         $this->statements_source = $statements_source;
         $this->codebase = $codebase;
         $this->file_replacements = $file_replacements;
@@ -69,9 +70,9 @@ class AfterFunctionLikeAnalysisEvent
         return $this->stmt;
     }
 
-    public function getClasslikeStorage(): FunctionLikeStorage
+    public function getFunctionlikeStorage(): FunctionLikeStorage
     {
-        return $this->classlike_storage;
+        return $this->functionlike_storage;
     }
 
     public function getStatementsSource(): StatementsSource

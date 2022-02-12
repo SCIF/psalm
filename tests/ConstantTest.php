@@ -2,13 +2,86 @@
 
 namespace Psalm\Tests;
 
+use Psalm\Context;
 use Psalm\Tests\Traits\InvalidCodeAnalysisTestTrait;
 use Psalm\Tests\Traits\ValidCodeAnalysisTestTrait;
+
+use function getcwd;
+
+use const DIRECTORY_SEPARATOR;
 
 class ConstantTest extends TestCase
 {
     use InvalidCodeAnalysisTestTrait;
     use ValidCodeAnalysisTestTrait;
+
+    // TODO: Waiting for https://github.com/vimeo/psalm/issues/7125
+    // public function testKeyofSelfConstDoesntImplyKeyofStaticConst(): void
+    // {
+    //     $this->expectException(CodeException::class);
+    //     $this->expectExceptionMessage("PossiblyUndefinedIntArrayOffset");
+
+    //     $this->testConfig->ensure_array_int_offsets_exist = true;
+
+    //     $file_path = getcwd() . '/src/somefile.php';
+
+    //     $this->addFile(
+    //         $file_path,
+    //         '<?php
+    //             class Foo
+    //             {
+    //                 /** @var array<int, int> */
+    //                 public const CONST = [1, 2, 3];
+
+    //                 /**
+    //                  * @param key-of<self::CONST> $key
+    //                  */
+    //                 public function bar(int $key): int
+    //                 {
+    //                     return static::CONST[$key];
+    //                 }
+    //             }
+    //         '
+    //     );
+
+    //     $this->analyzeFile($file_path, new Context());
+    // }
+
+    public function testUseObjectConstant(): void
+    {
+        $file1 = getcwd() . DIRECTORY_SEPARATOR . 'tests' . DIRECTORY_SEPARATOR . 'file1.php';
+        $file2 = getcwd() . DIRECTORY_SEPARATOR . 'tests' . DIRECTORY_SEPARATOR . 'file2.php';
+
+        $this->addFile(
+            $file1,
+            '<?php
+                namespace Foo;
+
+                final class Bar {}
+                const bar = new Bar();
+            '
+        );
+
+        $this->addFile(
+            $file2,
+            '<?php
+                namespace Baz;
+
+                use Foo\Bar;
+                use const Foo\bar;
+
+                require("tests/file1.php");
+
+                function bar(): Bar
+                {
+                    return bar;
+                }
+            '
+        );
+
+        $this->analyzeFile($file1, new Context());
+        $this->analyzeFile($file2, new Context());
+    }
 
     /**
      * @return iterable<string,array{code:string,assertions?:array<string,string>,ignored_issues?:list<string>, php_version?: string}>
@@ -273,14 +346,17 @@ class ConstantTest extends TestCase
             'lateConstantResolutionParentStringConcat' => [
                 'code' => '<?php
                     class A {
+                        /** @var non-empty-string */
                         public const STR = "a";
                     }
 
                     class B extends A {
+                        /** @var non-empty-string */
                         public const STR = parent::STR . "b";
                     }
 
                     class C extends B {
+                        /** @var non-empty-string */
                         public const STR = parent::STR . "c";
                     }
 
@@ -327,7 +403,7 @@ class ConstantTest extends TestCase
 
                     $foo = new Foo();
                     $_trace = $foo::BAR;',
-                'assertions' => ['$_trace===' => '"bar"'],
+                'assertions' => ['$_trace===' => "'bar'"],
             ],
             'unsafeInferenceClassConstFetch' => [
                 'code' => '<?php
@@ -351,7 +427,7 @@ class ConstantTest extends TestCase
                     /** @var Foo $foo */
                     $foo = new stdClass();
                     $_trace = $foo::BAR;',
-                'assertions' => ['$_trace===' => '"bar"'],
+                'assertions' => ['$_trace===' => "'bar'"],
             ],
             'dynamicClassConstFetchClassString' => [
                 'code' => '<?php
@@ -393,6 +469,7 @@ class ConstantTest extends TestCase
             'resolveClassConstToCurrentClass' => [
                 'code' => '<?php
                     interface I {
+                        /** @var string|array */
                         public const C = "a";
 
                         public function getC(): string;
@@ -411,6 +488,9 @@ class ConstantTest extends TestCase
                             return self::C;
                         }
                     }',
+                'assertions' => [],
+                'ignored_issues' => [],
+                'php_version' => '8.1',
             ],
             'resolveCalculatedConstant' => [
                 'code' => '<?php
@@ -921,6 +1001,7 @@ class ConstantTest extends TestCase
             'protectedClassConstantAccessibilitySameNameInChild' => [
                 'code' => '<?php
                     class A {
+                        /** @var int<1,max> */
                         protected const A = 1;
 
                         public static function test(): void {
@@ -937,7 +1018,9 @@ class ConstantTest extends TestCase
             'referenceClassConstantWithSelf' => [
                 'code' => '<?php
                     abstract class A {
+                        /** @var array<non-empty-string, non-empty-string> */
                         public const KEYS = [];
+                        /** @var array<non-empty-string, non-empty-string> */
                         public const VALUES = [];
                     }
 
@@ -1149,7 +1232,7 @@ class ConstantTest extends TestCase
                     $arr = C::A;
                 ',
                 'assertions' => [
-                    '$arr===' => 'array{10: "aa", 11: "zz", 5: "a", 6: "z"}',
+                    '$arr===' => "array{10: 'aa', 11: 'zz', 5: 'a', 6: 'z'}",
                 ],
             ],
             'arrayKeysSequenceContinuesAfterNonIntKey' => [
@@ -1160,7 +1243,7 @@ class ConstantTest extends TestCase
                     $arr = C::A;
                 ',
                 'assertions' => [
-                    '$arr===' => 'array{5: "a", 6: "aa", zz: "z"}',
+                    '$arr===' => "array{5: 'a', 6: 'aa', zz: 'z'}",
                 ],
             ],
             'unresolvedConstWithUnaryMinus' => [
@@ -1228,6 +1311,112 @@ class ConstantTest extends TestCase
                         }
                     }
                     Reconciler::reconcileKeyedTypes();
+                ',
+            ],
+            'selfConstUsesInferredType' => [
+                'code' => '<?php
+                    class Foo
+                    {
+                        /** @var string */
+                        public const BAR = "bar";
+
+                        /**
+                         * @return "bar"
+                         */
+                        public function bar(): string
+                        {
+                            return self::BAR;
+                        }
+                    }
+                ',
+            ],
+            'typedClassConst' => [
+                'code' => '<?php
+                    class Foo
+                    {
+                        /** @var string */
+                        public const BAR = "bar";
+
+                        public function bar(): string
+                        {
+                            return static::BAR;
+                        }
+                    }
+                ',
+            ],
+            'classConstSuppress' => [
+                'code' => '<?php
+                    class Foo
+                    {
+                        /**
+                         * @psalm-suppress InvalidConstantAssignmentValue
+                         *
+                         * @var int
+                         */
+                        public const BAR = "bar";
+                    }
+                ',
+            ],
+            'spreadEmptyArray' => [
+                'code' => '<?php
+                    class A {
+                        public const ARR = [];
+                    }
+
+                    /** @param array<never, never> $arg */
+                    function foo(array $arg): void {}
+                    foo([...A::ARR]);
+                ',
+            ],
+            'classConstCovariant' => [
+                'code' => '<?php
+                    abstract class A {
+                        /** @var string */
+                        public const COVARIANT = "";
+
+                        /** @var string */
+                        public const INVARIANT = "";
+                    }
+
+                    abstract class B extends A {}
+
+                    abstract class C extends B {
+                        /** @var non-empty-string */
+                        public const COVARIANT = "foo";
+
+                        /** @var string */
+                        public const INVARIANT = "";
+                    }
+                ',
+            ],
+            'overrideClassConstFromInterface' => [
+                'code' => '<?php
+                    interface Foo
+                    {
+                        /** @var non-empty-string */
+                        public const BAR="baz";
+                    }
+
+                    interface Bar extends Foo {}
+
+                    class Baz implements Bar
+                    {
+                        /** @var non-empty-string */
+                        public const BAR="foobar";
+                    }
+                ',
+                'assertions' => [],
+                'ignored_issues' => [],
+                'php_version' => '8.1',
+            ],
+            'inheritedConstDoesNotOverride' => [
+                'code' => '<?php
+                    interface Foo
+                    {
+                        public const BAR="baz";
+                    }
+
+                    interface Bar extends Foo {}
                 ',
             ],
         ];
@@ -1325,6 +1514,8 @@ class ConstantTest extends TestCase
                         }
                     }',
                 'error_message' => 'InvalidReturnStatement',
+                'ignored_issues' => [],
+                'php_version' => '8.1',
             ],
             'outOfScopeDefinedConstant' => [
                 'code' => '<?php
@@ -1508,6 +1699,187 @@ class ConstantTest extends TestCase
                     }
                 ',
                 'error_message' => 'DuplicateConstant',
+                'ignored_issues' => [],
+                'php_version' => '8.1',
+            ],
+            'returnValueofNonExistantConstant' => [
+                'code' => '<?php
+                    class Foo
+                    {
+                        public const BAR = ["bar"];
+
+                        /**
+                         * @return value-of<self::BAT>
+                         */
+                        public function bar(): string
+                        {
+                            return self::BAR[0];
+                        }
+                    }
+                ',
+                'error_message' => 'UnresolvableConstant',
+            ],
+            'returnValueofStaticConstant' => [
+                'code' => '<?php
+                    class Foo
+                    {
+                        public const BAR = ["bar"];
+
+                        /**
+                         * @return value-of<static::BAR>
+                         */
+                        public function bar(): string
+                        {
+                            return static::BAR[0];
+                        }
+                    }
+                ',
+                'error_message' => 'UnresolvableConstant',
+            ],
+            'takeKeyofNonExistantConstant' => [
+                'code' => '<?php
+                    class Foo
+                    {
+                        public const BAR = ["bar"];
+
+                        /**
+                         * @param key-of<self::BAT> $key
+                         */
+                        public function bar(int $key): string
+                        {
+                            return static::BAR[$key];
+                        }
+                    }
+                ',
+                'error_message' => 'UnresolvableConstant',
+            ],
+            'takeKeyofStaticConstant' => [
+                'code' => '<?php
+                    class Foo
+                    {
+                        public const BAR = ["bar"];
+
+                        /**
+                         * @param key-of<static::BAR> $key
+                         */
+                        public function bar(int $key): string
+                        {
+                            return static::BAR[$key];
+                        }
+                    }
+                ',
+                'error_message' => 'UnresolvableConstant',
+            ],
+            'invalidConstantAssignmentType' => [
+                'code' => '<?php
+                    class Foo
+                    {
+                        /** @var int */
+                        public const BAR = "bar";
+                    }
+                ',
+                'error_message' => "InvalidConstantAssignmentValue",
+            ],
+            'invalidConstantAssignmentTypeResolvedLate' => [
+                'code' => '<?php
+                    class Foo
+                    {
+                        /** @var int */
+                        public const BAR = "bar" . self::BAZ;
+                        public const BAZ = "baz";
+                        public const BARBAZ = self::BAR . self::BAZ;
+                    }
+                ',
+                'error_message' => "InvalidConstantAssignmentValue",
+            ],
+            'classConstContravariant' => [
+                'code' => '<?php
+                    abstract class A {
+                        /** @var non-empty-string */
+                        public const CONTRAVARIANT = "foo";
+                    }
+
+                    abstract class B extends A {}
+
+                    abstract class C extends B {
+                        /** @var string */
+                        public const CONTRAVARIANT = "";
+                    }
+                ',
+                'error_message' => "LessSpecificClassConstantType",
+            ],
+            'classConstAmbiguousInherit' => [
+                'code' => '<?php
+                    interface Foo
+                    {
+                        /** @var non-empty-string */
+                        public const BAR="baz";
+                    }
+
+                    interface Bar extends Foo {}
+
+                    class Baz
+                    {
+                        /** @var non-empty-string */
+                        public const BAR="foobar";
+                    }
+
+                    class BarBaz extends Baz implements Bar
+                    {
+                    }
+                ',
+                'error_message' => 'AmbiguousConstantInheritance',
+            ],
+            'overrideClassConstFromInterface' => [
+                'code' => '<?php
+                    interface Foo
+                    {
+                        /** @var non-empty-string */
+                        public const BAR="baz";
+                    }
+
+                    interface Bar extends Foo {}
+
+                    class Baz implements Bar
+                    {
+                        /** @var non-empty-string */
+                        public const BAR="foobar";
+                    }
+                ',
+                'error_message' => 'OverriddenInterfaceConstant',
+            ],
+            'overrideClassConstFromInterfaceWithInterface' => [
+                'code' => '<?php
+                    interface Foo
+                    {
+                        /** @var non-empty-string */
+                        public const BAR="baz";
+                    }
+
+                    interface Bar extends Foo
+                    {
+                        /** @var non-empty-string */
+                        public const BAR="bar";
+                    }
+                ',
+                'error_message' => 'OverriddenInterfaceConstant',
+            ],
+            'overrideClassConstFromInterfaceWithExtraIrrelevantInterface' => [
+                'code' => '<?php
+                    interface Foo
+                    {
+                        /** @var non-empty-string */
+                        public const BAR="baz";
+                    }
+
+                    interface Bar {}
+
+                    class Baz implements Foo, Bar
+                    {
+                        public const BAR="";
+                    }
+                ',
+                'error_message' => "LessSpecificClassConstantType",
                 'ignored_issues' => [],
                 'php_version' => '8.1',
             ],

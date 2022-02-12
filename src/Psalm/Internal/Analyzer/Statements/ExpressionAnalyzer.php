@@ -19,13 +19,13 @@ use Psalm\Internal\Analyzer\Statements\Expression\Call\MethodCallAnalyzer;
 use Psalm\Internal\Analyzer\Statements\Expression\Call\NewAnalyzer;
 use Psalm\Internal\Analyzer\Statements\Expression\Call\StaticCallAnalyzer;
 use Psalm\Internal\Analyzer\Statements\Expression\CastAnalyzer;
+use Psalm\Internal\Analyzer\Statements\Expression\ClassConstAnalyzer;
 use Psalm\Internal\Analyzer\Statements\Expression\CloneAnalyzer;
 use Psalm\Internal\Analyzer\Statements\Expression\EmptyAnalyzer;
 use Psalm\Internal\Analyzer\Statements\Expression\EncapsulatedStringAnalyzer;
 use Psalm\Internal\Analyzer\Statements\Expression\EvalAnalyzer;
 use Psalm\Internal\Analyzer\Statements\Expression\ExitAnalyzer;
 use Psalm\Internal\Analyzer\Statements\Expression\Fetch\ArrayFetchAnalyzer;
-use Psalm\Internal\Analyzer\Statements\Expression\Fetch\ClassConstFetchAnalyzer;
 use Psalm\Internal\Analyzer\Statements\Expression\Fetch\ConstFetchAnalyzer;
 use Psalm\Internal\Analyzer\Statements\Expression\Fetch\InstancePropertyFetchAnalyzer;
 use Psalm\Internal\Analyzer\Statements\Expression\Fetch\StaticPropertyFetchAnalyzer;
@@ -65,6 +65,10 @@ use function strtolower;
  */
 class ExpressionAnalyzer
 {
+    /**
+     * @param bool $assigned_to_reference This is set to true when the expression being analyzed
+     *                                    here is being assigned to another variable by reference.
+     */
     public static function analyze(
         StatementsAnalyzer $statements_analyzer,
         PhpParser\Node\Expr $stmt,
@@ -72,7 +76,8 @@ class ExpressionAnalyzer
         bool $array_assignment = false,
         ?Context $global_context = null,
         bool $from_stmt = false,
-        ?TemplateResult $template_result = null
+        ?TemplateResult $template_result = null,
+        bool $assigned_to_reference = false
     ): bool {
         $codebase = $statements_analyzer->getCodebase();
 
@@ -83,7 +88,8 @@ class ExpressionAnalyzer
             $array_assignment,
             $global_context,
             $from_stmt,
-            $template_result
+            $template_result,
+            $assigned_to_reference,
         ) === false) {
             return false;
         }
@@ -140,6 +146,10 @@ class ExpressionAnalyzer
         return true;
     }
 
+    /**
+     * @param bool $assigned_to_reference This is set to true when the expression being analyzed
+     *                                    here is being assigned to another variable by reference.
+     */
     private static function handleExpression(
         StatementsAnalyzer $statements_analyzer,
         PhpParser\Node\Expr $stmt,
@@ -147,7 +157,8 @@ class ExpressionAnalyzer
         bool $array_assignment,
         ?Context $global_context,
         bool $from_stmt,
-        ?TemplateResult $template_result = null
+        ?TemplateResult $template_result = null,
+        bool $assigned_to_reference = false
     ): bool {
         if ($stmt instanceof PhpParser\Node\Expr\Variable) {
             return VariableFetchAnalyzer::analyze(
@@ -156,7 +167,9 @@ class ExpressionAnalyzer
                 $context,
                 false,
                 null,
-                $array_assignment
+                $array_assignment,
+                false,
+                $assigned_to_reference
             );
         }
 
@@ -167,7 +180,9 @@ class ExpressionAnalyzer
                 $stmt->expr,
                 null,
                 $context,
-                $stmt->getDocComment()
+                $stmt->getDocComment(),
+                [],
+                !$from_stmt ? $stmt : null
             );
 
             if ($assignment_type === false) {
@@ -240,7 +255,7 @@ class ExpressionAnalyzer
         }
 
         if ($stmt instanceof PhpParser\Node\Expr\ClassConstFetch) {
-            return ClassConstFetchAnalyzer::analyze($statements_analyzer, $stmt, $context);
+            return ClassConstAnalyzer::analyzeFetch($statements_analyzer, $stmt, $context);
         }
 
         if ($stmt instanceof PhpParser\Node\Expr\PropertyFetch) {

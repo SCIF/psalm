@@ -158,6 +158,7 @@ class TernaryAnalyzer
                 $reconcilable_if_types,
                 $active_if_types,
                 $if_context->vars_in_scope,
+                $if_context->references_in_scope,
                 $changed_var_ids,
                 $cond_referenced_var_ids,
                 $statements_analyzer,
@@ -196,6 +197,7 @@ class TernaryAnalyzer
                 $negated_if_types,
                 $negated_if_types,
                 $t_else_context->vars_in_scope,
+                $t_else_context->references_in_scope,
                 $changed_var_ids,
                 $cond_referenced_var_ids,
                 $statements_analyzer,
@@ -271,12 +273,12 @@ class TernaryAnalyzer
         );
 
         $lhs_type = null;
-
+        $stmt_cond_type = $statements_analyzer->node_data->getType($stmt->cond);
         if ($stmt->if) {
             if ($stmt_if_type = $statements_analyzer->node_data->getType($stmt->if)) {
                 $lhs_type = $stmt_if_type;
             }
-        } elseif ($stmt_cond_type = $statements_analyzer->node_data->getType($stmt->cond)) {
+        } elseif ($stmt_cond_type) {
             $if_return_type_reconciled = AssertionReconciler::reconcile(
                 new Truthy(),
                 clone $stmt_cond_type,
@@ -292,7 +294,13 @@ class TernaryAnalyzer
         }
 
         if ($lhs_type && ($stmt_else_type = $statements_analyzer->node_data->getType($stmt->else))) {
-            $statements_analyzer->node_data->setType($stmt, Type::combineUnionTypes($lhs_type, $stmt_else_type));
+            if ($stmt_cond_type !== null && $stmt_cond_type->isAlwaysFalsy()) {
+                $statements_analyzer->node_data->setType($stmt, $stmt_else_type);
+            } elseif ($stmt_cond_type !== null && $stmt_cond_type->isAlwaysTruthy()) {
+                $statements_analyzer->node_data->setType($stmt, $lhs_type);
+            } else {
+                $statements_analyzer->node_data->setType($stmt, Type::combineUnionTypes($lhs_type, $stmt_else_type));
+            }
         } else {
             $statements_analyzer->node_data->setType($stmt, Type::getMixed());
         }

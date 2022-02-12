@@ -198,13 +198,13 @@ class ArrayFilterReturnTypeProvider implements FunctionReturnTypeProviderInterfa
                         $fake_var_discriminator
                     );
 
-                    $array_var_id = ExpressionIdentifier::getArrayVarId(
+                    $extended_var_id = ExpressionIdentifier::getExtendedVarId(
                         $array_arg,
                         null,
                         $statements_source
                     );
 
-                    $assertion_id = $array_var_id . "[\$__fake_{$fake_var_discriminator}_offset_var__]";
+                    $assertion_id = $extended_var_id . "[\$__fake_{$fake_var_discriminator}_offset_var__]";
 
                     if (isset($assertions[$assertion_id])) {
                         $changed_var_ids = [];
@@ -217,6 +217,7 @@ class ArrayFilterReturnTypeProvider implements FunctionReturnTypeProviderInterfa
                             $assertions,
                             $assertions,
                             ['$inner_type' => $inner_type],
+                            [],
                             $changed_var_ids,
                             ['$inner_type' => true],
                             $statements_source,
@@ -296,6 +297,7 @@ class ArrayFilterReturnTypeProvider implements FunctionReturnTypeProviderInterfa
                                 $assertions,
                                 $assertions,
                                 ['$inner_type' => $inner_type],
+                                [],
                                 $changed_var_ids,
                                 ['$inner_type' => true],
                                 $statements_source,

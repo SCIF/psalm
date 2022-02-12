@@ -58,7 +58,6 @@ use Psalm\Type\Atomic\TNumeric;
 use Psalm\Type\Atomic\TNumericString;
 use Psalm\Type\Atomic\TObject;
 use Psalm\Type\Atomic\TObjectWithProperties;
-use Psalm\Type\Atomic\TPositiveInt;
 use Psalm\Type\Atomic\TResource;
 use Psalm\Type\Atomic\TScalar;
 use Psalm\Type\Atomic\TString;
@@ -77,8 +76,6 @@ use function strtolower;
 
 abstract class Atomic implements TypeNode
 {
-    public const KEY = 'atomic';
-
     /**
      * Whether or not the type has been checked yet
      *
@@ -159,6 +156,7 @@ abstract class Atomic implements TypeNode
             case 'never-return':
             case 'never-returns':
             case 'no-return':
+            case 'empty':
                 return new TNever();
 
             case 'object':
@@ -212,7 +210,7 @@ abstract class Atomic implements TypeNode
                 return new TClosedResource();
 
             case 'positive-int':
-                return new TPositiveInt();
+                return new TIntRange(1, null);
 
             case 'numeric':
                 return $analysis_php_version_id !== null ? new TNamedObject($value) : new TNumeric();
@@ -251,8 +249,17 @@ abstract class Atomic implements TypeNode
                 return new TObjectWithProperties([], ['__tostring' => 'string']);
 
             case 'class-string':
-            case 'interface-string':
                 return new TClassString();
+
+            case 'interface-string':
+                $type = new TClassString();
+                $type->is_interface = true;
+                return $type;
+
+            case 'enum-string':
+                $type = new TClassString();
+                $type->is_enum = true;
+                return $type;
 
             case 'trait-string':
                 return new TTraitString();
@@ -316,6 +323,10 @@ abstract class Atomic implements TypeNode
         return new TNamedObject($value);
     }
 
+    /**
+     * This is the string that will be used to represent the type in Union::$types. This means that two types sharing
+     * the same getKey value will override themselves in an Union
+     */
     abstract public function getKey(bool $include_extra = true): string;
 
     public function isNumericType(): bool
@@ -539,9 +550,9 @@ abstract class Atomic implements TypeNode
         }
     }
 
-    public function __toString(): string
+    final public function __toString(): string
     {
-        return '';
+        return $this->getId();
     }
 
     public function __clone()
@@ -563,18 +574,27 @@ abstract class Atomic implements TypeNode
         }
     }
 
-    public function getId(bool $nested = false): string
+    /**
+     * This is the true identifier for the type. It defaults to self::getKey() but can be overrided to be more precise
+     */
+    public function getId(bool $exact = true, bool $nested = false): string
     {
-        return $this->__toString();
+        return $this->getKey();
     }
-
+    /**
+     * This string is used in order to transform a type into an string assertion for the assertion module
+     * Default to self::getId()
+     */
     public function getAssertionString(): string
     {
         return $this->getId();
     }
 
     /**
-     * @param  array<lowercase-string, string> $aliased_classes
+     * Returns the detailed description of the type, either in phpdoc standard format or Psalm format depending on flag
+     * Default to self::getKey()
+     *
+     * @param array<lowercase-string, string> $aliased_classes
      */
     public function toNamespacedString(
         ?string $namespace,
@@ -586,6 +606,9 @@ abstract class Atomic implements TypeNode
     }
 
     /**
+     * Returns a string representation of the type compatible with php signature or null if the type can't be expressed
+     *  with the given php version
+     *
      * @param  array<lowercase-string, string> $aliased_classes
      */
     abstract public function toPhpString(
@@ -675,10 +698,6 @@ abstract class Atomic implements TypeNode
         }
 
         if ($this instanceof TIntRange && !$this->contains(0)) {
-            return true;
-        }
-
-        if ($this instanceof TPositiveInt) {
             return true;
         }
 

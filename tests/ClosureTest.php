@@ -98,7 +98,7 @@ class ClosureTest extends TestCase
                     $mirror = function(int $i) : int { return $i; };
                     $a = array_map($mirror, [1, 2, 3]);',
                 'assertions' => [
-                    '$a' => 'array{int, int, int}',
+                    '$a' => 'array{int, int, int}<int>',
                 ],
             ],
             'inlineCallableFunction' => [
@@ -344,7 +344,7 @@ class ClosureTest extends TestCase
                     $a = function() : Closure { return function() : string { return "hello"; }; };
                     $b = $a()();',
                 'assertions' => [
-                    '$a' => 'pure-Closure():pure-Closure():"hello"',
+                    '$a' => 'pure-Closure():pure-Closure():string',
                     '$b' => 'string',
                 ],
             ],
@@ -418,7 +418,7 @@ class ClosureTest extends TestCase
                     $closure = Closure::fromCallable("strlen");
                 ',
                 'assertions' => [
-                    '$closure' => 'pure-Closure(string):(0|positive-int)',
+                    '$closure' => 'pure-Closure(string):int<0, max>',
                 ]
             ],
             'allowClosureWithNarrowerReturn' => [
@@ -562,7 +562,7 @@ class ClosureTest extends TestCase
                     $maker = maker(stdClass::class);
                     $result = array_map($maker, ["abc"]);',
                 'assertions' => [
-                    '$result' => 'array{stdClass}'
+                    '$result' => 'array{stdClass}<stdClass>'
                 ],
             ],
             'FirstClassCallable:NamedFunction:is_int' => [
@@ -583,8 +583,8 @@ class ClosureTest extends TestCase
                     $result = $closure("test");
                 ',
                 'assertions' => [
-                    '$closure' => 'pure-Closure(string):(0|positive-int)',
-                    '$result' => 'int|positive-int',
+                    '$closure' => 'pure-Closure(string):int<0, max>',
+                    '$result' => 'int<0, max>',
                 ],
                 'ignored_issues' => [],
                 'php_version' => '8.1'
@@ -601,6 +601,27 @@ class ClosureTest extends TestCase
                     }
                     $test = new Test("test");
                     $closure = $test->length(...);
+                    $length = $closure();
+                ',
+                'assertions' => [
+                    '$length' => 'int',
+                ],
+                'ignored_issues' => [],
+                'php_version' => '8.1'
+            ],
+            'FirstClassCallable:InstanceMethod:Expr' => [
+                'code' => '<?php
+                    class Test {
+                        public function __construct(private readonly string $string) {
+                        }
+
+                        public function length(): int {
+                            return strlen($this->string);
+                        }
+                    }
+                    $test = new Test("test");
+                    $method_name = "length";
+                    $closure = $test->$method_name(...);
                     $length = $closure();
                 ',
                 'assertions' => [
@@ -637,6 +658,23 @@ class ClosureTest extends TestCase
                 'ignored_issues' => [],
                 'php_version' => '8.1'
             ],
+            'FirstClassCallable:StaticMethod:Expr' => [
+                'code' => '<?php
+                    class Test {
+                        public static function length(string $param): int {
+                            return strlen($param);
+                        }
+                    }
+                    $method_name = "length";
+                    $closure = Test::$method_name(...);
+                    $length = $closure("test");
+                ',
+                'assertions' => [
+                    '$length' => 'int',
+                ],
+                'ignored_issues' => [],
+                'php_version' => '8.1'
+            ],
             'FirstClassCallable:InvokableObject' => [
                 'code' => '<?php
                     class Test {
@@ -660,7 +698,7 @@ class ClosureTest extends TestCase
                     $closure = $closure(...);
                 ',
                 'assertions' => [
-                    '$closure' => 'pure-Closure(string):(0|positive-int)',
+                    '$closure' => 'pure-Closure(string):int<0, max>',
                 ],
                 'ignored_issues' => [],
                 'php_version' => '8.1'
@@ -722,9 +760,9 @@ class ClosureTest extends TestCase
                     $result3 = array_map($closure(...), $array);
                 ',
                 'assertions' => [
-                    '$result1' => 'array{null, null, null}',
-                    '$result2' => 'array{string, string, string}',
-                    '$result3' => 'array{int, int, int}',
+                    '$result1' => 'array{null, null, null}<null>',
+                    '$result2' => 'array{string, string, string}<string>',
+                    '$result3' => 'array{int, int, int}<int>',
                 ],
                 'ignored_issues' => [],
                 'php_version' => '8.1'
@@ -759,6 +797,11 @@ class ClosureTest extends TestCase
                 'assertions' => [],
                 'ignored_issues' => [],
                 'php_version' => '8.1'
+            ],
+            'unknownFirstClassCallable' => [
+                'code' => '<?php
+                    /** @psalm-suppress UndefinedFunction */
+                    unknown(...);',
             ],
         ];
     }

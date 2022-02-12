@@ -22,7 +22,6 @@ use Psalm\Storage\Assertion\IsGreaterThan;
 use Psalm\Storage\Assertion\IsIsset;
 use Psalm\Storage\Assertion\IsLessThan;
 use Psalm\Storage\Assertion\IsLooselyEqual;
-use Psalm\Storage\Assertion\IsPositiveNumeric;
 use Psalm\Storage\Assertion\IsType;
 use Psalm\Storage\Assertion\NonEmpty;
 use Psalm\Storage\Assertion\NonEmptyCountable;
@@ -40,7 +39,6 @@ use Psalm\Type\Atomic\TCallableObject;
 use Psalm\Type\Atomic\TCallableString;
 use Psalm\Type\Atomic\TClassConstant;
 use Psalm\Type\Atomic\TClassString;
-use Psalm\Type\Atomic\TFalse;
 use Psalm\Type\Atomic\TFloat;
 use Psalm\Type\Atomic\TGenericObject;
 use Psalm\Type\Atomic\TInt;
@@ -63,12 +61,10 @@ use Psalm\Type\Atomic\TNonEmptyScalar;
 use Psalm\Type\Atomic\TNonEmptyString;
 use Psalm\Type\Atomic\TNonFalsyString;
 use Psalm\Type\Atomic\TNonspecificLiteralString;
-use Psalm\Type\Atomic\TNull;
 use Psalm\Type\Atomic\TNumeric;
 use Psalm\Type\Atomic\TNumericString;
 use Psalm\Type\Atomic\TObject;
 use Psalm\Type\Atomic\TObjectWithProperties;
-use Psalm\Type\Atomic\TPositiveInt;
 use Psalm\Type\Atomic\TResource;
 use Psalm\Type\Atomic\TScalar;
 use Psalm\Type\Atomic\TString;
@@ -81,7 +77,6 @@ use function assert;
 use function count;
 use function explode;
 use function get_class;
-use function max;
 use function min;
 use function strpos;
 
@@ -158,7 +153,7 @@ class SimpleAssertionReconciler extends Reconciler
         }
 
         if ($assertion instanceof IsGreaterThan) {
-            return self::reconcileSuperiorTo(
+            return self::reconcileIsGreaterThan(
                 $assertion,
                 $existing_var_type,
                 $inside_loop,
@@ -171,7 +166,7 @@ class SimpleAssertionReconciler extends Reconciler
         }
 
         if ($assertion instanceof IsLessThan) {
-            return self::reconcileInferiorTo(
+            return self::reconcileIsLessThan(
                 $assertion,
                 $existing_var_type,
                 $inside_loop,
@@ -238,19 +233,6 @@ class SimpleAssertionReconciler extends Reconciler
             );
         }
 
-        if ($assertion instanceof IsPositiveNumeric) {
-            return self::reconcilePositiveNumeric(
-                $assertion,
-                $existing_var_type,
-                $key,
-                $negated,
-                $code_location,
-                $suppressed_issues,
-                $failed_reconciliation,
-                $is_equality
-            );
-        }
-
         if ($assertion instanceof NonEmptyCountable) {
             return self::reconcileNonEmptyCountable(
                 $assertion,
@@ -259,8 +241,7 @@ class SimpleAssertionReconciler extends Reconciler
                 $negated,
                 $code_location,
                 $suppressed_issues,
-                $failed_reconciliation,
-                $is_equality
+                $is_equality,
             );
         }
 
@@ -272,8 +253,7 @@ class SimpleAssertionReconciler extends Reconciler
                 $negated,
                 $code_location,
                 $suppressed_issues,
-                $failed_reconciliation,
-                $is_equality
+                $is_equality,
             );
         }
 
@@ -452,7 +432,7 @@ class SimpleAssertionReconciler extends Reconciler
                 $code_location,
                 $suppressed_issues,
                 $failed_reconciliation,
-                $is_equality
+                $is_equality,
             );
         }
 
@@ -578,7 +558,6 @@ class SimpleAssertionReconciler extends Reconciler
 
     /**
      * @param   string[]  $suppressed_issues
-     * @param Reconciler::RECONCILIATION_* $failed_reconciliation
      */
     private static function reconcileNonEmptyCountable(
         Assertion $assertion,
@@ -587,7 +566,6 @@ class SimpleAssertionReconciler extends Reconciler
         bool $negated,
         ?CodeLocation $code_location,
         array $suppressed_issues,
-        int &$failed_reconciliation,
         bool $is_equality
     ): Union {
         $old_var_type_string = $existing_var_type->getId();
@@ -723,85 +701,6 @@ class SimpleAssertionReconciler extends Reconciler
         }
 
         return $existing_var_type;
-    }
-
-    /**
-     * @param   string[]  $suppressed_issues
-     * @param Reconciler::RECONCILIATION_* $failed_reconciliation
-     */
-    private static function reconcilePositiveNumeric(
-        Assertion $assertion,
-        Union $existing_var_type,
-        ?string $key,
-        bool $negated,
-        ?CodeLocation $code_location,
-        array $suppressed_issues,
-        int &$failed_reconciliation,
-        bool $is_equality
-    ): Union {
-        $old_var_type_string = $existing_var_type->getId();
-
-        $did_remove_type = false;
-
-        $positive_types = [];
-
-        foreach ($existing_var_type->getAtomicTypes() as $atomic_type) {
-            if ($atomic_type instanceof TLiteralInt) {
-                if ($atomic_type->value < 1) {
-                    $did_remove_type = true;
-                } else {
-                    $positive_types[] = $atomic_type;
-                }
-            } elseif ($atomic_type instanceof TPositiveInt) {
-                $positive_types[] = $atomic_type;
-            } elseif ($atomic_type instanceof TIntRange) {
-                if (!$atomic_type->isPositive()) {
-                    $did_remove_type = true;
-                }
-                $positive_types[] = new TIntRange(
-                    $atomic_type->min_bound === null ? 1 : max(1, $atomic_type->min_bound),
-                    $atomic_type->max_bound === null ? null : max(1, $atomic_type->max_bound)
-                );
-            } elseif (get_class($atomic_type) === TInt::class) {
-                $positive_types[] = new TPositiveInt();
-                $did_remove_type = true;
-            } else {
-                // for now allow this check everywhere else
-                if (!$atomic_type instanceof TNull
-                    && !$atomic_type instanceof TFalse
-                ) {
-                    $positive_types[] = $atomic_type;
-                }
-
-                $did_remove_type = true;
-            }
-        }
-
-        if (!$is_equality
-            && !$existing_var_type->hasMixed()
-            && (!$did_remove_type || !$positive_types)
-        ) {
-            if ($key && $code_location) {
-                self::triggerIssueForImpossible(
-                    $existing_var_type,
-                    $old_var_type_string,
-                    $key,
-                    $assertion,
-                    !$did_remove_type,
-                    $negated,
-                    $code_location,
-                    $suppressed_issues
-                );
-            }
-        }
-
-        if ($positive_types) {
-            return new Union($positive_types);
-        }
-
-        $failed_reconciliation = Reconciler::RECONCILIATION_EMPTY;
-
-        return Type::getNever();
     }
 
     /**
@@ -1652,6 +1551,11 @@ class SimpleAssertionReconciler extends Reconciler
     ): Union {
         $new_var_type = clone $assertion->type;
 
+        if ($new_var_type->isSingle() && $new_var_type->getSingleAtomic() instanceof TClassConstant) {
+            // Can't do assertion on const with non-literal type
+            return $existing_var_type;
+        }
+
         $intersection = Type::intersectUnionTypes($new_var_type, $existing_var_type, $codebase);
 
         if ($intersection === null) {
@@ -1708,7 +1612,7 @@ class SimpleAssertionReconciler extends Reconciler
     /**
      * @param string[] $suppressed_issues
      */
-    private static function reconcileSuperiorTo(
+    private static function reconcileIsGreaterThan(
         IsGreaterThan $assertion,
         Union         $existing_var_type,
         bool          $inside_loop,
@@ -1718,16 +1622,18 @@ class SimpleAssertionReconciler extends Reconciler
         ?CodeLocation $code_location,
         array         $suppressed_issues
     ): Union {
-        $assertion_value = $assertion->value;
+        //we add 1 from the assertion value because we're on a strict operator
+        $assertion_value = $assertion->value + 1;
 
         $did_remove_type = false;
 
+        if ($existing_var_type->hasType('null') && $assertion->doesFilterNull()) {
+            $did_remove_type = true;
+            $existing_var_type->removeType('null');
+        }
+
         foreach ($existing_var_type->getAtomicTypes() as $atomic_type) {
             if ($inside_loop) {
-                continue;
-            }
-
-            if ($assertion_value === null) {
                 continue;
             }
 
@@ -1765,12 +1671,6 @@ class SimpleAssertionReconciler extends Reconciler
                         $existing_var_type->addType(new TIntRange($assertion_value, $atomic_type->value));
                     }
                 }*/
-            } elseif ($atomic_type instanceof TPositiveInt) {
-                if ($assertion_value > 1) {
-                    $did_remove_type = true;
-                    $existing_var_type->removeType($atomic_type->getKey());
-                    $existing_var_type->addType(new TIntRange($assertion_value, null));
-                }
             } elseif ($atomic_type instanceof TInt) {
                 $did_remove_type = true;
                 $existing_var_type->removeType($atomic_type->getKey());
@@ -1817,7 +1717,7 @@ class SimpleAssertionReconciler extends Reconciler
     /**
      * @param string[] $suppressed_issues
      */
-    private static function reconcileInferiorTo(
+    private static function reconcileIsLessThan(
         IsLessThan    $assertion,
         Union         $existing_var_type,
         bool          $inside_loop,
@@ -1827,16 +1727,18 @@ class SimpleAssertionReconciler extends Reconciler
         ?CodeLocation $code_location,
         array         $suppressed_issues
     ): Union {
-        $assertion_value = $assertion->value;
+        //we remove 1 from the assertion value because we're on a strict operator
+        $assertion_value = $assertion->value - 1;
 
         $did_remove_type = false;
 
+        if ($existing_var_type->hasType('null') && $assertion->doesFilterNull()) {
+            $did_remove_type = true;
+            $existing_var_type->removeType('null');
+        }
+
         foreach ($existing_var_type->getAtomicTypes() as $atomic_type) {
             if ($inside_loop) {
-                continue;
-            }
-
-            if ($assertion_value === null) {
                 continue;
             }
 
@@ -1871,12 +1773,6 @@ class SimpleAssertionReconciler extends Reconciler
                         $existing_var_type->addType(new TIntRange($assertion_value, $atomic_type->value));
                     }
                 }*/
-            } elseif ($atomic_type instanceof TPositiveInt) {
-                $did_remove_type = true;
-                $existing_var_type->removeType($atomic_type->getKey());
-                if ($assertion_value >= 1) {
-                    $existing_var_type->addType(new TIntRange(1, $assertion_value));
-                }
             } elseif ($atomic_type instanceof TInt) {
                 $did_remove_type = true;
                 $existing_var_type->removeType($atomic_type->getKey());

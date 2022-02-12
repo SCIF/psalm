@@ -118,6 +118,9 @@ class MixinAnnotationTest extends TestCase
             ],
             'wrapCustomIterator' => [
                 'code' => '<?php
+                    /**
+                     * @implements Iterator<1, 2>
+                     */
                     class Subject implements Iterator {
                         /**
                          * the index method exists
@@ -686,6 +689,30 @@ class MixinAnnotationTest extends TestCase
                         return (new FooGrandChild)->type();
                     }',
                 'error_message' => 'LessSpecificReturnStatement'
+            ],
+            'mixinStaticCallShouldNotPolluteContext' => [
+                'code' => '<?php
+                    /**
+                     * @template T
+                     */
+                    class Foo
+                    {
+                        public function foobar(): void {}
+                    }
+
+                    /**
+                     * @template T
+                     * @mixin Foo<T>
+                     */
+                    class Bar
+                    {
+                        public function baz(): self
+                        {
+                            self::foobar();
+                            return $__tmp_mixin_var__;
+                        }
+                    }',
+                'error_message' => 'UndefinedVariable'
             ],
         ];
     }

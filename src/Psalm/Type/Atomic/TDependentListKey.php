@@ -7,7 +7,7 @@ use Psalm\Type\Atomic;
 /**
  * Represents a list key created from foreach ($list as $key => $value)
  */
-class TDependentListKey extends TInt implements DependentType
+final class TDependentListKey extends TInt implements DependentType
 {
     /**
      * Used to hold information as to what list variable this refers to
@@ -24,7 +24,7 @@ class TDependentListKey extends TInt implements DependentType
         $this->var_id = $var_id;
     }
 
-    public function getId(bool $nested = false): string
+    public function getId(bool $exact = true, bool $nested = false): string
     {
         return 'list-key<' . $this->var_id . '>';
     }

@@ -67,7 +67,7 @@ class MatchAnalyzer
 
         $context->inside_conditional = $was_inside_conditional;
 
-        $switch_var_id = ExpressionIdentifier::getArrayVarId(
+        $switch_var_id = ExpressionIdentifier::getExtendedVarId(
             $stmt->cond,
             null,
             $statements_analyzer
@@ -254,6 +254,7 @@ class MatchAnalyzer
                     $reconcilable_types,
                     [],
                     $context->vars_in_scope,
+                    $context->references_in_scope,
                     $changed_var_ids,
                     [],
                     $statements_analyzer,

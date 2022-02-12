@@ -114,7 +114,7 @@ class EnumTest extends TestCase
                     $a = Status::DRAFT->name;
                 ',
                 'assertions' => [
-                    '$a===' => '"DRAFT"',
+                    '$a===' => "'DRAFT'",
                 ],
                 'ignored_issues' => [],
                 'php_version' => '8.1'
@@ -368,6 +368,17 @@ class EnumTest extends TestCase
                 'assertions' => [
                     '$_z===' => 'enum(Status::Closed)|enum(Status::Open)|null',
                 ],
+                'ignored_issues' => [],
+                'php_version' => '8.1',
+            ],
+            'InterfacesWithProperties' => [
+                'code' => '<?php
+
+                    static fn (\UnitEnum $tag): string => $tag->name;
+
+                    static fn (\BackedEnum $tag): string|int => $tag->value;
+                    ',
+                'assertions' => [],
                 'ignored_issues' => [],
                 'php_version' => '8.1',
             ],

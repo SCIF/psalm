@@ -5,7 +5,6 @@ You can run Psalm in at different levels of strictness from 1 to 8.
 Level 1 is the most strict, level 8 is the most lenient.
 
 When no level is explicitly defined, psalm defaults to level 2.
-In case `totallyTyped` is enabled, psalm defaults to level 1.
 
 Some issues are [always treated as errors](#always-treated-as-errors). These are issues with a very low probability of false-positives.
 
@@ -56,6 +55,7 @@ Level 5 and above allows a more non-verifiable code, and higher levels are even 
  - [InvalidThrow](issues/InvalidThrow.md)
  - [LoopInvalidation](issues/LoopInvalidation.md)
  - [MethodSignatureMustOmitReturnType](issues/MethodSignatureMustOmitReturnType.md)
+ - [MethodSignatureMustProvideReturnType](issues/MethodSignatureMustProvideReturnType.md)
  - [MissingDependency](issues/MissingDependency.md)
  - [MissingFile](issues/MissingFile.md)
  - [MissingImmutableAnnotation](issues/MissingImmutableAnnotation.md)

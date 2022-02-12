@@ -47,7 +47,6 @@ use Psalm\Type\Atomic\TNull;
 use Psalm\Type\Atomic\TNumericString;
 use Psalm\Type\Atomic\TObject;
 use Psalm\Type\Atomic\TObjectWithProperties;
-use Psalm\Type\Atomic\TPositiveInt;
 use Psalm\Type\Atomic\TScalar;
 use Psalm\Type\Atomic\TString;
 use Psalm\Type\Atomic\TTemplateParam;
@@ -738,7 +737,7 @@ class TypeCombiner
                 $min_prop_count = count(
                     array_filter(
                         $type->properties,
-                        fn($p) => $p->possibly_undefined
+                        static fn(Union $p): bool => !$p->possibly_undefined
                     )
                 );
                 $combination->array_min_counts[$min_prop_count] = true;
@@ -779,6 +778,27 @@ class TypeCombiner
         }
 
         if ($type instanceof TIterable) {
+            $combination->value_types[$type_key] = $type;
+
+            return null;
+        }
+
+        if ($type instanceof TTemplateParam) {
+            if (isset($combination->value_types[$type_key])) {
+                /** @var TTemplateParam */
+                $existing_template_type = $combination->value_types[$type_key];
+
+                if (!$existing_template_type->as->equals($type->as)) {
+                    $existing_template_type->as = Type::combineUnionTypes(
+                        clone $type->as,
+                        $existing_template_type->as,
+                        $codebase
+                    );
+                }
+
+                return null;
+            }
+
             $combination->value_types[$type_key] = $type;
 
             return null;
@@ -1140,13 +1160,7 @@ class TypeCombiner
             return;
         }
 
-        $had_zero = isset($combination->ints['int(0)']);
-
         if ($type instanceof TLiteralInt) {
-            if ($type->value === 0) {
-                $had_zero = true;
-            }
-
             if ($combination->ints !== null && count($combination->ints) < $literal_limit) {
                 $combination->ints[$type_key] = $type;
             } else {
@@ -1179,40 +1193,12 @@ class TypeCombiner
 
                 if (!isset($combination->value_types['int'])) {
                     $combination->value_types['int'] = $all_nonnegative
-                        ? new TPositiveInt()
+                        ? new TIntRange(0, null) // improvement: use min and max literals to bound
                         : new TNonspecificLiteralInt();
-                } elseif ($combination->value_types['int'] instanceof TPositiveInt
-                    && !$all_nonnegative
-                ) {
-                    $combination->value_types['int'] = new TInt();
                 }
             }
         } else {
-            if ($type instanceof TPositiveInt) {
-                if ($combination->ints) {
-                    $all_nonnegative = !array_filter(
-                        $combination->ints,
-                        static fn($int): bool => $int->value < 0
-                    );
-
-                    if ($all_nonnegative) {
-                        $combination->value_types['int'] = $type;
-                    } else {
-                        $combination->value_types['int'] = new TInt();
-                    }
-                } elseif (!isset($combination->value_types['int'])) {
-                    $combination->value_types['int'] = $type;
-                } elseif ($combination->value_types['int'] instanceof TIntRange) {
-                    //if we already had a range, we ensure the min is no higher than 1
-                    $combination->value_types['int']->min_bound = TIntRange::getNewLowestBound(
-                        $combination->value_types['int']->min_bound,
-                        1
-                    );
-                    $combination->value_types['int']->max_bound = null;
-                } elseif (get_class($combination->value_types['int']) !== get_class($type)) {
-                    $combination->value_types['int'] = new TInt();
-                }
-            } elseif ($type instanceof TNonspecificLiteralInt) {
+            if ($type instanceof TNonspecificLiteralInt) {
                 if ($combination->ints || !isset($combination->value_types['int'])) {
                     $combination->value_types['int'] = $type;
                 } elseif (isset($combination->value_types['int'])
@@ -1238,9 +1224,6 @@ class TypeCombiner
                     if ($old_type instanceof TIntRange) {
                         $type->min_bound = TIntRange::getNewLowestBound($old_type->min_bound, $type->min_bound);
                         $type->max_bound = TIntRange::getNewHighestBound($old_type->max_bound, $type->max_bound);
-                    } elseif ($old_type instanceof TPositiveInt) {
-                        $type->min_bound = TIntRange::getNewLowestBound($type->min_bound, 0);
-                        $type->max_bound = null;
                     } else {
                         $type = new TInt();
                     }
@@ -1251,18 +1234,6 @@ class TypeCombiner
             }
 
             $combination->ints = null;
-        }
-
-        if ($had_zero
-            && isset($combination->value_types['int'])
-            && $combination->value_types['int'] instanceof TPositiveInt
-        ) {
-            if ($combination->ints === null) {
-                $combination->ints = ['int(0)' => new TLiteralInt(0)];
-            } elseif ($type instanceof TLiteralInt && $type->value < 0) {
-                $combination->ints = null;
-                $combination->value_types['int'] = new TInt();
-            }
         }
     }
 
@@ -1357,9 +1328,7 @@ class TypeCombiner
             $combination->objectlike_sealed = false;
         }
 
-        if (!$combination->array_type_params
-            || $combination->array_type_params[1]->isNever()
-        ) {
+        if (!$combination->array_type_params || $combination->array_type_params[1]->isNever()) {
             if (!$overwrite_empty_array
                 && ($combination->array_type_params
                     && ($combination->array_type_params[1]->isNever()
@@ -1412,7 +1381,13 @@ class TypeCombiner
 
                 $new_types[] = $objectlike;
             } else {
-                $new_types[] = new TArray([Type::getArrayKey(), Type::getMixed()]);
+                $key_type = $combination->objectlike_key_type ?? Type::getArrayKey();
+                $value_type = $combination->objectlike_value_type ?? Type::getMixed();
+                if ($combination->array_always_filled) {
+                    $new_types[] = new TNonEmptyArray([$key_type, $value_type]);
+                } else {
+                    $new_types[] = new TArray([$key_type, $value_type]);
+                }
             }
 
             // if we're merging an empty array with an object-like, clobber empty array

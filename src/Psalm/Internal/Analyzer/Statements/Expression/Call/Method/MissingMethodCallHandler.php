@@ -92,7 +92,7 @@ class MissingMethodCallHandler
                 CallAnalyzer::checkMethodArgs(
                     $method_id,
                     $stmt->getArgs(),
-                    null,
+                    new TemplateResult([], []),
                     $context,
                     new CodeLocation($statements_analyzer->getSource(), $stmt),
                     $statements_analyzer
@@ -116,7 +116,7 @@ class MissingMethodCallHandler
 
             $found_generic_params = ClassTemplateParamCollector::collect(
                 $codebase,
-                $class_storage,
+                $defining_class_storage,
                 $class_storage,
                 $method_name_lc,
                 $lhs_type_part,
@@ -140,7 +140,7 @@ class MissingMethodCallHandler
                 $pseudo_method_storage->params,
                 $pseudo_method_storage,
                 null,
-                $found_generic_params ? new TemplateResult([], $found_generic_params) : null,
+                new TemplateResult([], $found_generic_params ?: []),
                 new CodeLocation($statements_analyzer, $stmt),
                 $context
             );
@@ -160,7 +160,7 @@ class MissingMethodCallHandler
                     $codebase,
                     $return_type_candidate,
                     $defining_class_storage->name,
-                    $fq_class_name,
+                    $lhs_type_part instanceof Atomic\TNamedObject ? $lhs_type_part : $fq_class_name,
                     $defining_class_storage->parent_class
                 );
 
@@ -278,7 +278,7 @@ class MissingMethodCallHandler
 
             $found_generic_params = ClassTemplateParamCollector::collect(
                 $codebase,
-                $class_storage,
+                $defining_class_storage,
                 $class_storage,
                 $method_name_lc,
                 $lhs_type_part,
@@ -304,7 +304,7 @@ class MissingMethodCallHandler
                 $pseudo_method_storage->params,
                 $pseudo_method_storage,
                 null,
-                $found_generic_params ? new TemplateResult([], $found_generic_params) : null,
+                new TemplateResult([], $found_generic_params ?: []),
                 new CodeLocation($statements_analyzer, $stmt->name),
                 $context
             ) === false) {
@@ -334,7 +334,7 @@ class MissingMethodCallHandler
                     $codebase,
                     $return_type_candidate,
                     $defining_class_storage->name,
-                    $fq_class_name,
+                    $lhs_type_part instanceof Atomic\TNamedObject ? $lhs_type_part : $fq_class_name,
                     $defining_class_storage->parent_class,
                     true,
                     false,
@@ -421,11 +421,20 @@ class MissingMethodCallHandler
         ClassLikeStorage $static_class_storage,
         string $method_name_lc
     ): ?array {
+        if (isset($static_class_storage->declaring_pseudo_method_ids[$method_name_lc])) {
+            $method_id = $static_class_storage->declaring_pseudo_method_ids[$method_name_lc];
+            $class_storage = $codebase->classlikes->getStorageFor($method_id->fq_class_name);
+
+            if ($class_storage && isset($class_storage->pseudo_methods[$method_name_lc])) {
+                return [$class_storage->pseudo_methods[$method_name_lc], $class_storage];
+            }
+        }
+
         if ($pseudo_method_storage = $static_class_storage->pseudo_methods[$method_name_lc] ?? null) {
             return [$pseudo_method_storage, $static_class_storage];
         }
 
-        $ancestors = $static_class_storage->class_implements + $static_class_storage->parent_classes;
+        $ancestors = $static_class_storage->class_implements;
 
         foreach ($ancestors as $fq_class_name => $_) {
             $class_storage = $codebase->classlikes->getStorageFor($fq_class_name);

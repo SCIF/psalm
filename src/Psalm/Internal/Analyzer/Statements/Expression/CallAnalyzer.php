@@ -227,8 +227,7 @@ class CallAnalyzer
                         if ($type->initialized) {
                             $local_vars_in_scope[$var_id] = $context->vars_in_scope[$var_id];
 
-                            unset($context->vars_in_scope[$var_id]);
-                            unset($context->vars_possibly_in_scope[$var_id]);
+                            $context->remove($var_id, false);
                         }
                     } elseif ($var_id !== '$this') {
                         $local_vars_in_scope[$var_id] = $context->vars_in_scope[$var_id];
@@ -274,7 +273,7 @@ class CallAnalyzer
     public static function checkMethodArgs(
         ?MethodIdentifier $method_id,
         array $args,
-        ?TemplateResult $class_template_result,
+        TemplateResult $template_result,
         Context $context,
         CodeLocation $code_location,
         StatementsAnalyzer $statements_analyzer
@@ -289,7 +288,7 @@ class CallAnalyzer
                 null,
                 true,
                 $context,
-                $class_template_result
+                $template_result
             ) !== false;
         }
 
@@ -347,7 +346,7 @@ class CallAnalyzer
             (string) $method_id,
             $method_storage->allow_named_arg_calls ?? true,
             $context,
-            $class_template_result
+            $template_result
         ) === false) {
             return false;
         }
@@ -359,17 +358,17 @@ class CallAnalyzer
             $method_params,
             $method_storage,
             $class_storage,
-            $class_template_result,
+            $template_result,
             $code_location,
             $context
         ) === false) {
             return false;
         }
 
-        if ($class_template_result) {
+        if ($template_result->template_types) {
             self::checkTemplateResult(
                 $statements_analyzer,
-                $class_template_result,
+                $template_result,
                 $code_location,
                 strtolower((string) $method_id)
             );
@@ -671,7 +670,7 @@ class CallAnalyzer
 
                 $arg_value = $args[$var_possibilities->var_id]->value;
 
-                $arg_var_id = ExpressionIdentifier::getArrayVarId($arg_value, null, $statements_analyzer);
+                $arg_var_id = ExpressionIdentifier::getExtendedVarId($arg_value, null, $statements_analyzer);
 
                 if ($arg_var_id) {
                     $assertion_var_id = $arg_var_id;
@@ -717,7 +716,7 @@ class CallAnalyzer
                 /** @var PhpParser\Node\Expr\Variable $arg_value */
                 $arg_value = $args[$var_id]->value;
 
-                $arg_var_id = ExpressionIdentifier::getArrayVarId($arg_value, null, $statements_analyzer);
+                $arg_var_id = ExpressionIdentifier::getExtendedVarId($arg_value, null, $statements_analyzer);
 
                 if (!$arg_var_id) {
                     IssueBuffer::add(
@@ -886,6 +885,7 @@ class CallAnalyzer
                 $type_assertions,
                 $type_assertions,
                 $context->vars_in_scope,
+                $context->references_in_scope,
                 $changed_var_ids,
                 $asserted_keys,
                 $statements_analyzer,

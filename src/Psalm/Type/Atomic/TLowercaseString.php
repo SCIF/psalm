@@ -2,9 +2,9 @@
 
 namespace Psalm\Type\Atomic;
 
-class TLowercaseString extends TString
+final class TLowercaseString extends TString
 {
-    public function getId(bool $nested = false): string
+    public function getId(bool $exact = true, bool $nested = false): string
     {
         return 'lowercase-string';
     }

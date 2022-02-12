@@ -7,13 +7,8 @@ use Psalm\Type\Atomic;
 /**
  * Denotes the `resource` type (e.g. a file handle).
  */
-class TResource extends Atomic
+final class TResource extends Atomic
 {
-    public function __toString(): string
-    {
-        return 'resource';
-    }
-
     public function getKey(bool $include_extra = true): string
     {
         return 'resource';

@@ -16,6 +16,7 @@ use Psalm\Issue\MixedIssue;
 use Psalm\Issue\TaintedInput;
 use Psalm\Issue\UnusedPsalmSuppress;
 use Psalm\Plugin\EventHandler\Event\AfterAnalysisEvent;
+use Psalm\Plugin\EventHandler\Event\BeforeAddIssueEvent;
 use Psalm\Report\CheckstyleReport;
 use Psalm\Report\CodeClimateReport;
 use Psalm\Report\CompactReport;
@@ -76,7 +77,7 @@ use const DEBUG_BACKTRACE_IGNORE_ARGS;
 use const PSALM_VERSION;
 use const STDERR;
 
-class IssueBuffer
+final class IssueBuffer
 {
     /**
      * @var array<string, list<IssueData>>
@@ -211,7 +212,9 @@ class IssueBuffer
             }
         }
 
-        $suppress_all_position = array_search('all', $suppressed_issues);
+        $suppress_all_position = $config->disable_suppress_all
+            ? false
+            : array_search('all', $suppressed_issues);
 
         if ($suppress_all_position !== false) {
             if (is_int($suppress_all_position)) {
@@ -247,6 +250,11 @@ class IssueBuffer
     public static function add(CodeIssue $e, bool $is_fixable = false): bool
     {
         $config = Config::getInstance();
+
+        $event = new BeforeAddIssueEvent($e, $is_fixable);
+        if ($config->eventDispatcher->dispatchBeforeAddIssue($event) === false) {
+            return false;
+        };
 
         $fqcn_parts = explode('\\', get_class($e));
         $issue_type = array_pop($fqcn_parts);
@@ -686,7 +694,7 @@ class IssueBuffer
                     : $error_count . ' errors'
                 ) . ' found' . "\n";
             } else {
-                self::printSuccessMessage();
+                self::printSuccessMessage($project_analyzer);
             }
 
             $show_info = $project_analyzer->stdout_report_options->show_info;
@@ -777,8 +785,12 @@ class IssueBuffer
         }
     }
 
-    public static function printSuccessMessage(): void
+    public static function printSuccessMessage(ProjectAnalyzer $project_analyzer): void
     {
+        if (!$project_analyzer->stdout_report_options) {
+            throw new UnexpectedValueException('Cannot print success message without stdout report options');
+        }
+
         // this message will be printed
         $message = "No errors found!";
 
@@ -803,9 +815,15 @@ class IssueBuffer
         // text style, 1 = bold
         $style = "1";
 
-        echo "\e[{$background};{$style}m{$paddingTop}\e[0m" . "\n";
-        echo "\e[{$background};{$foreground};{$style}m{$messageWithPadding}\e[0m" . "\n";
-        echo "\e[{$background};{$style}m{$paddingBottom}\e[0m" . "\n";
+        if ($project_analyzer->stdout_report_options->use_color) {
+            echo "\e[{$background};{$style}m{$paddingTop}\e[0m" . "\n";
+            echo "\e[{$background};{$foreground};{$style}m{$messageWithPadding}\e[0m" . "\n";
+            echo "\e[{$background};{$style}m{$paddingBottom}\e[0m" . "\n";
+        } else {
+            echo "\n";
+            echo "$messageWithPadding\n";
+            echo "\n";
+        }
     }
 
     /**

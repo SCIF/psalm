@@ -91,7 +91,7 @@ class MethodCallAnalyzer extends CallAnalyzer
             }
         }
 
-        $lhs_var_id = ExpressionIdentifier::getArrayVarId(
+        $lhs_var_id = ExpressionIdentifier::getExtendedVarId(
             $stmt->var,
             $statements_analyzer->getFQCLN(),
             $statements_analyzer
@@ -381,7 +381,7 @@ class MethodCallAnalyzer extends CallAnalyzer
             return $stmt->isFirstClassCallable() || self::checkMethodArgs(
                 null,
                 $stmt->getArgs(),
-                null,
+                new TemplateResult([], []),
                 $context,
                 new CodeLocation($statements_analyzer->getSource(), $stmt),
                 $statements_analyzer

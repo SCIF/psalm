@@ -93,6 +93,14 @@ return [
       'old' => ['bool', 'mode'=>'int'],
       'new' => ['bool', 'mode'=>'int', '...args='=>'mixed'],
     ],
+    'Phar::getMetadata' => [
+      'old' => ['mixed'],
+      'new' => ['mixed', 'unserializeOptions='=>'array'],
+    ],
+    'PharFileInfo::getMetadata' => [
+      'old' => ['mixed'],
+      'new' => ['mixed', 'unserializeOptions='=>'array'],
+    ],
     'ReflectionClass::getConstants' => [
       'old' => ['array<string,mixed>'],
       'new' => ['array<string,mixed>', 'filter='=>'?int'],
@@ -300,6 +308,10 @@ return [
     'date_format' => [
       'old' => ['string|false', 'object'=>'DateTimeInterface', 'format'=>'string'],
       'new' => ['string', 'object'=>'DateTimeInterface', 'format'=>'string'],
+    ],
+    'dom_import_simplexml' => [
+        'old' => ['DOMElement|null', 'node'=>'SimpleXMLElement'],
+        'new' => ['DOMElement', 'node'=>'SimpleXMLElement'],
     ],
     'explode' => [
       'old' => ['list<string>|false', 'separator'=>'string', 'string'=>'string', 'limit='=>'int'],

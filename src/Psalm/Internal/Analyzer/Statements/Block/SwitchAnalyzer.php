@@ -42,7 +42,7 @@ class SwitchAnalyzer
 
         $context->inside_conditional = $was_inside_conditional;
 
-        $switch_var_id = ExpressionIdentifier::getArrayVarId(
+        $switch_var_id = ExpressionIdentifier::getExtendedVarId(
             $stmt->cond,
             null,
             $statements_analyzer
@@ -159,6 +159,7 @@ class SwitchAnalyzer
                         $reconcilable_if_types,
                         [],
                         $original_context->vars_in_scope,
+                        $original_context->references_in_scope,
                         $changed_var_ids,
                         [],
                         $statements_analyzer,

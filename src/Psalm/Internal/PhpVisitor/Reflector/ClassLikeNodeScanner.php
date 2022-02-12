@@ -8,6 +8,7 @@ use LogicException;
 use PhpParser;
 use PhpParser\Node\Expr\BinaryOp\Concat;
 use PhpParser\Node\Identifier;
+use PhpParser\Node\IntersectionType;
 use PhpParser\Node\Name;
 use PhpParser\Node\NullableType;
 use PhpParser\Node\UnionType;
@@ -599,11 +600,16 @@ class ClassLikeNodeScanner
 
                 /** @var MethodStorage */
                 $pseudo_method_storage = $functionlike_node_scanner->start($method, true);
+                $lc_method_name = strtolower($method->name->name);
 
                 if ($pseudo_method_storage->is_static) {
-                    $storage->pseudo_static_methods[strtolower($method->name->name)] = $pseudo_method_storage;
+                    $storage->pseudo_static_methods[$lc_method_name] = $pseudo_method_storage;
                 } else {
-                    $storage->pseudo_methods[strtolower($method->name->name)] = $pseudo_method_storage;
+                    $storage->pseudo_methods[$lc_method_name] = $pseudo_method_storage;
+                    $storage->declaring_pseudo_method_ids[$lc_method_name] = new MethodIdentifier(
+                        $fq_classlike_name,
+                        $lc_method_name
+                    );
                 }
 
                 $storage->sealed_methods = true;
@@ -965,8 +971,8 @@ class ClassLikeNodeScanner
 
             $extended_type_parameters = [];
 
-            $storage->template_extended_count = count($atomic_type->type_params);
-
+            $storage->template_type_extends_count[$atomic_type->value] = count($atomic_type->type_params);
+            
             foreach ($atomic_type->type_params as $type_param) {
                 $extended_type_parameters[] = $type_param;
             }
@@ -1185,6 +1191,7 @@ class ClassLikeNodeScanner
         $existing_constants = $storage->constants;
 
         $comment = $stmt->getDocComment();
+        $var_comment = null;
         $deprecated = false;
         $description = null;
         $config = $this->config;
@@ -1197,19 +1204,31 @@ class ClassLikeNodeScanner
             }
 
             $description = $comments->description;
+
+            try {
+                $var_comments = CommentAnalyzer::getTypeFromComment(
+                    $comment,
+                    $this->file_scanner,
+                    $this->aliases,
+                    [],
+                    $this->type_aliases
+                );
+
+                $var_comment = array_pop($var_comments);
+            } catch (IncorrectDocblockException $e) {
+                $storage->docblock_issues[] = new MissingDocblockType(
+                    $e->getMessage(),
+                    new CodeLocation($this->file_scanner, $stmt, null, true)
+                );
+            } catch (DocblockParseException $e) {
+                $storage->docblock_issues[] = new InvalidDocblock(
+                    $e->getMessage(),
+                    new CodeLocation($this->file_scanner, $stmt, null, true)
+                );
+            }
         }
 
         foreach ($stmt->consts as $const) {
-            $const_type = SimpleTypeInferer::infer(
-                $this->codebase,
-                new NodeDataProvider(),
-                $const->value,
-                $this->aliases,
-                null,
-                $existing_constants,
-                $fq_classlike_name
-            );
-
             if (isset($storage->constants[$const->name->name])
                 || isset($storage->enum_cases[$const->name->name])
             ) {
@@ -1223,8 +1242,40 @@ class ClassLikeNodeScanner
                 continue;
             }
 
+            $inferred_type = SimpleTypeInferer::infer(
+                $this->codebase,
+                new NodeDataProvider(),
+                $const->value,
+                $this->aliases,
+                null,
+                $existing_constants,
+                $fq_classlike_name
+            );
+
+            $type_location = null;
+            $suppressed_issues = [];
+            if ($var_comment !== null && $var_comment->type !== null) {
+                $const_type = $var_comment->type;
+                $suppressed_issues = $var_comment->suppressed_issues;
+
+                if ($var_comment->type_start !== null
+                    && $var_comment->type_end !== null
+                    && $var_comment->line_number !== null
+                ) {
+                    $type_location = new DocblockTypeLocation(
+                        $this->file_scanner,
+                        $var_comment->type_start,
+                        $var_comment->type_end,
+                        $var_comment->line_number
+                    );
+                }
+            } else {
+                $const_type = $inferred_type;
+            }
+
             $storage->constants[$const->name->name] = $constant_storage = new ClassConstantStorage(
                 $const_type,
+                $inferred_type,
                 $stmt->isProtected()
                     ? ClassLikeAnalyzer::VISIBILITY_PROTECTED
                     : ($stmt->isPrivate()
@@ -1235,31 +1286,23 @@ class ClassLikeNodeScanner
                     $const->name
                 )
             );
+            $constant_storage->suppressed_issues = $suppressed_issues;
+
+            $constant_storage->type_location = $type_location;
 
             $constant_storage->stmt_location = new CodeLocation(
                 $this->file_scanner,
                 $const
             );
 
-            if ($const_type
-                && $const->value instanceof Concat
-                && $const_type->isSingle()
-                && get_class($const_type->getSingleAtomic()) === TString::class
+            if ($inferred_type
+                && !(
+                    $const->value instanceof Concat
+                    && $inferred_type->isSingle()
+                    && get_class($inferred_type->getSingleAtomic()) === TString::class
+                )
             ) {
-                // Prefer unresolved type over inferred string from concat, so that it can later be resolved to literal.
-                $const_type = null;
-            }
-
-            if ($const_type) {
-                $existing_constants[$const->name->name] = new ClassConstantStorage(
-                    $const_type,
-                    $stmt->isProtected()
-                        ? ClassLikeAnalyzer::VISIBILITY_PROTECTED
-                        : ($stmt->isPrivate()
-                            ? ClassLikeAnalyzer::VISIBILITY_PRIVATE
-                            : ClassLikeAnalyzer::VISIBILITY_PUBLIC),
-                    null
-                );
+                $existing_constants[$const->name->name] = $constant_storage;
             } else {
                 $unresolved_const_expr = ExpressionResolver::getUnresolvedClassConstExpr(
                     $const->value,
@@ -1468,19 +1511,7 @@ class ClassLikeNodeScanner
 
         if ($stmt->type) {
             $parser_property_type = $stmt->type;
-            if ($parser_property_type instanceof PhpParser\Node\IntersectionType) {
-                throw new UnexpectedValueException('Intersection types not yet supported');
-            }
-            /** @var Identifier|Name|NullableType|UnionType $parser_property_type */
-
-            $signature_type = TypeHintResolver::resolve(
-                $parser_property_type,
-                $this->codebase->scanner,
-                $this->file_storage,
-                $this->storage,
-                $this->aliases,
-                $this->codebase->analysis_php_version_id
-            );
+            /** @var Identifier|IntersectionType|Name|NullableType|UnionType $parser_property_type */
 
             $signature_type_location = new CodeLocation(
                 $this->file_scanner,
@@ -1488,6 +1519,16 @@ class ClassLikeNodeScanner
                 null,
                 false,
                 CodeLocation::FUNCTION_RETURN_TYPE
+            );
+
+            $signature_type = TypeHintResolver::resolve(
+                $parser_property_type,
+                $signature_type_location,
+                $this->codebase,
+                $this->file_storage,
+                $this->storage,
+                $this->aliases,
+                $this->codebase->analysis_php_version_id
             );
         }
 
