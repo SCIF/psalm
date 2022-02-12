@@ -1,10 +1,18 @@
 <?php
+
 namespace Psalm;
 
 use Psalm\Internal\Analyzer\StatementsAnalyzer;
 use Psalm\Internal\Clause;
+use Psalm\Internal\ReferenceConstraint;
+use Psalm\Internal\Scope\CaseScope;
+use Psalm\Internal\Scope\FinallyScope;
+use Psalm\Internal\Scope\IfScope;
+use Psalm\Internal\Scope\LoopScope;
 use Psalm\Internal\Type\AssertionReconciler;
 use Psalm\Storage\FunctionLikeStorage;
+use Psalm\Type\Atomic\DependentType;
+use Psalm\Type\Atomic\TArray;
 use Psalm\Type\Union;
 
 use function array_keys;
@@ -19,10 +27,12 @@ use function preg_replace;
 use function strpos;
 use function strtolower;
 
+use const JSON_THROW_ON_ERROR;
+
 class Context
 {
     /**
-     * @var array<string, Type\Union>
+     * @var array<string, Union>
      */
     public $vars_in_scope = [];
 
@@ -107,6 +117,7 @@ class Context
 
     /**
      * @var string|null
+     * The name of the current class. Null if outside a class.
      */
     public $self;
 
@@ -197,7 +208,7 @@ class Context
     public $initialized_methods;
 
     /**
-     * @var array<string, Type\Union>
+     * @var array<string, Union>
      */
     public $constants = [];
 
@@ -218,7 +229,7 @@ class Context
     /**
      * A list of variables that have been passed by reference (where we know their type)
      *
-     * @var array<string, \Psalm\Internal\ReferenceConstraint>
+     * @var array<string, ReferenceConstraint>
      */
     public $byref_constraints = [];
 
@@ -228,11 +239,6 @@ class Context
      * @var Context|null
      */
     public $parent_context;
-
-    /**
-     * @var array<string, Type\Union>
-     */
-    public $possible_param_types = [];
 
     /**
      * A list of vars that have been assigned to
@@ -288,17 +294,17 @@ class Context
     public $inside_loop = false;
 
     /**
-     * @var Internal\Scope\LoopScope|null
+     * @var LoopScope|null
      */
     public $loop_scope;
 
     /**
-     * @var Internal\Scope\CaseScope|null
+     * @var CaseScope|null
      */
     public $case_scope;
 
     /**
-     * @var Internal\Scope\FinallyScope|null
+     * @var FinallyScope|null
      */
     public $finally_scope;
 
@@ -308,7 +314,7 @@ class Context
     public $if_context;
 
     /**
-     * @var \Psalm\Internal\Scope\IfScope|null
+     * @var IfScope|null
      */
     public $if_scope;
 
@@ -349,11 +355,13 @@ class Context
 
     /**
      * @var bool
+     * Set by @psalm-immutable
      */
     public $mutation_free = false;
 
     /**
      * @var bool
+     * Set by @psalm-external-mutation-free
      */
     public $external_mutation_free = false;
 
@@ -451,9 +459,9 @@ class Context
     }
 
     /**
-     * @param  array<string, Type\Union> $new_vars_in_scope
+     * @param  array<string, Union> $new_vars_in_scope
      *
-     * @return array<string,Type\Union>
+     * @return array<string, Union>
      */
     public function getRedefinedVars(array $new_vars_in_scope, bool $include_new_vars = false): array
     {
@@ -556,7 +564,6 @@ class Context
         ?StatementsAnalyzer $statements_analyzer = null
     ): array {
         $new_type_string = $new_type ? $new_type->getId() : '';
-
         $clauses_to_keep = [];
 
         foreach ($clauses as $clause) {
@@ -570,8 +577,9 @@ class Context
                 }
             }
 
-            if (!isset($clause->possibilities[$remove_var_id]) ||
-                $clause->possibilities[$remove_var_id] === [$new_type_string]
+            if (!isset($clause->possibilities[$remove_var_id])
+                || (count($clause->possibilities[$remove_var_id]) === 1
+                    && (string)$clause->possibilities[$remove_var_id][0] === $new_type_string)
             ) {
                 $clauses_to_keep[] = $clause;
             } elseif ($statements_analyzer &&
@@ -582,23 +590,15 @@ class Context
 
                 // if the clause contains any possibilities that would be altered
                 // by the new type
-                foreach ($clause->possibilities[$remove_var_id] as $type) {
+                foreach ($clause->possibilities[$remove_var_id] as $assertion) {
                     // if we're negating a type, we generally don't need the clause anymore
-                    if ($type[0] === '!' && $type !== '!falsy' && $type !== '!empty') {
-                        $type_changed = true;
-                        break;
-                    }
-
-                    // empty and !empty are not definitive for arrays and scalar types
-                    if (($type === '!falsy' || $type === 'falsy') &&
-                        ($new_type->hasArray() || $new_type->hasPossiblyNumericType())
-                    ) {
+                    if ($assertion->isNegation()) {
                         $type_changed = true;
                         break;
                     }
 
                     $result_type = AssertionReconciler::reconcile(
-                        $type,
+                        $assertion,
                         clone $new_type,
                         null,
                         $statements_analyzer,
@@ -671,7 +671,7 @@ class Context
             }
 
             foreach ($type->getAtomicTypes() as $atomic_type) {
-                if ($atomic_type instanceof Type\Atomic\DependentType
+                if ($atomic_type instanceof DependentType
                     && $atomic_type->getVarId() === $remove_var_id
                 ) {
                     $type->addType($atomic_type->getReplacement());
@@ -762,7 +762,7 @@ class Context
         return isset($this->vars_in_scope[$var_name]);
     }
 
-    public function getScopeSummary() : string
+    public function getScopeSummary(): string
     {
         $summary = [];
         foreach ($this->vars_possibly_in_scope as $k => $_) {
@@ -772,14 +772,14 @@ class Context
             $summary[$k] = $v->getId();
         }
 
-        return json_encode($summary);
+        return json_encode($summary, JSON_THROW_ON_ERROR);
     }
 
     public function defineGlobals(): void
     {
         $globals = [
-            '$argv' => new Type\Union([
-                new Type\Atomic\TArray([Type::getInt(), Type::getString()]),
+            '$argv' => new Union([
+                new TArray([Type::getInt(), Type::getString()]),
             ]),
             '$argc' => Type::getInt(),
         ];

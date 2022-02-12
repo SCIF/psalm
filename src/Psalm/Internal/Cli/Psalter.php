@@ -2,16 +2,26 @@
 
 namespace Psalm\Internal\Cli;
 
+use Composer\XdebugHandler\XdebugHandler;
 use Psalm\Config;
+use Psalm\Exception\UnsupportedIssueToFixException;
 use Psalm\Internal\Analyzer\ProjectAnalyzer;
 use Psalm\Internal\CliUtils;
 use Psalm\Internal\Composer;
 use Psalm\Internal\ErrorHandler;
 use Psalm\Internal\IncludeCollector;
+use Psalm\Internal\Provider\ClassLikeStorageCacheProvider;
+use Psalm\Internal\Provider\FileProvider;
+use Psalm\Internal\Provider\FileStorageCacheProvider;
+use Psalm\Internal\Provider\ParserCacheProvider;
+use Psalm\Internal\Provider\ProjectCacheProvider;
 use Psalm\Internal\Provider\Providers;
+use Psalm\Internal\Scanner\ParsedDocblock;
 use Psalm\IssueBuffer;
 use Psalm\Progress\DebugProgress;
 use Psalm\Progress\DefaultProgress;
+use Psalm\Report;
+use Psalm\Report\ReportOptions;
 
 use function array_filter;
 use function array_key_exists;
@@ -61,6 +71,9 @@ require_once __DIR__ . '/../Composer.php';
 require_once __DIR__ . '/../IncludeCollector.php';
 require_once __DIR__ . '/../../IssueBuffer.php';
 
+/**
+ * @internal
+ */
 final class Psalter
 {
     private const SHORT_OPTIONS =  ['f:', 'm', 'h', 'r:', 'c:'];
@@ -99,63 +112,63 @@ final class Psalter
 
         if (array_key_exists('h', $options)) {
             echo <<<HELP
-Usage:
-    psalter [options] [file...]
+            Usage:
+                psalter [options] [file...]
 
-Options:
-    -h, --help
-        Display this help message
+            Options:
+                -h, --help
+                    Display this help message
 
-    --debug, --debug-by-line, --debug-emitted-issues
-        Debug information
+                --debug, --debug-by-line, --debug-emitted-issues
+                    Debug information
 
-    -c, --config=psalm.xml
-        Path to a psalm.xml configuration file. Run psalm --init to create one.
+                -c, --config=psalm.xml
+                    Path to a psalm.xml configuration file. Run psalm --init to create one.
 
-    -m, --monochrome
-        Enable monochrome output
+                -m, --monochrome
+                    Enable monochrome output
 
-    -r, --root
-        If running Psalm globally you'll need to specify a project root. Defaults to cwd
+                -r, --root
+                    If running Psalm globally you'll need to specify a project root. Defaults to cwd
 
-    --plugin=PATH
-        Executes a plugin, an alternative to using the Psalm config
+                --plugin=PATH
+                    Executes a plugin, an alternative to using the Psalm config
 
-    --dry-run
-        Shows a diff of all the changes, without making them
+                --dry-run
+                    Shows a diff of all the changes, without making them
 
-    --safe-types
-        Only update PHP types when the new type information comes from other PHP types,
-        as opposed to type information that just comes from docblocks
+                --safe-types
+                    Only update PHP types when the new type information comes from other PHP types,
+                    as opposed to type information that just comes from docblocks
 
-    --php-version=PHP_MAJOR_VERSION.PHP_MINOR_VERSION
+                --php-version=PHP_MAJOR_VERSION.PHP_MINOR_VERSION
 
-    --issues=IssueType1,IssueType2
-        If any issues can be fixed automatically, Psalm will update the codebase. To fix as many issues as possible,
-        use --issues=all
+                --issues=IssueType1,IssueType2
+                    If any issues can be fixed automatically, Psalm will update the codebase. To fix as many issues as
+                    possible, use --issues=all
 
-    --list-supported-issues
-        Display the list of issues that psalter knows how to fix
+                --list-supported-issues
+                    Display the list of issues that psalter knows how to fix
 
-    --find-unused-code
-        Include unused code as a candidate for removal
+                --find-unused-code
+                    Include unused code as a candidate for removal
 
-    --threads=INT
-        If greater than one, Psalm will run analysis on multiple threads, speeding things up.
+                --threads=INT
+                    If greater than one, Psalm will run analysis on multiple threads, speeding things up.
 
-    --codeowner=[codeowner]
-        You can specify a GitHub code ownership group, and only that owner's code will be updated.
+                --codeowner=[codeowner]
+                    You can specify a GitHub code ownership group, and only that owner's code will be updated.
 
-    --allow-backwards-incompatible-changes=BOOL
-        Allow Psalm modify method signatures that could break code outside the project. Defaults to true.
+                --allow-backwards-incompatible-changes=BOOL
+                    Allow Psalm modify method signatures that could break code outside the project. Defaults to true.
 
-    --add-newline-between-docblock-annotations=BOOL
-        Whether to add or not add a new line between docblock annotations. Defaults to true.
+                --add-newline-between-docblock-annotations=BOOL
+                    Whether to add or not add a new line between docblock annotations. Defaults to true.
 
-    --no-cache
-        Runs Psalm without using cache
+                --no-cache
+                    Runs Psalm without using cache
 
-HELP;
+            HELP;
 
             exit;
         }
@@ -192,14 +205,15 @@ HELP;
 
         $include_collector = new IncludeCollector();
         $first_autoloader = $include_collector->runAndCollect(
-            static function () use ($current_dir, $options, $vendor_dir): ?\Composer\Autoload\ClassLoader {
-                return CliUtils::requireAutoloaders($current_dir, isset($options['r']), $vendor_dir);
-            }
+            // we ignore the FQN because of a hack in scoper.inc that needs full path
+            // phpcs:ignore SlevomatCodingStandard.Namespaces.ReferenceUsedNamesOnly.ReferenceViaFullyQualifiedName
+            static fn(): ?\Composer\Autoload\ClassLoader =>
+                CliUtils::requireAutoloaders($current_dir, isset($options['r']), $vendor_dir)
         );
 
 
         // If Xdebug is enabled, restart without it
-        (new \Composer\XdebugHandler\XdebugHandler('PSALTER'))->check();
+        (new XdebugHandler('PSALTER'))->check();
 
         $paths_to_check = CliUtils::getPathsToCheck($options['f'] ?? null);
 
@@ -208,7 +222,7 @@ HELP;
         $config = CliUtils::initializeConfig(
             $path_to_config,
             $current_dir,
-            \Psalm\Report::TYPE_CONSOLE,
+            Report::TYPE_CONSOLE,
             $first_autoloader
         );
         $config->setIncludeCollector($include_collector);
@@ -221,17 +235,17 @@ HELP;
         $threads = isset($options['threads']) ? (int)$options['threads'] : 1;
 
         if (isset($options['no-cache'])) {
-            $providers = new \Psalm\Internal\Provider\Providers(
-                new \Psalm\Internal\Provider\FileProvider()
+            $providers = new Providers(
+                new FileProvider()
             );
         } else {
-            $providers = new \Psalm\Internal\Provider\Providers(
-                new \Psalm\Internal\Provider\FileProvider(),
-                new \Psalm\Internal\Provider\ParserCacheProvider($config, false),
-                new \Psalm\Internal\Provider\FileStorageCacheProvider($config),
-                new \Psalm\Internal\Provider\ClassLikeStorageCacheProvider($config),
+            $providers = new Providers(
+                new FileProvider(),
+                new ParserCacheProvider($config, false),
+                new FileStorageCacheProvider($config),
+                new ClassLikeStorageCacheProvider($config),
                 null,
-                new \Psalm\Internal\Provider\ProjectCacheProvider(Composer::getLockFilePath($current_dir))
+                new ProjectCacheProvider(Composer::getLockFilePath($current_dir))
             );
         }
 
@@ -245,7 +259,7 @@ HELP;
             ? new DebugProgress()
             : new DefaultProgress();
 
-        $stdout_report_options = new \Psalm\Report\ReportOptions();
+        $stdout_report_options = new ReportOptions();
         $stdout_report_options->use_color = !array_key_exists('m', $options);
 
         $project_analyzer = new ProjectAnalyzer(
@@ -265,8 +279,6 @@ HELP;
             $config->debug_emitted_issues = true;
         }
 
-        $config->visitComposerAutoloadFiles($project_analyzer);
-
         if (array_key_exists('issues', $options)) {
             if (!is_string($options['issues']) || !$options['issues']) {
                 die('Expecting a comma-separated list of issues' . PHP_EOL);
@@ -283,17 +295,7 @@ HELP;
             $keyed_issues = [];
         }
 
-        if (!isset($options['php-version'])) {
-            $options['php-version'] = $config->getPhpVersion();
-        }
-
-        if (isset($options['php-version'])) {
-            if (!is_string($options['php-version'])) {
-                die('Expecting a version number in the format x.y' . PHP_EOL);
-            }
-
-            $project_analyzer->setPhpVersion($options['php-version']);
-        }
+        CliUtils::initPhpVersion($options, $config, $project_analyzer);
 
         if (isset($options['codeowner'])) {
             $codeowner_files = self::loadCodeowners($providers);
@@ -332,7 +334,7 @@ HELP;
                 die('--add-newline-between-docblock-annotations expects a boolean value [true|false|1|0]' . PHP_EOL);
             }
 
-            \Psalm\Internal\Scanner\ParsedDocblock::addNewLineBetweenAnnotations($doc_block_add_new_line_before_return);
+            ParsedDocblock::addNewLineBetweenAnnotations($doc_block_add_new_line_before_return);
         }
 
         $plugins = [];
@@ -378,7 +380,7 @@ HELP;
         } else {
             try {
                 $project_analyzer->setIssuesToFix($keyed_issues);
-            } catch (\Psalm\Exception\UnsupportedIssueToFixException $e) {
+            } catch (UnsupportedIssueToFixException $e) {
                 fwrite(STDERR, $e->getMessage() . PHP_EOL);
                 exit(1);
             }
@@ -421,8 +423,8 @@ HELP;
     {
         $memLimit = CliUtils::getMemoryLimitInBytes();
         // Magic number is 4096M in bytes
-        if ($memLimit > 0 && $memLimit < 8 * 1024 * 1024 * 1024) {
-            ini_set('memory_limit', (string) (8 * 1024 * 1024 * 1024));
+        if ($memLimit > 0 && $memLimit < 8 * 1_024 * 1_024 * 1_024) {
+            ini_set('memory_limit', (string) (8 * 1_024 * 1_024 * 1_024));
         }
     }
 
@@ -495,7 +497,7 @@ HELP;
         $codeowners_file = file_get_contents($codeowners_file_path);
 
         $codeowner_lines = array_map(
-            static function (string $line) : array {
+            static function (string $line): array {
                 $line_parts = preg_split('/\s+/', $line);
 
                 $file_selector = substr(array_shift($line_parts), 1);
@@ -503,7 +505,7 @@ HELP;
             },
             array_filter(
                 explode("\n", $codeowners_file),
-                static function (string $line) : bool {
+                static function (string $line): bool {
                     $line = trim($line);
 
                     // currently we don’t match wildcard files or files that could appear anywhere

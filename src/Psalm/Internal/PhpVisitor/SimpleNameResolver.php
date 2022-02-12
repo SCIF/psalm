@@ -1,6 +1,7 @@
 <?php
 
 // based on PhpParser's builtin one
+
 namespace Psalm\Internal\PhpVisitor;
 
 use PhpParser;
@@ -225,11 +226,10 @@ class SimpleNameResolver extends NodeVisitorAbstract
 
     protected function addNamespacedName(Stmt\Class_ $node): void
     {
-        /** @psalm-suppress UndefinedPropertyAssignment */
-        $node->namespacedName = Name::concat(
+        $node->setAttribute('namespacedName', Name::concat(
             $this->nameContext->getNamespace(),
             (string)$node->name
-        );
+        ));
     }
 
     protected function resolveAttrGroups(Stmt\Class_ $node): void

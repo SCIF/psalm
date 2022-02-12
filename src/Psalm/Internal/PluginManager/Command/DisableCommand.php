@@ -1,4 +1,5 @@
 <?php
+
 namespace Psalm\Internal\PluginManager\Command;
 
 use InvalidArgumentException;
@@ -8,6 +9,7 @@ use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
+use UnexpectedValueException;
 
 use function assert;
 use function getcwd;
@@ -51,7 +53,7 @@ class DisableCommand extends Command
 
         $config_file_path = $input->getOption('config');
         if ($config_file_path !== null && !is_string($config_file_path)) {
-            throw new \UnexpectedValueException('Config file path should be a string');
+            throw new UnexpectedValueException('Config file path should be a string');
         }
 
         $plugin_list = ($this->plugin_list_factory)($current_dir, $config_file_path);

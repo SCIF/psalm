@@ -1,19 +1,24 @@
 <?php
+
 namespace Psalm\Tests\TypeReconciliation;
 
-class ConditionalTest extends \Psalm\Tests\TestCase
+use Psalm\Tests\TestCase;
+use Psalm\Tests\Traits\InvalidCodeAnalysisTestTrait;
+use Psalm\Tests\Traits\ValidCodeAnalysisTestTrait;
+
+class ConditionalTest extends TestCase
 {
-    use \Psalm\Tests\Traits\InvalidCodeAnalysisTestTrait;
-    use \Psalm\Tests\Traits\ValidCodeAnalysisTestTrait;
+    use InvalidCodeAnalysisTestTrait;
+    use ValidCodeAnalysisTestTrait;
 
     /**
-     * @return iterable<string,array{string,assertions?:array<string,string>,error_levels?:string[]}>
+     * @return iterable<string,array{code:string,assertions?:array<string,string>,ignored_issues?:list<string>}>
      */
     public function providerValidCodeParse(): iterable
     {
         return [
             'intIsMixed' => [
-                '<?php
+                'code' => '<?php
                     /** @param mixed $a */
                     function foo($a): void {
                         $b = 5;
@@ -22,7 +27,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'typeResolutionFromDocblock' => [
-                '<?php
+                'code' => '<?php
                     class A { }
 
                     /**
@@ -34,10 +39,10 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                         }
                     }',
                 'assertions' => [],
-                'error_levels' => ['RedundantConditionGivenDocblockType'],
+                'ignored_issues' => ['RedundantConditionGivenDocblockType'],
             ],
             'arrayTypeResolutionFromDocblock' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param string[] $strs
                      * @return void
@@ -48,10 +53,10 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                         }
                     }',
                 'assertions' => [],
-                'error_levels' => ['RedundantConditionGivenDocblockType'],
+                'ignored_issues' => ['RedundantConditionGivenDocblockType'],
             ],
             'typeResolutionFromDocblockInside' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param int $length
                      * @return void
@@ -63,10 +68,10 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                         }
                     }',
                 'assertions' => [],
-                'error_levels' => ['DocblockTypeContradiction'],
+                'ignored_issues' => ['DocblockTypeContradiction'],
             ],
             'notInstanceof' => [
-                '<?php
+                'code' => '<?php
                     class A { }
 
                     class B extends A { }
@@ -86,7 +91,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                 ],
             ],
             'notInstanceOfProperty' => [
-                '<?php
+                'code' => '<?php
                     class B { }
 
                     class C extends B { }
@@ -113,10 +118,10 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                 'assertions' => [
                     '$out' => 'B|null',
                 ],
-                'error_levels' => [],
+                'ignored_issues' => [],
             ],
             'notInstanceOfPropertyElseif' => [
-                '<?php
+                'code' => '<?php
                     class B { }
 
                     class C extends B { }
@@ -142,10 +147,10 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                 'assertions' => [
                     '$out' => 'B|null',
                 ],
-                'error_levels' => [],
+                'ignored_issues' => [],
             ],
             'typeRefinementWithIsNumericOnIntOrFalse' => [
-                '<?php
+                'code' => '<?php
                     /** @return void */
                     function fooFoo(string $a) {
                         if (is_numeric($a)) { }
@@ -157,7 +162,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     if (is_numeric($b)) { }',
             ],
             'typeRefinementWithIsNumericAndIsString' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param mixed $a
                      * @return void
@@ -170,7 +175,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'typeRefinementWithIsNumericOnIntOrString' => [
-                '<?php
+                'code' => '<?php
                     $a = rand(0, 5) > 4 ? "hello" : 5;
 
                     if (is_numeric($a)) {
@@ -181,7 +186,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                 ],
             ],
             'typeRefinementWithStringOrTrue' => [
-                '<?php
+                'code' => '<?php
                     $a = rand(0, 5) > 4 ? "hello" : true;
 
                     if (is_bool($a)) {
@@ -192,7 +197,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                 ],
             ],
             'updateMultipleIssetVars' => [
-                '<?php
+                'code' => '<?php
                     /** @return void **/
                     function foo(string $s) {}
 
@@ -202,7 +207,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'updateMultipleIssetVarsWithVariableOffset' => [
-                '<?php
+                'code' => '<?php
                     /** @return void **/
                     function foo(string $s) {}
 
@@ -213,7 +218,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'instanceOfSubtypes' => [
-                '<?php
+                'code' => '<?php
                     abstract class A {}
                     class B extends A {}
 
@@ -228,12 +233,12 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                       return new D();
                     }
 
-                    $a = rand(0, 1) ? makeA(): makeC();
+                    $a = rand(0, 1) ? makeA() : makeC();
 
                     if ($a instanceof B || $a instanceof D) { }',
             ],
             'typeReconciliationAfterIfAndReturn' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param string|int $a
                      * @return string|int
@@ -248,20 +253,20 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                         throw new \LogicException("Runtime error");
                     }',
                 'assertions' => [],
-                'error_levels' => ['RedundantConditionGivenDocblockType'],
+                'ignored_issues' => ['RedundantConditionGivenDocblockType'],
             ],
             'ignoreNullCheckAndMaintainNullValue' => [
-                '<?php
+                'code' => '<?php
                     $a = null;
                     if ($a !== null) { }
                     $b = $a;',
                 'assertions' => [
                     '$b' => 'null',
                 ],
-                'error_levels' => ['TypeDoesNotContainType', 'RedundantCondition'],
+                'ignored_issues' => ['TypeDoesNotContainType', 'RedundantCondition'],
             ],
             'ignoreNullCheckAndMaintainNullableValue' => [
-                '<?php
+                'code' => '<?php
                     $a = rand(0, 1) ? 5 : null;
                     if ($a !== null) { }
                     $b = $a;',
@@ -270,10 +275,10 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                 ],
             ],
             'ternaryByRefVar' => [
-                '<?php
+                'code' => '<?php
                     function foo(): void {
                         $b = null;
-                        $c = rand(0, 1) ? bar($b): null;
+                        $c = rand(0, 1) ? bar($b) : null;
                         if (is_int($b)) { }
                     }
                     function bar(?int &$a): void {
@@ -281,7 +286,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'ternaryByRefVarInConditional' => [
-                '<?php
+                'code' => '<?php
                     function foo(): void {
                         $b = null;
                         if (rand(0, 1) || bar($b)) {
@@ -293,7 +298,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'possibleInstanceof' => [
-                '<?php
+                'code' => '<?php
                     interface I1 {}
                     interface I2 {}
 
@@ -305,7 +310,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'intersection' => [
-                '<?php
+                'code' => '<?php
                     interface I {
                         public function bat(): void;
                     }
@@ -341,7 +346,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'createIntersectionOfInterfaceAndClass' => [
-                '<?php
+                'code' => '<?php
                     class A {
                       public function bat() : void {}
                     }
@@ -371,14 +376,14 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     bar(new B);',
             ],
             'unionOfArrayOrTraversable' => [
-                '<?php
+                'code' => '<?php
                     function foo(iterable $iterable) : void {
                         if (\is_array($iterable)) {}
                         if ($iterable instanceof \Traversable) {}
                     }',
             ],
             'isTruthy' => [
-                '<?php
+                'code' => '<?php
                     function f(string $s = null): string {
                       if ($s == true) {
                           return $s;
@@ -388,7 +393,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'stringOrCallableArg' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param string|callable $param
                      */
@@ -396,7 +401,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     f("is_array");',
             ],
             'stringOrCallableOrObjectArg' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param string|callable|object $param
                      */
@@ -404,7 +409,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     f("is_array");',
             ],
             'intOrFloatArg' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param int|float $param
                      */
@@ -413,7 +418,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     f(5);',
             ],
             'nullReplacement' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param string|null|false $a
                      * @return string|false $a
@@ -431,7 +436,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'nullableIntReplacement' => [
-                '<?php
+                'code' => '<?php
                     $a = rand(0, 1) ? 5 : null;
 
                     $b = (bool)rand(0, 1);
@@ -444,8 +449,8 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                 ],
             ],
             'eraseNullAfterInequalityCheck' => [
-                '<?php
-                    $a = mt_rand(0, 1) ? mt_rand(-10, 10): null;
+                'code' => '<?php
+                    $a = mt_rand(0, 1) ? mt_rand(-10, 10) : null;
 
                     if ($a > 0) {
                       echo $a + 3;
@@ -456,7 +461,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'twoWrongsDontMakeARight' => [
-                '<?php
+                'code' => '<?php
                     if (rand(0, 1)) {
                         $a = false;
                     } else {
@@ -467,7 +472,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                 ],
             ],
             'instanceofStatic' => [
-                '<?php
+                'code' => '<?php
                     abstract class Foo {
                         /**
                          * @return static[]
@@ -484,7 +489,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'isaStaticClass' => [
-                '<?php
+                'code' => '<?php
                     abstract class Foo {
                         /**
                          * @return static[]
@@ -501,7 +506,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'isAClass' => [
-                '<?php
+                'code' => '<?php
                     class A {}
                     $a_class = rand(0, 1) ? A::class : "blargle";
                     if (is_a($a_class, A::class, true)) {
@@ -509,7 +514,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'specificArrayFields' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param array{field:string} $array
                      */
@@ -525,7 +530,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'falsyScalar' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param scalar|null $value
                      */
@@ -537,7 +542,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'numericStringAssertion' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param mixed $a
                      */
@@ -548,7 +553,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'reconcileNullableStringWithWeakEquality' => [
-                '<?php
+                'code' => '<?php
                     function foo(?string $s) : void {
                         if ($s == "hello" || $s == "goodbye") {
                             if ($s == "hello") {
@@ -559,7 +564,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'reconcileNullableStringWithStrictEqualityStrings' => [
-                '<?php
+                'code' => '<?php
                     function foo(?string $s, string $a, string $b) : void {
                         if ($s === $a || $s === $b) {
                             if ($s === $a) {
@@ -570,7 +575,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'reconcileNullableStringWithWeakEqualityStrings' => [
-                '<?php
+                'code' => '<?php
                     function foo(?string $s, string $a, string $b) : void {
                         if ($s == $a || $s == $b) {
                             if ($s == $a) {
@@ -581,7 +586,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'allowWeakEqualityScalarType' => [
-                '<?php
+                'code' => '<?php
                     function foo(int $i) : void {
                         if ($i == "5") {}
                         if ("5" == $i) {}
@@ -615,7 +620,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'filterSubclassBasedOnParentInstanceof' => [
-                '<?php
+                'code' => '<?php
                     class A {}
                     class B extends A {
                        public function foo() : void {}
@@ -630,8 +635,8 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                         $b_or_d->foo();
                     }',
             ],
-            'SKIPPED-isArrayOnArrayKeyOffset' => [
-                '<?php
+            'isArrayOnArrayKeyOffset' => [
+                'code' => '<?php
                     /** @var array{s:array<mixed, array<int, string>|string>} */
                     $doc = [];
 
@@ -643,7 +648,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                 ],
             ],
             'removeTrue' => [
-                '<?php
+                'code' => '<?php
                     $a = rand(0, 1) ? new stdClass : true;
 
                     if ($a === true) {
@@ -654,7 +659,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     takesStdClass($a);',
             ],
             'noReconciliationInElseIf' => [
-                '<?php
+                'code' => '<?php
                     class A {}
                     $a = rand(0, 1) ? new A : null;
 
@@ -667,7 +672,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     if ($a) {}',
             ],
             'removeStringWithIsScalar' => [
-                '<?php
+                'code' => '<?php
                     $a = rand(0, 1) ? "hello" : null;
 
                     if (is_scalar($a)) {
@@ -678,7 +683,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                 ],
             ],
             'removeNullWithIsScalar' => [
-                '<?php
+                'code' => '<?php
                     $a = rand(0, 1) ? "hello" : null;
 
                     if (!is_scalar($a)) {
@@ -689,7 +694,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                 ],
             ],
             'scalarToNumeric' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param scalar $thing
                      */
@@ -698,7 +703,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'filterSubclassBasedOnParentNegativeInstanceof' => [
-                '<?php
+                'code' => '<?php
                     class Obj {}
                     class A extends Obj {}
                     class B extends A {}
@@ -715,7 +720,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'dontEliminateAssignOp' => [
-                '<?php
+                'code' => '<?php
                     class Obj {}
                     class A extends Obj {}
                     class B extends A {}
@@ -734,7 +739,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'eliminateNonArrays' => [
-                '<?php
+                'code' => '<?php
                     interface I {}
 
                     function takesArray(array $_a): void {}
@@ -747,7 +752,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'eliminateNonIterable' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param  iterable<string>|null $foo
                      */
@@ -764,13 +769,13 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'isStringServerVar' => [
-                '<?php
+                'code' => '<?php
                     if (is_string($_SERVER["abc"])) {
                         echo substr($_SERVER["abc"], 1, 2);
                     }',
             ],
             'notObject' => [
-                '<?php
+                'code' => '<?php
                   function f(): ?object {
                         return rand(0,1) ? new stdClass : null;
                   }
@@ -780,7 +785,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                   if ($data) {}',
             ],
             'reconcileWithInstanceof' => [
-                '<?php
+                'code' => '<?php
                     class A {}
                     class B extends A {
                         public function b() : bool {
@@ -793,57 +798,57 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'reconcileFloatToEmpty' => [
-                '<?php
+                'code' => '<?php
                     function bar(float $f) : void {
                         if (!$f) {}
                     }',
             ],
             'scalarToBool' => [
-                '<?php
+                'code' => '<?php
                     /** @var scalar */
                     $s = 1;
 
                     if (is_bool($s)) {}
                     if (!is_bool($s)) {}',
-                [
+                'assertions' => [
                     '$s' => 'scalar'
                 ]
             ],
             'scalarToString' => [
-                '<?php
+                'code' => '<?php
                     /** @var scalar */
                     $s = 1;
 
                     if (is_string($s)) {}
                     if (!is_string($s)) {}',
-                [
+                'assertions' => [
                     '$s' => 'scalar'
                 ]
             ],
             'scalarToInt' => [
-                '<?php
+                'code' => '<?php
                     /** @var scalar */
                     $s = 1;
 
                     if (is_int($s)) {}
                     if (!is_int($s)) {}',
-                [
+                'assertions' => [
                     '$s' => 'scalar'
                 ]
             ],
             'scalarToFloat' => [
-                '<?php
+                'code' => '<?php
                     /** @var scalar */
                     $s = 1;
 
                     if (is_float($s)) {}
                     if (!is_float($s)) {}',
-                [
+                'assertions' => [
                     '$s' => 'scalar'
                 ]
             ],
             'removeFromArray' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param array<string> $v
                      */
@@ -860,7 +865,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'arrayEquality' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param array<string, array<array-key, string|int>> $haystack
                      * @param array<array-key, int|string> $needle
@@ -872,7 +877,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'classResolvesBackToSelfAfterComparison' => [
-                '<?php
+                'code' => '<?php
                     class A {}
                     class B extends A {}
                     function getA() : A {
@@ -888,14 +893,14 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                 ],
             ],
             'isNumericCanBeScalar' => [
-                '<?php
+                'code' => '<?php
                     /** @param scalar $val */
                     function foo($val) : void {
                         if (!is_numeric($val)) {}
                     }',
             ],
             'classStringCanBeFalsy' => [
-                '<?php
+                'code' => '<?php
                     /** @param class-string<stdClass>|null $val */
                     function foo(?string $val) : void {
                         if (!$val) {}
@@ -903,7 +908,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'allowStringToObjectReconciliation' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param string|object $maybe
                      *
@@ -919,7 +924,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'allowObjectToStringReconciliation' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param string|object $maybe
                      *
@@ -935,14 +940,14 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'removeArrayWithIterableCheck' => [
-                '<?php
+                'code' => '<?php
                     $s = rand(0,1) ? "foo" : [1];
                     if (!is_iterable($s)) {
                         strlen($s);
                     }',
             ],
             'removeIterableWithIterableCheck' => [
-                '<?php
+                'code' => '<?php
                     /** @var string|iterable */
                     $s = rand(0,1) ? "foo" : [1];
                     if (!is_iterable($s)) {
@@ -950,7 +955,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'removeArrayWithIterableCheckWithExit' => [
-                '<?php
+                'code' => '<?php
                     $a = rand(0,1) ? "foo" : [1];
                     if (is_iterable($a)) {
                         return;
@@ -958,7 +963,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     strlen($a);',
             ],
             'removeIterableWithIterableCheckWithExit' => [
-                '<?php
+                'code' => '<?php
                     /** @var string|iterable */
                     $a = rand(0,1) ? "foo" : [1];
                     if (is_iterable($a)) {
@@ -966,20 +971,22 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }
                     strlen($a);',
             ],
-            'removeCallable' => [
-                '<?php
+            'removeCallableString' => [
+                'code' => '<?php
                     $s = rand(0,1) ? "strlen" : [1];
                     if (!is_callable($s)) {
                         array_pop($s);
-                    }
-
-                    $a = rand(0, 1) ? (function(): void {}) : 1.1;
+                    }',
+            ],
+            'removeCallableClosure' => [
+                'code' => '<?php
+                    $a = rand(0, 1) ? (function(): void {}) : 1;
                     if (!is_callable($a)) {
                         echo $a;
                     }',
             ],
             'removeCallableWithAssertion' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param mixed $p
                      * @psalm-assert !callable $p
@@ -999,15 +1006,15 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     atan($a);
                     atan($b);',
             ],
-            'PHP71-removeNonCallable' => [
-                '<?php
+            'removeNonCallable' => [
+                'code' => '<?php
                     $f = rand(0, 1) ? "strlen" : 1.1;
                     if (is_callable($f)) {
                         Closure::fromCallable($f);
                     }',
             ],
             'dontChangeScalar' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param scalar|null $val
                      */
@@ -1022,7 +1029,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'emptyArrayCheck' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param non-empty-array $x
                      */
@@ -1035,7 +1042,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'emptyArrayCheckInverse' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param non-empty-array $x
                      */
@@ -1049,7 +1056,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'allowNumericToFoldIntoType' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param mixed $width
                      * @param mixed $height
@@ -1065,11 +1072,11 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'notEmptyCheckOnMixedInTernary' => [
-                '<?php
+                'code' => '<?php
                     $a = !empty($_SERVER["HTTPS"]) && $_SERVER["HTTPS"] !== "off" ? true : false;',
             ],
             'notEmptyCheckOnMixedInIf' => [
-                '<?php
+                'code' => '<?php
                     if (!empty($_SERVER["HTTPS"]) && $_SERVER["HTTPS"] !== "off") {
                         $a = true;
                     } else {
@@ -1077,7 +1084,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'dontRewriteNullableArrayAfterEmptyCheck' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param array{x:int,y:int}|null $start_pos
                      * @return array{x:int,y:int}|null
@@ -1089,7 +1096,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'falseEqualsBoolean' => [
-                '<?php
+                'code' => '<?php
                     class A {}
                     class B extends A {
                         public function foo() : void {}
@@ -1111,7 +1118,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'selfInstanceofStatic' => [
-                '<?php
+                'code' => '<?php
                     class A {
                         public function foo(self $value): void {
                             if ($value instanceof static) {}
@@ -1119,7 +1126,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'reconcileCallable' => [
-                '<?php
+                'code' => '<?php
                     function reflectCallable(callable $callable): ReflectionFunctionAbstract {
                         if (\is_array($callable)) {
                             return new \ReflectionMethod($callable[0], $callable[1]);
@@ -1131,7 +1138,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'noLeakyClassType' => [
-                '<?php
+                'code' => '<?php
                     class A {
                         public array $foo = [];
                         public array $bar = [];
@@ -1148,7 +1155,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'noLeakyForeachType' => [
-                '<?php
+                'code' => '<?php
 
                     class A {
                         /** @var mixed */
@@ -1176,11 +1183,11 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                             }
                         }
                     }',
-                [],
-                ['MixedAssignment'],
+                'assertions' => [],
+                'ignored_issues' => ['MixedAssignment'],
             ],
             'nonEmptyThing' => [
-                '<?php
+                'code' => '<?php
                     /** @param mixed $clips */
                     function foo($clips, bool $found, int $id) : void {
                         if ($found === false) {
@@ -1193,11 +1200,11 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                             unset($clips[$i]);
                         }
                     }',
-                [],
-                ['MixedArgument', 'MixedArrayAccess', 'MixedAssignment', 'MixedArrayOffset'],
+                'assertions' => [],
+                'ignored_issues' => ['MixedArgument', 'MixedArrayAccess', 'MixedAssignment', 'MixedArrayOffset'],
             ],
             'allowNonEmptyArrayComparison' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param non-empty-array $a
                      * @param array<string> $b
@@ -1207,7 +1214,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'preventCombinatorialExpansion' => [
-                '<?php
+                'code' => '<?php
                     function gameOver(
                         int $b0,
                         int $b1,
@@ -1230,7 +1237,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'checkIterableType' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param array<int> $x
                      */
@@ -1252,7 +1259,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     takesTraversable($x);',
             ],
             'dontReconcileArrayOffset' => [
-                '<?php
+                'code' => '<?php
                     /** @psalm-suppress TypeDoesNotContainType */
                     function foo(array $a) : void {
                         if (!is_array($a)) {
@@ -1263,20 +1270,20 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'nullCoalesceTypedArrayValue' => [
-                '<?php
+                'code' => '<?php
                     /** @param string[] $arr */
                     function foo(array $arr) : string {
                         return $arr["b"] ?? "bar";
                     }',
             ],
             'nullCoalesceTypedValue' => [
-                '<?php
+                'code' => '<?php
                     function foo(?string $s) : string {
                         return $s ?? "bar";
                     }',
             ],
             'looseEqualityShouldNotConvertMixedToLiteralString' => [
-                '<?php
+                'code' => '<?php
                     /** @var mixed */
                     $int = 0;
                     $string = "0";
@@ -1290,7 +1297,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'looseEqualityShouldNotConverMixedToString' => [
-                '<?php
+                'code' => '<?php
                     /** @var mixed */
                     $int = 0;
                     /** @var string */
@@ -1305,7 +1312,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'looseEqualityShouldNotConvertIntToString' => [
-                '<?php
+                'code' => '<?php
                     /** @var int */
                     $int = 0;
                     /** @var string */
@@ -1320,7 +1327,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'removeAllObjects' => [
-                '<?php
+                'code' => '<?php
                     class A {}
                     class B extends A {
                         public function foo() : void {}
@@ -1343,7 +1350,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'nullCoalescePossibleMixed' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @psalm-suppress MixedReturnStatement
                      * @psalm-suppress MixedInferredReturnType
@@ -1353,7 +1360,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'noCrashOnWeirdArrayKeys' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @psalm-suppress MixedPropertyFetch
                      * @psalm-suppress MixedArrayOffset
@@ -1363,7 +1370,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'assertArrayReturnTypeNarrowed' => [
-                '<?php
+                'code' => '<?php
                     /** @return array{0:Exception} */
                     function f(array $a): array {
                         if ($a[0] instanceof Exception) {
@@ -1374,7 +1381,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'assertTypeNarrowedByAssert' => [
-                '<?php
+                'code' => '<?php
                     /** @return array{0:Exception,1:Exception} */
                     function f(array $ret): array {
                         assert($ret[0] instanceof Exception);
@@ -1383,7 +1390,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'assertTypeNarrowedByButOtherFetchesAreMixed' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @return array{0:Exception}
                      * @psalm-suppress MixedArgument
@@ -1395,7 +1402,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'assertCheckOnNonZeroArrayOffset' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param array{string,array|null} $a
                      * @return string
@@ -1406,7 +1413,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'assertOnParseUrlOutput' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param array<"a"|"b"|"c", mixed> $arr
                      */
@@ -1419,7 +1426,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'combineAfterLoopAssert' => [
-                '<?php
+                'code' => '<?php
                     /** @param array<string, string> $array */
                     function foo(array $array) : void {
                         $c = 0;
@@ -1433,7 +1440,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'assertOnArrayTwice' => [
-                '<?php
+                'code' => '<?php
                     /** @param array<string, string> $array */
                     function f(array $array) : void {
                         if ($array["bar"] === "a") {}
@@ -1441,7 +1448,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'assertOnArrayThrice' => [
-                '<?php
+                'code' => '<?php
                     /** @param array<string, string> $array */
                     function f(array $array) : void {
                         if ($array["foo"] === "ok") {
@@ -1451,7 +1458,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'assertOnBacktrace' => [
-                '<?php
+                'code' => '<?php
                     function _validProperty(array $c, array $arr) : void {
                         if (empty($arr["a"])) {}
 
@@ -1459,7 +1466,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'notEmptyCheck' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @psalm-suppress MixedAssignment
                      */
@@ -1472,7 +1479,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'unsetAfterIssetCheck' => [
-                '<?php
+                'code' => '<?php
                     function checkbox(array $options = []) : void {
                         if ($options["a"]) {}
 
@@ -1480,14 +1487,14 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'dontCrashWhenGettingEmptyCountAssertions' => [
-                '<?php
+                'code' => '<?php
                     function foo() : bool {
                         /** @psalm-suppress TooFewArguments */
                         return count() > 0;
                     }',
             ],
             'assertHasArrayAccessSimple' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @return mixed
                      */
@@ -1500,7 +1507,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'assertHasArrayAccessWithType' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param array<string, array<string, string>> $array
                      * @return array<string, string>
@@ -1514,7 +1521,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'assertHasArrayAccessOnSimpleXMLElement' => [
-                '<?php
+                'code' => '<?php
                     function getBar(SimpleXMLElement $e, string $s) : void {
                         if (isset($e[$s])) {
                             echo (string) $e[$s];
@@ -1528,7 +1535,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'assertArrayOffsetToTraversable' => [
-                '<?php
+                'code' => '<?php
                     function render(array $data): ?Traversable {
                         if ($data["o"] instanceof Traversable) {
                             return $data["o"];
@@ -1538,7 +1545,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'assertOnArrayShouldNotChangeType' => [
-                '<?php
+                'code' => '<?php
                     /** @return array|string|false */
                     function foo(string $a, string $b) {
                         $options = getopt($a, [$b]);
@@ -1555,7 +1562,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'assertOnArrayInTernary' => [
-                '<?php
+                'code' => '<?php
                     function foo(string $a, string $b) : void {
                         $o = getopt($a, [$b]);
 
@@ -1565,7 +1572,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'nonEmptyArrayAfterIsset' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param array<string, int> $arr
                      * @return non-empty-array<string, int>
@@ -1579,7 +1586,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'setArrayConstantOffset' => [
-                '<?php
+                'code' => '<?php
                     class S {
                         const A = 0;
                         const B = 1;
@@ -1595,7 +1602,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'assertArrayWithPropertyOffset' => [
-                '<?php
+                'code' => '<?php
                     class A {
                         public int $id = 0;
                     }
@@ -1614,7 +1621,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'assertAfterNotEmptyArrayCheck' => [
-                '<?php
+                'code' => '<?php
                     function foo(array $c): void {
                         if (!empty($c["d"])) {}
 
@@ -1625,7 +1632,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'assertNotEmptyTwiceOnInstancePropertyArray' => [
-                '<?php
+                'code' => '<?php
                     class A {
                         private array $c = [];
 
@@ -1635,7 +1642,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'assertNotEmptyTwiceOnStaticPropertyArray' => [
-                '<?php
+                'code' => '<?php
                     class A {
                         private static array $c = [];
 
@@ -1645,7 +1652,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'assertConstantArrayOffsetTwice' => [
-                '<?php
+                'code' => '<?php
                     class A {
                         const FOO = "foo";
                         const BAR = "bar";
@@ -1662,7 +1669,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'assertNotEmptyOnArray' => [
-                '<?php
+                'code' => '<?php
                     function foo(bool $c, array $arr) : void {
                         if ($c && !empty($arr["b"])) {
                             return;
@@ -1672,7 +1679,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'assertIssetOnArray' => [
-                '<?php
+                'code' => '<?php
                     function foo(bool $c, array $arr) : void {
                         if ($c && $arr && isset($arr["b"]) && $arr["b"]) {
                             return;
@@ -1682,7 +1689,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'assertMixedOffsetExists' => [
-                '<?php
+                'code' => '<?php
                     class A {
                         /** @var mixed */
                         private $arr;
@@ -1704,7 +1711,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'assertPropertiesOfElseStatement' => [
-                '<?php
+                'code' => '<?php
                     class C {
                         public string $a = "";
                         public string $b = "";
@@ -1719,7 +1726,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'assertPropertiesOfElseifStatement' => [
-                '<?php
+                'code' => '<?php
                     class C {
                         public string $a = "";
                         public string $b = "";
@@ -1734,7 +1741,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'assertArrayWithOffset' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param mixed $decoded
                      * @return array{icons:mixed}
@@ -1750,7 +1757,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'avoidOOM' => [
-                '<?php
+                'code' => '<?php
                     function gameOver(
                         int $b0,
                         int $b1,
@@ -1777,7 +1784,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'assertVarAfterNakedBinaryOp' => [
-                '<?php
+                'code' => '<?php
                     class A {
                         public bool $b = false;
                     }
@@ -1788,7 +1795,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'literalStringComparisonInIf' => [
-                '<?php
+                'code' => '<?php
                     function foo(string $t, bool $b) : void {
                         if ($t !== "a") {
                             if ($t === "b" && $b) {}
@@ -1802,7 +1809,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'literalStringComparisonInElseif' => [
-                '<?php
+                'code' => '<?php
                     function foo(string $t, bool $b) : void {
                         if ($t === "a") {
                         } elseif ($t === "b" && $b) {}
@@ -1814,7 +1821,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'literalStringComparisonInElse' => [
-                '<?php
+                'code' => '<?php
                     function foo(string $t, bool $b) : void {
                         if ($t === "a") {
                         } else {
@@ -1830,7 +1837,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'assertOnArrayThings' => [
-                '<?php
+                'code' => '<?php
                     /** @var array<string, array<int, string>> */
                     $a = null;
 
@@ -1839,7 +1846,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'assertOnNestedLogic' => [
-                '<?php
+                'code' => '<?php
                     function foo(?string $a) : void {
                         if (($a && rand(0, 1)) || rand(0, 1)) {
                             if ($a && strlen($a) > 5) {}
@@ -1847,7 +1854,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'arrayUnionTypeSwitching' => [
-                '<?php
+                'code' => '<?php
                     /** @param array<string, int|string> $map */
                     function foo(array $map, string $o) : void {
                         if ($mapped_type = $map[$o] ?? null) {
@@ -1862,7 +1869,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'propertySetOnElementInConditional' => [
-                '<?php
+                'code' => '<?php
                     class DiffElem {
                         /** @var scalar */
                         public $old = false;
@@ -1878,7 +1885,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'manyNestedAsserts' => [
-                '<?php
+                'code' => '<?php
                     class A {}
                     class B extends A {}
                     function foo(A $left, A $right) : void {
@@ -1894,11 +1901,11 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'manyNestedWedgeAssertions' => [
-                '<?php
+                'code' => '<?php
                     if (rand(0, 1) && rand(0, 1)) {}'
             ],
             'assertionAfterAssertionInsideBooleanNot' => [
-                '<?php
+                'code' => '<?php
                     class A {}
 
                     function foo(?A $a) : void {
@@ -1908,7 +1915,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'assertionAfterAssertionInsideExpandedBooleanNot' => [
-                '<?php
+                'code' => '<?php
                     class A {}
 
                     function bar(?A $a) : void {
@@ -1918,11 +1925,11 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'byrefChangeNested' => [
-                '<?php
+                'code' => '<?php
                     if (!preg_match("/hello/", "hello", $matches) || $matches[0] !== "hello") {}'
             ],
             'checkBeforeUse' => [
-                '<?php
+                'code' => '<?php
                     class A {
                         public function foo() : void {}
                     }
@@ -1942,7 +1949,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'nestedAssertInElse' => [
-                '<?php
+                'code' => '<?php
                     function foo(string $type, bool $and) : void {
                         if ($type === "a") {
                         } elseif ($type === "b" && $and) {
@@ -1952,7 +1959,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'allowEmptyScalarAndNonEmptyScalarAssertions' => [
-                '<?php
+                'code' => '<?php
                     /** @param mixed $value */
                     function foo($value) : void {
                         if (\is_scalar($value)) {
@@ -1965,7 +1972,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'ignoreRedundantAssertion' => [
-                '<?php
+                'code' => '<?php
                     function gimmeAString(?string $v): string {
                         /** @psalm-suppress TypeDoesNotContainType */
                         assert(is_string($v) || is_object($v));
@@ -1974,7 +1981,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'assertOnVarStaticClassKey' => [
-                '<?php
+                'code' => '<?php
                     abstract class Obj {
                         /**
                          * @param array<class-string, array<string, int>> $arr
@@ -1990,7 +1997,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'assertOnVarVar' => [
-                '<?php
+                'code' => '<?php
                     abstract class Obj {
                         /**
                          * @param array<class-string, array<string, int>> $arr
@@ -2006,7 +2013,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'assertOnPropertyStaticClassKey' => [
-                '<?php
+                'code' => '<?php
                     abstract class Obj {
                         /** @var array<class-string, array<string, int>> */
                         private static $arr = [];
@@ -2023,7 +2030,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'assertOnStaticPropertyOffset' => [
-                '<?php
+                'code' => '<?php
                     class C {
                         /** @var array<string, string>|null */
                         private static $map = [];
@@ -2038,7 +2045,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'issetTwice' => [
-                '<?php
+                'code' => '<?php
                     class B {
                         public function foo() : bool {
                             return true;
@@ -2056,7 +2063,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'reconcileEmptinessBetter' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param string|array $valuePath
                      */
@@ -2069,7 +2076,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'issetAssertionOnStaticProperty' => [
-                '<?php
+                'code' => '<?php
                     class C {
                         protected static array $cache = [];
 
@@ -2087,7 +2094,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'isNotTraversable' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @psalm-param iterable<string> $collection
                      * @psalm-return array<string>
@@ -2101,7 +2108,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'memoizeChainedImmutableCallsInside' => [
-                '<?php
+                'code' => '<?php
                     class Assessment {
                         private ?string $root = null;
 
@@ -2131,7 +2138,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'memoizeChainedImmutableCallsOutside' => [
-                '<?php
+                'code' => '<?php
                     class Assessment {
                         private ?string $root = null;
 
@@ -2161,7 +2168,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'propertyChainedOutside' => [
-                '<?php
+                'code' => '<?php
                     class Assessment {
                         public ?string $root = null;
                     }
@@ -2181,7 +2188,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'castIsType' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param string|int $s
                      */
@@ -2193,7 +2200,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'assertNotFalseOnSameNamedVar' => [
-                '<?php
+                'code' => '<?php
                     function foo(): int {
                         $a = rand(0, 1) ? 3 : false;
 
@@ -2208,7 +2215,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'nonEmptyStringFromConcat' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @psalm-param non-empty-string $name
                      */
@@ -2224,7 +2231,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'noCrashOnCountUndefined' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @psalm-suppress UndefinedGlobalVariable
                      * @psalm-suppress MixedArgument
@@ -2232,7 +2239,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     if(!(count($colonnes) == 37 || count($colonnes) == 40)) {}',
             ],
             'reconcilePropertyInTrait' => [
-                '<?php
+                'code' => '<?php
                     class A {}
 
                     trait T {
@@ -2252,7 +2259,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'smallConditional' => [
-                '<?php
+                'code' => '<?php
                     class A {
                         public array $parts = [];
                     }
@@ -2281,7 +2288,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'largeConditional' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param  string $return_block
                      *
@@ -2412,7 +2419,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'nonEmptyStringAfterLiteralCheck' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param non-empty-string $greeting
                      */
@@ -2430,7 +2437,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     sayHi($hello);',
             ],
             'equalsTrueInIf' => [
-                '<?php
+                'code' => '<?php
                     $a = rand(0,1) ? new DateTime() : null;
 
                     if (($a !== null && $a->format("Y") === "2020") == true) {
@@ -2438,7 +2445,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'getClassIsStatic' => [
-                '<?php
+                'code' => '<?php
                     class A {}
 
                     class AChild extends A {
@@ -2452,7 +2459,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'getClassInterfaceCanBeClass' => [
-                '<?php
+                'code' => '<?php
                     interface Id {}
 
                     class A {
@@ -2462,7 +2469,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'nullsafePropertyAccess' => [
-                '<?php
+                'code' => '<?php
                     class IntLinkedList {
                         public function __construct(
                             public int $value,
@@ -2477,12 +2484,12 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     function skipTwo(IntLinkedList $l) : ?int {
                         return $l->next?->next?->value;
                     }',
-                [],
-                [],
-                '8.0'
+                'assertions' => [],
+                'ignored_issues' => [],
+                'php_version' => '8.0'
             ],
             'nullsafeMethodCall' => [
-                '<?php
+                'code' => '<?php
                     class IntLinkedList {
                         public function __construct(
                             public int $value,
@@ -2501,12 +2508,12 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     function skipTwo(IntLinkedList $l) : ?int {
                         return $l->getNext()?->getNext()?->value;
                     }',
-                [],
-                [],
-                '8.0'
+                'assertions' => [],
+                'ignored_issues' => [],
+                'php_version' => '8.0'
             ],
             'onlySingleErrorForEarlyExit' => [
-                '<?php
+                'code' => '<?php
                     class App {
                         public function bar(int $i) : bool {
                             return $i === 5;
@@ -2522,7 +2529,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'nonRedundantConditionAfterThing' => [
-                '<?php
+                'code' => '<?php
                     class U {
                         public function takes(self $u) : bool {
                             return true;
@@ -2537,7 +2544,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'usedAssertedVarButNotWithStrongerTypeGuarantee' => [
-                '<?php
+                'code' => '<?php
                     function broken(bool $b, ?User $u) : void {
                         if ($b || (rand(0, 1) && (!$u || takesUser($u)))) {
                             return;
@@ -2553,7 +2560,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'negateIsNull' => [
-                '<?php
+                'code' => '<?php
                     function scope(?string $str): string{
                         if (is_null($str) === false){
                             return $str;
@@ -2563,7 +2570,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'strictIntFloatComparison' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @psalm-suppress InvalidReturnType
                      * @psalm-suppress MismatchingDocblockReturnType
@@ -2590,7 +2597,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                 ],
             ],
             'negateTypeInGenericContext' => [
-                '<?php
+                'code' => '<?php
 
                  /**
                   * @template T
@@ -2627,7 +2634,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                  }'
             ],
             'reconcileMoreThanOneGenericObject' => [
-                '<?php
+                'code' => '<?php
 
                  final class Invalid {}
 
@@ -2667,7 +2674,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                  }'
             ],
             'ternaryRedefineAllVars' => [
-                '<?php
+                'code' => '<?php
                     $_a = null;
                     $b = rand(0,1) ? "" : "a";
                     $b === "a" ? $_a = "Y" : $_a = "N";',
@@ -2676,7 +2683,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                 ]
             ],
             'assertionsWorksBothWays' => [
-                '<?php
+                'code' => '<?php
                     $a = 2;
                     $b = getPositiveInt();
 
@@ -2692,7 +2699,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                 ]
             ],
             'nullErasureWithSmallerAndGreater' => [
-                '<?php
+                'code' => '<?php
                     function getIntOrNull(): ?int{return null;}
                     $a = getIntOrNull();
 
@@ -2734,7 +2741,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     ',
             ],
             'SimpleXMLElementNotAlwaysTruthy' => [
-                '<?php
+                'code' => '<?php
                     $lilstring = "";
 
                     $n = new SimpleXMLElement($lilstring);
@@ -2749,17 +2756,100 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                         echo "false";
                     }',
             ],
+            'nullIsFalsyEvenInTemplate' => [
+                'code' => '<?php
+
+                    abstract class Animal {
+                        public function foo(): void {}
+                    }
+
+                    class Dog extends Animal {}
+                    class Cat extends Animal {}
+
+                    /**
+                     * @template T
+                     */
+                    interface RepositoryInterface
+                    {
+                        /**
+                        * @return ?T
+                        */
+                        public function find(int $id);
+                    }
+
+                    /**
+                     * @template T
+                     * @implements RepositoryInterface<T>
+                     */
+                    class AbstarctRepository  implements RepositoryInterface
+                    {
+                        public function find(int $id) {
+                            return null;
+                        }
+                    }
+
+                    /**
+                     * @template T as Animal
+                     * @extends AbstarctRepository<T>
+                     */
+                    class AnimalRepository extends AbstarctRepository {}
+
+                    /**
+                     * @extends AnimalRepository<Cat>
+                     */
+                    class CatRepository extends AnimalRepository {}
+
+                    /**
+                     * @extends AnimalRepository<Dog>
+                     */
+                    class DogRepository extends AnimalRepository {}
+
+                    function doSomething(AnimalRepository $repository) : void {
+                        $foo = $repository->find(1);
+
+                        if (!$foo) {
+                            return;
+                        }
+
+                        $foo->foo();
+                    }',
+            ],
+            'variable::classAssertion' => [
+                'code' => '<?php
+                    abstract class A {}
+                    class B extends A {}
+
+                    function a(A $a): void {
+                        if($a::class == B::class) {
+                            b($a);
+                        }
+                    }
+
+                    function b(B $_b): void {
+                    }',
+            ],
+            'SimpleXMLIteratorNotAlwaysTruthy' => [
+                'code' => '<?php
+                    $lilstring = "";
+
+                    $n = new SimpleXMLElement($lilstring);
+                    $n = $n->children();
+
+                    if (!$n) {
+                        echo "false";
+                    }',
+            ],
         ];
     }
 
     /**
-     * @return iterable<string,array{string,error_message:string,1?:string[],2?:bool,3?:string}>
+     * @return iterable<string,array{code:string,error_message:string,ignored_issues?:list<string>,php_version?:string}>
      */
     public function providerInvalidCodeParse(): iterable
     {
         return [
             'makeNonNullableNull' => [
-                '<?php
+                'code' => '<?php
                     class A { }
                     $a = new A();
                     if ($a === null) {
@@ -2767,38 +2857,38 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                 'error_message' => 'TypeDoesNotContainNull',
             ],
             'makeInstanceOfThingInElseif' => [
-                '<?php
+                'code' => '<?php
                     class A { }
                     class B { }
                     class C { }
-                    $a = rand(0, 10) > 5 ? new A(): new B();
+                    $a = rand(0, 10) > 5 ? new A() : new B();
                     if ($a instanceof A) {
                     } elseif ($a instanceof C) {
                     }',
                 'error_message' => 'TypeDoesNotContainType',
             ],
             'functionValueIsNotType' => [
-                '<?php
+                'code' => '<?php
                     if (json_last_error() === "5") { }',
                 'error_message' => 'TypeDoesNotContainType',
             ],
             'stringIsNotTnt' => [
-                '<?php
+                'code' => '<?php
                     if (5 === "5") { }',
                 'error_message' => 'TypeDoesNotContainType',
             ],
             'stringIsNotNull' => [
-                '<?php
+                'code' => '<?php
                     if (5 === null) { }',
                 'error_message' => 'TypeDoesNotContainNull',
             ],
             'stringIsNotFalse' => [
-                '<?php
+                'code' => '<?php
                     if (5 === false) { }',
                 'error_message' => 'TypeDoesNotContainType',
             ],
             'typeTransformation' => [
-                '<?php
+                'code' => '<?php
                     $a = "5";
 
                     if (is_numeric($a)) {
@@ -2809,7 +2899,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                 'error_message' => 'TypeDoesNotContainType',
             ],
             'nonRedundantConditionGivenDocblockType' => [
-                '<?php
+                'code' => '<?php
                     /** @param array[] $arr */
                     function foo(array $arr) : void {
                        if ($arr === "hello") {}
@@ -2817,7 +2907,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                 'error_message' => 'TypeDoesNotContainType',
             ],
             'lessSpecificArrayFields' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param array{field:string, otherField:string} $array
                      */
@@ -2829,7 +2919,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                 'error_message' => 'InvalidArgument',
             ],
             'intersectionIncorrect' => [
-                '<?php
+                'code' => '<?php
                     interface I {
                         public function bat(): void;
                     }
@@ -2849,7 +2939,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                 'error_message' => 'InvalidArgument',
             ],
             'catchTypeMismatchInBinaryOp' => [
-                '<?php
+                'code' => '<?php
                     /** @return array<int, string|int> */
                     function getStrings(): array {
                         return ["hello", "world", 50];
@@ -2861,14 +2951,14 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                 'error_message' => 'DocblockTypeContradiction',
             ],
             'preventWeakEqualityToObject' => [
-                '<?php
+                'code' => '<?php
                     function foo(int $i, stdClass $s) : void {
                         if ($i == $s) {}
                     }',
                 'error_message' => 'TypeDoesNotContainType',
             ],
             'properReconciliationInElseIf' => [
-                '<?php
+                'code' => '<?php
                     class A {}
                     $a = rand(0, 1) ? new A : null;
 
@@ -2882,7 +2972,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                 'error_message' => 'RedundantCondition',
             ],
             'allRemovalOfStringWithIsScalar' => [
-                '<?php
+                'code' => '<?php
                     $a = rand(0, 1) ? "hello" : "goodbye";
 
                     if (is_scalar($a)) {
@@ -2891,7 +2981,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                 'error_message' => 'RedundantCondition',
             ],
             'noRemovalOfStringWithIsScalar' => [
-                '<?php
+                'code' => '<?php
                     $a = rand(0, 1) ? "hello" : "goodbye";
 
                     if (!is_scalar($a)) {
@@ -2900,38 +2990,38 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                 'error_message' => 'TypeDoesNotContainType',
             ],
             'impossibleNullEquality' => [
-                '<?php
+                'code' => '<?php
                     $i = 5;
                     echo $i === null;',
                 'error_message' => 'TypeDoesNotContainNull',
             ],
             'impossibleTrueEquality' => [
-                '<?php
+                'code' => '<?php
                     $i = 5;
                     echo $i === true;',
                 'error_message' => 'TypeDoesNotContainType',
             ],
             'impossibleFalseEquality' => [
-                '<?php
+                'code' => '<?php
                     $i = 5;
                     echo $i === false;',
                 'error_message' => 'TypeDoesNotContainType',
             ],
             'impossibleNumberEquality' => [
-                '<?php
+                'code' => '<?php
                     $i = 5;
                     echo $i === 3;',
                 'error_message' => 'TypeDoesNotContainType',
             ],
-            'SKIPPED-noIntersectionOfArrayOrTraversable' => [
-                '<?php
+            'noIntersectionOfArrayOrTraversable' => [
+                'code' => '<?php
                     function foo(iterable $iterable) : void {
                         if (\is_array($iterable) && $iterable instanceof \Traversable) {}
                     }',
                 'error_message' => 'TypeDoesNotContainType',
             ],
             'scalarToBoolContradiction' => [
-                '<?php
+                'code' => '<?php
                     /** @param mixed $s */
                     function foo($s) : void {
                         if (!is_scalar($s)) {
@@ -2945,28 +3035,28 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                 'error_message' => 'TypeDoesNotContainType',
             ],
             'noCrashWhenCastingArray' => [
-                '<?php
+                'code' => '<?php
                     function foo() : string {
                         return (object) ["a" => 1, "b" => 2];
                     }',
                 'error_message' => 'InvalidReturnStatement',
             ],
             'preventStrongEqualityScalarType' => [
-                '<?php
+                'code' => '<?php
                     function bar(float $f) : void {
                         if ($f === 0) {}
                     }',
                 'error_message' => 'TypeDoesNotContainType',
             ],
             'preventYodaStrongEqualityScalarType' => [
-                '<?php
+                'code' => '<?php
                     function bar(float $f) : void {
                         if (0 === $f) {}
                     }',
                 'error_message' => 'TypeDoesNotContainType',
             ],
             'classCannotNotBeSelf' => [
-                '<?php
+                'code' => '<?php
                     class A {}
                     class B extends A {}
                     function getA() : A {
@@ -2982,7 +3072,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                 'error_message' => 'RedundantCondition',
             ],
             'preventImpossibleComparisonToTrue' => [
-                '<?php
+                'code' => '<?php
                     /** @return false|string */
                     function firstChar(string $s) {
                       return empty($s) ? false : $s[0];
@@ -2992,7 +3082,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                 'error_message' => 'DocblockTypeContradiction',
             ],
             'preventAlwaysPossibleComparisonToTrue' => [
-                '<?php
+                'code' => '<?php
                     /** @return false|string */
                     function firstChar(string $s) {
                       return empty($s) ? false : $s[0];
@@ -3002,28 +3092,28 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                 'error_message' => 'RedundantConditionGivenDocblockType',
             ],
             'preventAlwaysImpossibleComparisonToFalse' => [
-                '<?php
+                'code' => '<?php
                     function firstChar(string $s) : string { return $s; }
 
                     if (false === firstChar("sdf")) {}',
                 'error_message' => 'TypeDoesNotContainType',
             ],
             'preventAlwaysPossibleComparisonToFalse' => [
-                '<?php
+                'code' => '<?php
                     function firstChar(string $s) : string { return $s; }
 
                     if (false !== firstChar("sdf")) {}',
                 'error_message' => 'RedundantCondition',
             ],
             'nullCoalesceImpossible' => [
-                '<?php
+                'code' => '<?php
                     function foo(?string $s) : string {
                         return ((string) $s) ?? "bar";
                     }',
                 'error_message' => 'RedundantCondition'
             ],
             'allowEmptyScalarAndNonEmptyScalarAssertions1' => [
-                '<?php
+                'code' => '<?php
                     /** @param mixed $value */
                     function foo($value) : void {
                         if (\is_scalar($value)) {
@@ -3037,7 +3127,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                 'error_message' => 'RedundantCondition',
             ],
             'allowEmptyScalarAndNonEmptyScalarAssertions2' => [
-                '<?php
+                'code' => '<?php
                     /** @param mixed $value */
                     function foo($value) : void {
                         if (\is_scalar($value)) {
@@ -3051,7 +3141,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                 'error_message' => 'RedundantCondition',
             ],
             'allowEmptyScalarAndNonEmptyScalarAssertions3' => [
-                '<?php
+                'code' => '<?php
                     /** @param mixed $value */
                     function foo($value) : void {
                         if (\is_scalar($value)) {
@@ -3065,7 +3155,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                 'error_message' => 'RedundantCondition',
             ],
             'allowEmptyScalarAndNonEmptyScalarAssertions4' => [
-                '<?php
+                'code' => '<?php
                     /** @param mixed $value */
                     function foo($value) : void {
                         if (\is_scalar($value)) {
@@ -3079,7 +3169,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                 'error_message' => 'RedundantCondition',
             ],
             'catchRedundantConditionOnBinaryOpForwards' => [
-                '<?php
+                'code' => '<?php
                     class App {}
 
                     function test(App $app) : void {
@@ -3088,7 +3178,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                 'error_message' => 'RedundantCondition',
             ],
             'nonEmptyString' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @psalm-param non-empty-string $name
                      */
@@ -3105,21 +3195,21 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                 'error_message' => 'ArgumentTypeCoercion',
             ],
             'getClassCannotBeStringEquals' => [
-                '<?php
+                'code' => '<?php
                     function foo(Exception $e) : void {
                         if (get_class($e) == "InvalidArgumentException") {}
                     }',
                 'error_message' => 'TypeDoesNotContainType',
             ],
             'falsyValuesInIf' => [
-                '<?php
+                'code' => '<?php
                     if (0) {
                         echo 123;
                     }',
                 'error_message' => 'TypeDoesNotContainType',
             ],
             'BooleanNotOfAlwaysTruthyisFalse' => [
-                '<?php
+                'code' => '<?php
                     class a
                     {
                         public function fluent(): self
@@ -3134,6 +3224,22 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }
                     ',
                 'error_message' => 'TypeDoesNotContainType',
+            ],
+            'redundantConditionForNonEmptyString' => [
+                'code' => '<?php
+
+                    /**
+                     * @param non-empty-string $c
+                     */
+                    function c(string $c): void {
+                        if ($c) {
+                          if ($c) {
+                              echo "hello";
+                          }
+                      }
+                    }
+                    ',
+                'error_message' => 'RedundantCondition',
             ],
         ];
     }

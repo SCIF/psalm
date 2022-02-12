@@ -1,9 +1,13 @@
 <?php
+
 namespace Psalm\Tests;
 
 use Psalm\Internal\PluginManager\ComposerLock;
+use RuntimeException;
 
 use function json_encode;
+
+use const JSON_THROW_ON_ERROR;
 
 /** @group PluginManager */
 class ComposerLockTest extends TestCase
@@ -117,7 +121,7 @@ class ComposerLockTest extends TestCase
     {
         $lock = new ComposerLock(['data:application/json,[']);
 
-        $this->expectException(\RuntimeException::class);
+        $this->expectException(RuntimeException::class);
         $lock->getPlugins();
     }
 
@@ -128,7 +132,7 @@ class ComposerLockTest extends TestCase
     {
         $lock = new ComposerLock(['data:application/json,null']);
 
-        $this->expectException(\RuntimeException::class);
+        $this->expectException(RuntimeException::class);
         $lock->getPlugins();
     }
 
@@ -141,7 +145,7 @@ class ComposerLockTest extends TestCase
             'packages-dev' => [],
         ]);
         $lock = new ComposerLock([$noPackagesFile]);
-        $this->expectException(\RuntimeException::class);
+        $this->expectException(RuntimeException::class);
         $lock->getPlugins();
     }
 
@@ -154,7 +158,7 @@ class ComposerLockTest extends TestCase
             'packages' => [],
         ]);
         $lock = new ComposerLock([$noPackagesDevFile]);
-        $this->expectException(\RuntimeException::class);
+        $this->expectException(RuntimeException::class);
         $lock->getPlugins();
     }
 
@@ -214,6 +218,6 @@ class ComposerLockTest extends TestCase
      */
     private function jsonFile($data): string
     {
-        return 'data:application/json,' . json_encode($data);
+        return 'data:application/json,' . json_encode($data, JSON_THROW_ON_ERROR);
     }
 }

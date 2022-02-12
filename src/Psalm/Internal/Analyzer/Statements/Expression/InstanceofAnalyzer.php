@@ -1,4 +1,5 @@
 <?php
+
 namespace Psalm\Internal\Analyzer\Statements\Expression;
 
 use PhpParser;
@@ -13,17 +14,22 @@ use function implode;
 use function in_array;
 use function strtolower;
 
+/**
+ * @internal
+ */
 class InstanceofAnalyzer
 {
     public static function analyze(
         StatementsAnalyzer $statements_analyzer,
         PhpParser\Node\Expr\Instanceof_ $stmt,
         Context $context
-    ) : bool {
+    ): bool {
         $was_inside_general_use = $context->inside_general_use;
         $context->inside_general_use = true;
 
         if (ExpressionAnalyzer::analyze($statements_analyzer, $stmt->expr, $context) === false) {
+            $context->inside_general_use = $was_inside_general_use;
+
             return false;
         }
 

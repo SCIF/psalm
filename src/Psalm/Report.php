@@ -1,7 +1,9 @@
 <?php
+
 namespace Psalm;
 
 use Psalm\Internal\Analyzer\IssueData;
+use Psalm\Report\ReportOptions;
 
 use function array_filter;
 use function htmlspecialchars;
@@ -65,6 +67,9 @@ abstract class Report
     /** @var bool */
     protected $pretty;
 
+    /** @var bool */
+    protected $in_ci;
+
     /** @var int */
     protected $mixed_expression_count;
 
@@ -78,16 +83,14 @@ abstract class Report
     public function __construct(
         array $issues_data,
         array $fixable_issue_counts,
-        Report\ReportOptions $report_options,
+        ReportOptions $report_options,
         int $mixed_expression_count = 1,
         int $total_expression_count = 1
     ) {
         if (!$report_options->show_info) {
             $this->issues_data = array_filter(
                 $issues_data,
-                static function ($issue_data) : bool {
-                    return $issue_data->severity !== Config::REPORT_INFO;
-                }
+                static fn(IssueData $issue_data): bool => $issue_data->severity !== Config::REPORT_INFO
             );
         } else {
             $this->issues_data = $issues_data;
@@ -98,6 +101,7 @@ abstract class Report
         $this->show_snippet = $report_options->show_snippet;
         $this->show_info = $report_options->show_info;
         $this->pretty = $report_options->pretty;
+        $this->in_ci = $report_options->in_ci;
 
         $this->mixed_expression_count = $mixed_expression_count;
         $this->total_expression_count = $total_expression_count;

@@ -1,8 +1,10 @@
 <?php
+
 namespace Psalm\Tests;
 
 use Psalm\Context;
 use Psalm\Internal\Analyzer\FileAnalyzer;
+use Psalm\Internal\MethodIdentifier;
 
 class MethodMutationTest extends TestCase
 {
@@ -91,7 +93,7 @@ class MethodMutationTest extends TestCase
         $method_context = new Context();
         $method_context->collect_mutations = true;
         $this->project_analyzer->getMethodMutations(
-            new \Psalm\Internal\MethodIdentifier('FooController', 'barbar'),
+            new MethodIdentifier('FooController', 'barbar'),
             $method_context,
             'somefile.php',
             'somefile.php'
@@ -135,7 +137,7 @@ class MethodMutationTest extends TestCase
         $method_context = new Context();
         $method_context->collect_mutations = true;
         $this->project_analyzer->getMethodMutations(
-            new \Psalm\Internal\MethodIdentifier('FooController', 'barbar'),
+            new MethodIdentifier('FooController', 'barbar'),
             $method_context,
             'somefile.php',
             'somefile.php'
@@ -172,7 +174,7 @@ class MethodMutationTest extends TestCase
         $method_context = new Context();
         $method_context->collect_mutations = true;
         $this->project_analyzer->getMethodMutations(
-            new \Psalm\Internal\MethodIdentifier('FooController', '__construct'),
+            new MethodIdentifier('FooController', '__construct'),
             $method_context,
             'somefile.php',
             'somefile.php'
@@ -211,7 +213,7 @@ class MethodMutationTest extends TestCase
         $method_context = new Context();
         $method_context->collect_mutations = true;
         $this->project_analyzer->getMethodMutations(
-            new \Psalm\Internal\MethodIdentifier('FooController', '__construct'),
+            new MethodIdentifier('FooController', '__construct'),
             $method_context,
             'somefile.php',
             'somefile.php'

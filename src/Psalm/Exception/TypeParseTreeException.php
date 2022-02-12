@@ -1,6 +1,9 @@
 <?php
+
 namespace Psalm\Exception;
 
-class TypeParseTreeException extends \Exception
+use Exception;
+
+class TypeParseTreeException extends Exception
 {
 }

@@ -1,11 +1,14 @@
 <?php
-declare(strict_types = 1);
+
+declare(strict_types=1);
+
 namespace Psalm\Internal\LanguageServer;
 
 use AdvancedJsonRpc\Message as MessageBody;
 use Amp\ByteStream\ResourceInputStream;
 use Amp\Promise;
 use Exception;
+use Generator;
 
 use function Amp\asyncCall;
 use function explode;
@@ -15,6 +18,8 @@ use function trim;
 
 /**
  * Source: https://github.com/felixfbecker/php-language-server/tree/master/src/ProtocolStreamReader.php
+ *
+ * @internal
  */
 class ProtocolStreamReader implements ProtocolReader
 {
@@ -49,12 +54,9 @@ class ProtocolStreamReader implements ProtocolReader
         $input = new ResourceInputStream($input);
         asyncCall(
             /**
-             * @return \Generator<int, Promise<?string>, ?string, void>
-             * @psalm-suppress MixedReturnTypeCoercion
-             * @psalm-suppress MixedArgument in old Amp versions
-             * @psalm-suppress MixedAssignment in old Amp versions
+             * @return Generator<int, Promise<?string>, ?string, void>
              */
-            static function () use ($input) : \Generator {
+            static function () use ($input): Generator {
                 while ($this->is_accepting_new_requests) {
                     $read_promise = $input->read();
 
@@ -81,7 +83,7 @@ class ProtocolStreamReader implements ProtocolReader
         );
     }
 
-    private function readMessages(string $buffer) : int
+    private function readMessages(string $buffer): int
     {
         $emitted_messages = 0;
         $i = 0;
@@ -116,7 +118,9 @@ class ProtocolStreamReader implements ProtocolReader
                         if ($msg) {
                             ++$emitted_messages;
                             $this->emit('message', [$msg]);
-                            /** @psalm-suppress DocblockTypeContradiction */
+                            /**
+                             * @psalm-suppress DocblockTypeContradiction
+                             */
                             if (!$this->is_accepting_new_requests) {
                                 // If we fork, don't read any bytes in the input buffer from the worker process.
                                 $this->emitClose();

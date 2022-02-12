@@ -1,7 +1,9 @@
 <?php
+
 namespace Psalm\Internal\PluginManager;
 
 use Psalm\Internal\Composer;
+use RuntimeException;
 
 use function array_filter;
 use function json_encode;
@@ -9,7 +11,11 @@ use function rtrim;
 use function urlencode;
 
 use const DIRECTORY_SEPARATOR;
+use const JSON_THROW_ON_ERROR;
 
+/**
+ * @internal
+ */
 class PluginListFactory
 {
     /** @var string */
@@ -28,7 +34,7 @@ class PluginListFactory
     {
         try {
             $config_file = new ConfigFile($current_dir, $config_file_path);
-        } catch (\RuntimeException $exception) {
+        } catch (RuntimeException $exception) {
             $config_file = null;
         }
         $composer_lock = new ComposerLock($this->findLockFiles());
@@ -66,7 +72,8 @@ class PluginListFactory
                 'packages' => [],
                 'packages-dev' => [],
             ];
-            $composer_lock_filenames[] = 'data:application/json,' . urlencode(json_encode($stub_composer_lock));
+            $composer_lock_filenames[] = 'data:application/json,'
+                . urlencode(json_encode($stub_composer_lock, JSON_THROW_ON_ERROR));
         }
 
         return $composer_lock_filenames;

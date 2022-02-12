@@ -1,4 +1,5 @@
 <?php
+
 namespace Psalm\Internal\Analyzer\Statements\Block;
 
 use PhpParser;
@@ -11,6 +12,7 @@ use Psalm\Internal\Analyzer\StatementsAnalyzer;
 use Psalm\Internal\Scope\SwitchScope;
 use Psalm\Type;
 use Psalm\Type\Reconciler;
+use SplFixedArray;
 
 use function array_merge;
 use function count;
@@ -28,12 +30,17 @@ class SwitchAnalyzer
     ): void {
         $codebase = $statements_analyzer->getCodebase();
 
+        $was_inside_conditional = $context->inside_conditional;
+
         $context->inside_conditional = true;
+
         if (ExpressionAnalyzer::analyze($statements_analyzer, $stmt->cond, $context) === false) {
+            $context->inside_conditional = $was_inside_conditional;
+
             return;
         }
 
-        $context->inside_conditional = false;
+        $context->inside_conditional = $was_inside_conditional;
 
         $switch_var_id = ExpressionIdentifier::getArrayVarId(
             $stmt->cond,
@@ -59,13 +66,11 @@ class SwitchAnalyzer
         // the last statement always breaks, by default
         $last_case_exit_type = 'break';
 
-        $case_exit_types = new \SplFixedArray(count($stmt->cases));
+        $case_exit_types = new SplFixedArray(count($stmt->cases));
 
         $has_default = false;
 
         $case_action_map = [];
-
-        $config = \Psalm\Config::getInstance();
 
         // create a map of case statement -> ultimate exit type
         for ($i = count($stmt->cases) - 1; $i >= 0; --$i) {
@@ -74,7 +79,6 @@ class SwitchAnalyzer
             $case_actions = $case_action_map[$i] = ScopeAnalyzer::getControlActions(
                 $case->stmts,
                 $statements_analyzer->node_data,
-                $config->exit_functions,
                 ['switch']
             );
 
@@ -163,7 +167,7 @@ class SwitchAnalyzer
                     );
 
                 if (isset($case_vars_in_scope_reconciled[$switch_var_id])
-                    && $case_vars_in_scope_reconciled[$switch_var_id]->isEmpty()
+                    && $case_vars_in_scope_reconciled[$switch_var_id]->isNever()
                 ) {
                     $all_options_matched = true;
                 }

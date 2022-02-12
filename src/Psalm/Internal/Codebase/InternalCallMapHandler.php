@@ -1,19 +1,29 @@
 <?php
+
 namespace Psalm\Internal\Codebase;
 
 use PhpParser;
 use Psalm\Codebase;
 use Psalm\Internal\Analyzer\ProjectAnalyzer;
+use Psalm\Internal\Provider\NodeDataProvider;
+use Psalm\Internal\Type\Comparator\TypeComparisonResult;
 use Psalm\Internal\Type\Comparator\UnionTypeComparator;
+use Psalm\NodeTypeProvider;
 use Psalm\Storage\FunctionLikeParameter;
 use Psalm\Type;
+use Psalm\Type\Atomic\TArray;
 use Psalm\Type\Atomic\TCallable;
+use Psalm\Type\Atomic\TKeyedArray;
+use Psalm\Type\Atomic\TList;
+use Psalm\Type\TaintKind;
+use UnexpectedValueException;
 
 use function array_shift;
 use function assert;
 use function count;
 use function dirname;
 use function file_exists;
+use function strlen;
 use function strpos;
 use function strtolower;
 use function substr;
@@ -50,7 +60,7 @@ class InternalCallMapHandler
     private static $call_map_callables = [];
 
     /**
-     * @var array<string, list<list<Type\TaintKind::*>>>
+     * @var array<string, list<list<TaintKind::*>>>
      */
     private static $taint_sink_map = [];
 
@@ -61,12 +71,12 @@ class InternalCallMapHandler
         Codebase $codebase,
         string $method_id,
         array $args,
-        ?\Psalm\Internal\Provider\NodeDataProvider $nodes
+        ?NodeDataProvider $nodes
     ): TCallable {
         $possible_callables = self::getCallablesFromCallMap($method_id);
 
         if ($possible_callables === null) {
-            throw new \UnexpectedValueException(
+            throw new UnexpectedValueException(
                 'Not expecting $function_param_options to be null for ' . $method_id
             );
         }
@@ -89,7 +99,7 @@ class InternalCallMapHandler
         Codebase $codebase,
         array $callables,
         array $args,
-        ?\Psalm\NodeTypeProvider $nodes,
+        ?NodeTypeProvider $nodes,
         string $method_id
     ): TCallable {
         if (count($callables) === 1) {
@@ -156,13 +166,13 @@ class InternalCallMapHandler
                     if ($arg_type->hasArray()) {
                         /**
                          * @psalm-suppress PossiblyUndefinedStringArrayOffset
-                         * @var Type\Atomic\TArray|Type\Atomic\TKeyedArray|Type\Atomic\TList
+                         * @var TArray|TKeyedArray|TList
                          */
                         $array_atomic_type = $arg_type->getAtomicTypes()['array'];
 
-                        if ($array_atomic_type instanceof Type\Atomic\TKeyedArray) {
+                        if ($array_atomic_type instanceof TKeyedArray) {
                             $arg_type = $array_atomic_type->getGenericValueType();
-                        } elseif ($array_atomic_type instanceof Type\Atomic\TList) {
+                        } elseif ($array_atomic_type instanceof TList) {
                             $arg_type = $array_atomic_type->type_param;
                         } else {
                             $arg_type = $array_atomic_type->type_params[1];
@@ -170,7 +180,7 @@ class InternalCallMapHandler
                     }
                 }
 
-                $arg_result = new \Psalm\Internal\Type\Comparator\TypeComparisonResult();
+                $arg_result = new TypeComparisonResult();
 
                 if (UnionTypeComparator::isContainedBy(
                     $codebase,
@@ -286,7 +296,7 @@ class InternalCallMapHandler
 
                 $out_type = null;
 
-                if (\strlen($arg_name) > 2 && $arg_name[0] === 'w' && $arg_name[1] === '_') {
+                if (strlen($arg_name) > 2 && $arg_name[0] === 'w' && $arg_name[1] === '_') {
                     $out_type = $param_type;
                     $param_type = Type::getMixed();
                 }
@@ -333,15 +343,12 @@ class InternalCallMapHandler
      * Gets the method/function call map
      *
      * @return array<string, array<int|string, string>>
-     * @psalm-suppress MixedInferredReturnType as the use of require buggers things up
-     * @psalm-suppress MixedReturnStatement
-     * @psalm-suppress MixedReturnTypeCoercion
      */
     public static function getCallMap(): array
     {
         $codebase = ProjectAnalyzer::getInstance()->getCodebase();
-        $analyzer_major_version = $codebase->php_major_version;
-        $analyzer_minor_version = $codebase->php_minor_version;
+        $analyzer_major_version = $codebase->getMajorAnalysisPhpVersion();
+        $analyzer_minor_version = $codebase->getMinorAnalysisPhpVersion();
 
         $analyzer_version = $analyzer_major_version . '.' . $analyzer_minor_version;
         $current_version = self::PHP_MAJOR_VERSION . '.' . self::PHP_MINOR_VERSION;
@@ -367,7 +374,7 @@ class InternalCallMapHandler
         }
 
         /**
-         * @var array<string, list<list<Type\TaintKind::*>>>
+         * @var array<string, list<list<TaintKind::*>>>
          */
         $taint_map = require(dirname(__DIR__, 4) . '/dictionaries/InternalTaintSinkMap.php');
 
@@ -392,7 +399,6 @@ class InternalCallMapHandler
                  *     }>,
                  *     removed: array<string, array<int|string, string>>
                  * }
-                 * @psalm-suppress UnresolvableInclude
                  */
                 $diff_call_map = require($delta_file);
 
@@ -424,7 +430,7 @@ class InternalCallMapHandler
         return isset(self::getCallMap()[strtolower($key)]);
     }
 
-    public static function clearCache() : void
+    public static function clearCache(): void
     {
         self::$call_map_callables = [];
     }

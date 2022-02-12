@@ -5,6 +5,9 @@ namespace Psalm\Internal\Scanner;
 use function explode;
 use function trim;
 
+/**
+ * @internal
+ */
 class ParsedDocblock
 {
     /** @var string */
@@ -32,7 +35,7 @@ class ParsedDocblock
         $this->first_line_padding = $first_line_padding;
     }
 
-    public function render(string $left_padding) : string
+    public function render(string $left_padding): string
     {
         $doc_comment_text = '/**' . "\n";
 

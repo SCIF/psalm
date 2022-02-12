@@ -1,9 +1,11 @@
 <?php
+
 namespace Psalm\Internal\Analyzer;
 
 use PhpParser;
 use Psalm\Aliases;
 use Psalm\CodeLocation;
+use Psalm\FileManipulation;
 use Psalm\Internal\FileManipulation\FileManipulationBuffer;
 
 use function implode;
@@ -70,9 +72,7 @@ trait CanAlias
                     if ($codebase->collect_locations) {
                         // register the path
                         $codebase->use_referencing_locations[$use_path_lc][] =
-                            new \Psalm\CodeLocation($this, $use);
-
-                        $codebase->use_referencing_files[$this->getFilePath()][$use_path_lc] = true;
+                            new CodeLocation($this, $use);
                     }
 
                     if ($codebase->alter_code) {
@@ -81,7 +81,7 @@ trait CanAlias
 
                             $file_manipulations = [];
 
-                            $file_manipulations[] = new \Psalm\FileManipulation(
+                            $file_manipulations[] = new FileManipulation(
                                 (int) $use->getAttribute('startFilePos'),
                                 (int) $use->getAttribute('endFilePos') + 1,
                                 $new_fq_class_name . ($use->alias ? ' as ' . $use_alias : '')
@@ -124,7 +124,7 @@ trait CanAlias
                     if ($codebase->collect_locations) {
                         // register the path
                         $codebase->use_referencing_locations[strtolower($use_path)][] =
-                            new \Psalm\CodeLocation($this, $use);
+                            new CodeLocation($this, $use);
                     }
 
                     $this->aliased_classes[strtolower($use_alias)] = $use_path;

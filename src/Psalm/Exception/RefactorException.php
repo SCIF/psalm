@@ -1,6 +1,9 @@
 <?php
+
 namespace Psalm\Exception;
 
-class RefactorException extends \Exception
+use Exception;
+
+class RefactorException extends Exception
 {
 }

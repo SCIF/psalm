@@ -1,20 +1,24 @@
 <?php
+
 namespace Psalm\Tests\FileManipulation;
 
 use Psalm\Context;
+use Psalm\Internal\Analyzer\ProjectAnalyzer;
 use Psalm\Internal\Provider\FakeFileProvider;
+use Psalm\Internal\Provider\Providers;
 use Psalm\Internal\RuntimeCaches;
-use Psalm\Tests\Internal\Provider;
+use Psalm\Tests\Internal\Provider\FakeParserCacheProvider;
+use Psalm\Tests\TestCase;
 use Psalm\Tests\TestConfig;
 
 use function strpos;
 
-class NamespaceMoveTest extends \Psalm\Tests\TestCase
+class NamespaceMoveTest extends TestCase
 {
-    /** @var \Psalm\Internal\Analyzer\ProjectAnalyzer */
+    /** @var ProjectAnalyzer */
     protected $project_analyzer;
 
-    public function setUp() : void
+    public function setUp(): void
     {
         RuntimeCaches::clearAll();
 
@@ -38,11 +42,11 @@ class NamespaceMoveTest extends \Psalm\Tests\TestCase
 
         $config = new TestConfig();
 
-        $this->project_analyzer = new \Psalm\Internal\Analyzer\ProjectAnalyzer(
+        $this->project_analyzer = new ProjectAnalyzer(
             $config,
-            new \Psalm\Internal\Provider\Providers(
+            new Providers(
                 $this->file_provider,
-                new Provider\FakeParserCacheProvider()
+                new FakeParserCacheProvider()
             )
         );
 
@@ -71,13 +75,13 @@ class NamespaceMoveTest extends \Psalm\Tests\TestCase
     }
 
     /**
-     * @return array<string,array{string,string,array<string, string>}>
+     * @return array<string,array{input:string,output:string,migrations:array<string, string>}>
      */
     public function providerValidCodeParse(): array
     {
         return [
             'moveClassesIntoNamespace' => [
-                '<?php
+                'input' => '<?php
                     namespace Foo {
                         class A {
                             /** @var ?B */
@@ -113,7 +117,7 @@ class NamespaceMoveTest extends \Psalm\Tests\TestCase
                             public $z = null;
                         }
                     }',
-                '<?php
+                'output' => '<?php
                     namespace Bar\Baz {
                         class A {
                             /** @var B|null */
@@ -149,7 +153,7 @@ class NamespaceMoveTest extends \Psalm\Tests\TestCase
                             public $z = null;
                         }
                     }',
-                [
+                'migrations' => [
                     'Foo\*' => 'Bar\Baz\*',
                 ],
             ],

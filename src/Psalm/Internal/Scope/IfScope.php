@@ -1,8 +1,11 @@
 <?php
+
 namespace Psalm\Internal\Scope;
 
+use Psalm\Context;
 use Psalm\Internal\Clause;
-use Psalm\Type;
+use Psalm\Storage\Assertion;
+use Psalm\Type\Union;
 
 /**
  * @internal
@@ -10,7 +13,7 @@ use Psalm\Type;
 class IfScope
 {
     /**
-     * @var array<string, Type\Union>|null
+     * @var array<string, Union>|null
      */
     public $new_vars;
 
@@ -20,7 +23,7 @@ class IfScope
     public $new_vars_possibly_in_scope = [];
 
     /**
-     * @var array<string, Type\Union>|null
+     * @var array<string, Union>|null
      */
     public $redefined_vars;
 
@@ -35,7 +38,7 @@ class IfScope
     public $possibly_assigned_var_ids = [];
 
     /**
-     * @var array<string, Type\Union>
+     * @var array<string, Union>
      */
     public $possibly_redefined_vars = [];
 
@@ -45,7 +48,7 @@ class IfScope
     public $updated_vars = [];
 
     /**
-     * @var array<string, array<int, array<int, string>>>
+     * @var array<string, list<array<int, Assertion>>>
      */
     public $negated_types = [];
 
@@ -74,19 +77,12 @@ class IfScope
     public $reasonable_clauses = [];
 
     /**
-     * Variables that were mixed, but are no longer
-     *
-     * @var array<string, Type\Union>|null
-     */
-    public $possible_param_types;
-
-    /**
      * @var string[]
      */
     public $final_actions = [];
 
     /**
-     * @var ?\Psalm\Context
+     * @var ?Context
      */
     public $post_leaving_if_context;
 }

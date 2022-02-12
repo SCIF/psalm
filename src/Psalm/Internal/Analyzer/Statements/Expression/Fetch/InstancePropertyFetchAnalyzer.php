@@ -1,14 +1,17 @@
 <?php
+
 namespace Psalm\Internal\Analyzer\Statements\Expression\Fetch;
 
 use PhpParser;
 use Psalm\CodeLocation;
+use Psalm\Codebase;
 use Psalm\Context;
 use Psalm\Internal\Analyzer\FunctionLikeAnalyzer;
 use Psalm\Internal\Analyzer\Statements\Expression\Call\MethodCallAnalyzer;
 use Psalm\Internal\Analyzer\Statements\Expression\ExpressionIdentifier;
 use Psalm\Internal\Analyzer\Statements\ExpressionAnalyzer;
 use Psalm\Internal\Analyzer\StatementsAnalyzer;
+use Psalm\Internal\Analyzer\TraitAnalyzer;
 use Psalm\Issue\ImpurePropertyFetch;
 use Psalm\Issue\InvalidPropertyFetch;
 use Psalm\Issue\MixedPropertyFetch;
@@ -20,7 +23,10 @@ use Psalm\IssueBuffer;
 use Psalm\Type;
 use Psalm\Type\Atomic\TNamedObject;
 use Psalm\Type\Atomic\TNull;
+use Psalm\Type\Atomic\TTemplateParam;
 
+use function array_merge;
+use function array_shift;
 use function strtolower;
 
 /**
@@ -34,7 +40,7 @@ class InstancePropertyFetchAnalyzer
         Context $context,
         bool $in_assignment = false,
         bool $is_static_access = false
-    ) : bool {
+    ): bool {
         $was_inside_general_use = $context->inside_general_use;
         $context->inside_general_use = true;
 
@@ -45,6 +51,8 @@ class InstancePropertyFetchAnalyzer
         }
 
         if (ExpressionAnalyzer::analyze($statements_analyzer, $stmt->var, $context) === false) {
+            $context->inside_general_use = $was_inside_general_use;
+
             return false;
         }
 
@@ -112,7 +120,7 @@ class InstancePropertyFetchAnalyzer
             return true;
         }
 
-        if ($stmt_var_type->isEmpty()) {
+        if ($stmt_var_type->isNever()) {
             if (IssueBuffer::accepts(
                 new MixedPropertyFetch(
                     'Cannot fetch property on empty var ' . $stmt_var_id,
@@ -131,8 +139,8 @@ class InstancePropertyFetchAnalyzer
                 && !$context->collect_mutations
                 && $statements_analyzer->getFilePath() === $statements_analyzer->getRootFilePath()
                 && (!(($parent_source = $statements_analyzer->getSource())
-                        instanceof \Psalm\Internal\Analyzer\FunctionLikeAnalyzer)
-                    || !$parent_source->getSource() instanceof \Psalm\Internal\Analyzer\TraitAnalyzer)
+                        instanceof FunctionLikeAnalyzer)
+                    || !$parent_source->getSource() instanceof TraitAnalyzer)
             ) {
                 $codebase->analyzer->incrementMixedCount($statements_analyzer->getFilePath());
             }
@@ -144,15 +152,13 @@ class InstancePropertyFetchAnalyzer
                 );
             }
 
-            if (IssueBuffer::accepts(
+            IssueBuffer::maybeAdd(
                 new MixedPropertyFetch(
                     'Cannot fetch property on mixed var ' . $stmt_var_id,
                     new CodeLocation($statements_analyzer->getSource(), $stmt)
                 ),
                 $statements_analyzer->getSuppressedIssues()
-            )) {
-                // fall through
-            }
+            );
 
             $statements_analyzer->node_data->setType($stmt, Type::getMixed());
 
@@ -172,8 +178,8 @@ class InstancePropertyFetchAnalyzer
             && !$context->collect_mutations
             && $statements_analyzer->getFilePath() === $statements_analyzer->getRootFilePath()
             && (!(($parent_source = $statements_analyzer->getSource())
-                    instanceof \Psalm\Internal\Analyzer\FunctionLikeAnalyzer)
-                || !$parent_source->getSource() instanceof \Psalm\Internal\Analyzer\TraitAnalyzer)
+                    instanceof FunctionLikeAnalyzer)
+                || !$parent_source->getSource() instanceof TraitAnalyzer)
         ) {
             $codebase->analyzer->incrementNonMixedCount($statements_analyzer->getRootFilePath());
         }
@@ -184,15 +190,13 @@ class InstancePropertyFetchAnalyzer
                 && $stmt->name instanceof PhpParser\Node\Identifier
                 && !MethodCallAnalyzer::hasNullsafe($stmt->var)
             ) {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new PossiblyNullPropertyFetch(
                         'Cannot get property on possibly null variable ' . $stmt_var_id . ' of type ' . $stmt_var_type,
                         new CodeLocation($statements_analyzer->getSource(), $stmt)
                     ),
                     $statements_analyzer->getSuppressedIssues()
-                )) {
-                    // fall through
-                }
+                );
             } else {
                 $statements_analyzer->node_data->setType($stmt, Type::getNull());
             }
@@ -201,7 +205,7 @@ class InstancePropertyFetchAnalyzer
         if (!$prop_name) {
             if ($stmt_var_type->hasObjectType() && !$context->ignore_variable_property) {
                 foreach ($stmt_var_type->getAtomicTypes() as $type) {
-                    if ($type instanceof Type\Atomic\TNamedObject) {
+                    if ($type instanceof TNamedObject) {
                         $codebase->analyzer->addMixedMemberName(
                             strtolower($type->value) . '::$',
                             $context->calling_method_id ?: $statements_analyzer->getFileName()
@@ -231,9 +235,9 @@ class InstancePropertyFetchAnalyzer
 
         $var_atomic_types = $stmt_var_type->getAtomicTypes();
 
-        while ($lhs_type_part = \array_shift($var_atomic_types)) {
-            if ($lhs_type_part instanceof Type\Atomic\TTemplateParam) {
-                $var_atomic_types = \array_merge($var_atomic_types, $lhs_type_part->as->getAtomicTypes());
+        while ($lhs_type_part = array_shift($var_atomic_types)) {
+            if ($lhs_type_part instanceof TTemplateParam) {
+                $var_atomic_types = array_merge($var_atomic_types, $lhs_type_part->as->getAtomicTypes());
                 continue;
             }
 
@@ -279,25 +283,21 @@ class InstancePropertyFetchAnalyzer
             $lhs_type_part = $invalid_fetch_types[0];
 
             if ($has_valid_fetch_type) {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new PossiblyInvalidPropertyFetch(
                         'Cannot fetch property on possible non-object ' . $stmt_var_id . ' of type ' . $lhs_type_part,
                         new CodeLocation($statements_analyzer->getSource(), $stmt)
                     ),
                     $statements_analyzer->getSuppressedIssues()
-                )) {
-                    // fall through
-                }
+                );
             } else {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new InvalidPropertyFetch(
                         'Cannot fetch property on non-object ' . $stmt_var_id . ' of type ' . $lhs_type_part,
                         new CodeLocation($statements_analyzer->getSource(), $stmt)
                     ),
                     $statements_analyzer->getSuppressedIssues()
-                )) {
-                    // fall through
-                }
+                );
             }
         }
 
@@ -313,7 +313,7 @@ class InstancePropertyFetchAnalyzer
         string $var_id,
         StatementsAnalyzer $statements_analyzer,
         PhpParser\Node\Expr\PropertyFetch $stmt,
-        \Psalm\Codebase $codebase,
+        Codebase $codebase,
         ?string $stmt_var_id,
         bool $in_assignment
     ): void {
@@ -326,8 +326,8 @@ class InstancePropertyFetchAnalyzer
             && !$context->collect_mutations
             && $statements_analyzer->getFilePath() === $statements_analyzer->getRootFilePath()
             && (!(($parent_source = $statements_analyzer->getSource())
-                    instanceof \Psalm\Internal\Analyzer\FunctionLikeAnalyzer)
-                || !$parent_source->getSource() instanceof \Psalm\Internal\Analyzer\TraitAnalyzer)
+                    instanceof FunctionLikeAnalyzer)
+                || !$parent_source->getSource() instanceof TraitAnalyzer)
         ) {
             $codebase->analyzer->incrementNonMixedCount($statements_analyzer->getFilePath());
         }
@@ -377,18 +377,16 @@ class InstancePropertyFetchAnalyzer
                 ) {
                     $stmt_type->initialized = true;
                 } else {
-                    if (IssueBuffer::accepts(
+                    IssueBuffer::maybeAdd(
                         new UninitializedProperty(
                             'Cannot use uninitialized property ' . $var_id,
                             new CodeLocation($statements_analyzer->getSource(), $stmt),
                             $var_id
                         ),
                         $statements_analyzer->getSuppressedIssues()
-                    )) {
-                        // fall through
-                    }
+                    );
 
-                    $stmt_type->addType(new Type\Atomic\TNull);
+                    $stmt_type->addType(new TNull);
                 }
             }
         }
@@ -461,17 +459,15 @@ class InstancePropertyFetchAnalyzer
                             && $stmt_type->allow_mutations)
                     ) {
                         if ($context->pure) {
-                            if (IssueBuffer::accepts(
+                            IssueBuffer::maybeAdd(
                                 new ImpurePropertyFetch(
                                     'Cannot access a property on a mutable object from a pure context',
                                     new CodeLocation($statements_analyzer, $stmt)
                                 ),
                                 $statements_analyzer->getSuppressedIssues()
-                            )) {
-                                // fall through
-                            }
+                            );
                         } elseif ($statements_analyzer->getSource()
-                            instanceof \Psalm\Internal\Analyzer\FunctionLikeAnalyzer
+                            instanceof FunctionLikeAnalyzer
                             && $statements_analyzer->getSource()->track_mutations
                         ) {
                             $statements_analyzer->getSource()->inferred_impure = true;

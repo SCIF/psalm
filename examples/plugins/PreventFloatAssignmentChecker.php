@@ -4,7 +4,8 @@ namespace Psalm\Example\Plugin;
 use PhpParser;
 use Psalm\Checker;
 use Psalm\CodeLocation;
-use Psalm\FileManipulation;
+use Psalm\Issue\PluginIssue;
+use Psalm\IssueBuffer;
 use Psalm\Plugin\EventHandler\AfterExpressionAnalysisInterface;
 use Psalm\Plugin\EventHandler\Event\AfterExpressionAnalysisEvent;
 
@@ -25,7 +26,7 @@ class PreventFloatAssignmentChecker implements AfterExpressionAnalysisInterface
             && ($expr_type = $statements_source->getNodeTypeProvider()->getType($expr->expr))
             && $expr_type->hasFloat()
         ) {
-            if (\Psalm\IssueBuffer::accepts(
+            if (IssueBuffer::accepts(
                 new NoFloatAssignment(
                     'Don’t assign to floats',
                     new CodeLocation($statements_source, $expr)
@@ -40,5 +41,5 @@ class PreventFloatAssignmentChecker implements AfterExpressionAnalysisInterface
     }
 }
 
-class NoFloatAssignment extends \Psalm\Issue\PluginIssue {
+class NoFloatAssignment extends PluginIssue {
 }

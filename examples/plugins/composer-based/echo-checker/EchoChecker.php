@@ -1,24 +1,25 @@
 <?php
+
 namespace Psalm\Example\Plugin\ComposerBased;
 
 use PhpParser;
 use Psalm\CodeLocation;
-use Psalm\FileManipulation;
-use Psalm\IssueBuffer;
 use Psalm\Issue\ArgumentTypeCoercion;
+use Psalm\IssueBuffer;
 use Psalm\Plugin\EventHandler\AfterStatementAnalysisInterface;
 use Psalm\Plugin\EventHandler\Event\AfterStatementAnalysisEvent;
+use Psalm\Type\Atomic\TLiteralString;
+use Psalm\Type\Atomic\TString;
 
 class EchoChecker implements AfterStatementAnalysisInterface
 {
     /**
      * Called after a statement has been checked
      *
-     * @param  FileManipulation[]   $file_replacements
-     *
      * @return null|false
      */
-    public static function afterStatementAnalysis(AfterStatementAnalysisEvent $event): ?bool {
+    public static function afterStatementAnalysis(AfterStatementAnalysisEvent $event): ?bool
+    {
         $stmt = $event->getStmt();
         $statements_source = $event->getStatementsSource();
         if ($stmt instanceof PhpParser\Node\Stmt\Echo_) {
@@ -43,9 +44,8 @@ class EchoChecker implements AfterStatementAnalysisInterface
                 $types = $expr_type->getAtomicTypes();
 
                 foreach ($types as $type) {
-                    if ($type instanceof \Psalm\Type\Atomic\TString
-                        && !$type instanceof \Psalm\Type\Atomic\TLiteralString
-                        && !$type instanceof \Psalm\Type\Atomic\THtmlEscapedString
+                    if ($type instanceof TString
+                        && !$type instanceof TLiteralString
                     ) {
                         if (IssueBuffer::accepts(
                             new ArgumentTypeCoercion(

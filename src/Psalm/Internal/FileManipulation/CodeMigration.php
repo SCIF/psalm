@@ -1,8 +1,11 @@
 <?php
+
 namespace Psalm\Internal\FileManipulation;
 
 /**
  * @psalm-immutable
+ *
+ * @internal
  */
 class CodeMigration
 {

@@ -1,8 +1,10 @@
 <?php
+
 namespace Psalm\Internal\Analyzer\Statements\Expression\Fetch;
 
 use PhpParser;
 use Psalm\CodeLocation;
+use Psalm\Config;
 use Psalm\Context;
 use Psalm\Internal\Analyzer\FunctionLikeAnalyzer;
 use Psalm\Internal\Analyzer\Statements\Expression\AssignmentAnalyzer;
@@ -19,6 +21,10 @@ use Psalm\Issue\UndefinedGlobalVariable;
 use Psalm\Issue\UndefinedVariable;
 use Psalm\IssueBuffer;
 use Psalm\Type;
+use Psalm\Type\Atomic\TArray;
+use Psalm\Type\Atomic\TList;
+use Psalm\Type\TaintKindGroup;
+use Psalm\Type\Union;
 
 use function in_array;
 use function is_string;
@@ -49,10 +55,10 @@ class VariableFetchAnalyzer
         PhpParser\Node\Expr\Variable $stmt,
         Context $context,
         bool $passed_by_reference = false,
-        ?Type\Union $by_ref_type = null,
+        ?Union $by_ref_type = null,
         bool $array_assignment = false,
         bool $from_global = false
-    ) : bool {
+    ): bool {
         $project_analyzer = $statements_analyzer->getFileAnalyzer()->project_analyzer;
         $codebase = $statements_analyzer->getCodebase();
 
@@ -104,16 +110,14 @@ class VariableFetchAnalyzer
 
             if (!$context->collect_mutations && !$context->collect_initializations) {
                 if ($context->pure) {
-                    if (IssueBuffer::accepts(
+                    IssueBuffer::maybeAdd(
                         new ImpureVariable(
                             'Cannot reference $this in a pure context',
                             new CodeLocation($statements_analyzer->getSource(), $stmt)
                         ),
                         $statements_analyzer->getSuppressedIssues()
-                    )) {
-                        // fall through
-                    }
-                } elseif ($statements_analyzer->getSource() instanceof \Psalm\Internal\Analyzer\FunctionLikeAnalyzer
+                    );
+                } elseif ($statements_analyzer->getSource() instanceof FunctionLikeAnalyzer
                     && $statements_analyzer->getSource()->track_mutations
                 ) {
                     $statements_analyzer->getSource()->inferred_impure = true;
@@ -177,16 +181,14 @@ class VariableFetchAnalyzer
 
         if (!is_string($stmt->name)) {
             if ($context->pure) {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new ImpureVariable(
                         'Cannot reference an unknown variable in a pure context',
                         new CodeLocation($statements_analyzer->getSource(), $stmt)
                     ),
                     $statements_analyzer->getSuppressedIssues()
-                )) {
-                    // fall through
-                }
-            } elseif ($statements_analyzer->getSource() instanceof \Psalm\Internal\Analyzer\FunctionLikeAnalyzer
+                );
+            } elseif ($statements_analyzer->getSource() instanceof FunctionLikeAnalyzer
                 && $statements_analyzer->getSource()->track_mutations
             ) {
                 $statements_analyzer->getSource()->inferred_impure = true;
@@ -237,31 +239,27 @@ class VariableFetchAnalyzer
                     || $statements_analyzer->getSource() instanceof FunctionLikeAnalyzer
                 ) {
                     if ($context->is_global || $from_global) {
-                        if (IssueBuffer::accepts(
+                        IssueBuffer::maybeAdd(
                             new UndefinedGlobalVariable(
                                 'Cannot find referenced variable ' . $var_name . ' in global scope',
                                 new CodeLocation($statements_analyzer->getSource(), $stmt),
                                 $var_name
                             ),
                             $statements_analyzer->getSuppressedIssues()
-                        )) {
-                            // fall through
-                        }
+                        );
 
                         $statements_analyzer->node_data->setType($stmt, Type::getMixed());
 
                         return true;
                     }
 
-                    if (IssueBuffer::accepts(
+                    IssueBuffer::maybeAdd(
                         new UndefinedVariable(
                             'Cannot find referenced variable ' . $var_name,
                             new CodeLocation($statements_analyzer->getSource(), $stmt)
                         ),
                         $statements_analyzer->getSuppressedIssues()
-                    )) {
-                        // fall through
-                    }
+                    );
 
                     $statements_analyzer->node_data->setType($stmt, Type::getMixed());
 
@@ -287,7 +285,7 @@ class VariableFetchAnalyzer
                         return true;
                     }
 
-                    if (IssueBuffer::accepts(
+                    IssueBuffer::maybeAdd(
                         new PossiblyUndefinedGlobalVariable(
                             'Possibly undefined global variable ' . $var_name . ', first seen on line ' .
                                 $first_appearance->getLineNumber(),
@@ -296,9 +294,7 @@ class VariableFetchAnalyzer
                         ),
                         $statements_analyzer->getSuppressedIssues(),
                         (bool) $statements_analyzer->getBranchPoint($var_name)
-                    )) {
-                        // fall through
-                    }
+                    );
                 } else {
                     if ($codebase->alter_code) {
                         if (!isset($project_analyzer->getIssuesToFix()['PossiblyUndefinedVariable'])) {
@@ -314,7 +310,7 @@ class VariableFetchAnalyzer
                         return true;
                     }
 
-                    if (IssueBuffer::accepts(
+                    IssueBuffer::maybeAdd(
                         new PossiblyUndefinedVariable(
                             'Possibly undefined variable ' . $var_name . ', first seen on line ' .
                                 $first_appearance->getLineNumber(),
@@ -322,9 +318,7 @@ class VariableFetchAnalyzer
                         ),
                         $statements_analyzer->getSuppressedIssues(),
                         (bool) $statements_analyzer->getBranchPoint($var_name)
-                    )) {
-                        // fall through
-                    }
+                    );
                 }
 
                 if ($codebase->store_node_types
@@ -357,26 +351,22 @@ class VariableFetchAnalyzer
 
             if ($stmt_type->possibly_undefined_from_try && !$context->inside_isset) {
                 if ($context->is_global) {
-                    if (IssueBuffer::accepts(
+                    IssueBuffer::maybeAdd(
                         new PossiblyUndefinedGlobalVariable(
                             'Possibly undefined global variable ' . $var_name . ' defined in try block',
                             new CodeLocation($statements_analyzer->getSource(), $stmt),
                             $var_name
                         ),
                         $statements_analyzer->getSuppressedIssues()
-                    )) {
-                        // fall through
-                    }
+                    );
                 } else {
-                    if (IssueBuffer::accepts(
+                    IssueBuffer::maybeAdd(
                         new PossiblyUndefinedVariable(
                             'Possibly undefined variable ' . $var_name . ' defined in try block',
                             new CodeLocation($statements_analyzer->getSource(), $stmt)
                         ),
                         $statements_analyzer->getSuppressedIssues()
-                    )) {
-                        // fall through
-                    }
+                    );
                 }
             }
 
@@ -416,9 +406,9 @@ class VariableFetchAnalyzer
         StatementsAnalyzer $statements_analyzer,
         PhpParser\Node\Expr\Variable $stmt,
         string $var_name,
-        Type\Union $stmt_type,
+        Union $stmt_type,
         Context $context
-    ) : void {
+    ): void {
         $codebase = $statements_analyzer->getCodebase();
 
         if ($statements_analyzer->data_flow_graph
@@ -490,11 +480,11 @@ class VariableFetchAnalyzer
     private static function taintVariable(
         StatementsAnalyzer $statements_analyzer,
         string $var_name,
-        Type\Union $type,
+        Union $type,
         PhpParser\Node\Expr\Variable $stmt
-    ) : void {
+    ): void {
         if ($statements_analyzer->data_flow_graph instanceof TaintFlowGraph
-            && !\in_array('TaintedInput', $statements_analyzer->getSuppressedIssues())
+            && !in_array('TaintedInput', $statements_analyzer->getSuppressedIssues())
         ) {
             if ($var_name === '$_GET'
                 || $var_name === '$_POST'
@@ -508,7 +498,7 @@ class VariableFetchAnalyzer
                     $var_name,
                     null,
                     null,
-                    Type\TaintKindGroup::ALL_INPUT
+                    TaintKindGroup::ALL_INPUT
                 );
 
                 $statements_analyzer->data_flow_graph->addSource($server_taint_source);
@@ -523,7 +513,7 @@ class VariableFetchAnalyzer
     /**
      * @psalm-pure
      */
-    public static function isSuperGlobal(string $var_id) : bool
+    public static function isSuperGlobal(string $var_id): bool
     {
         return in_array(
             $var_id,
@@ -532,17 +522,17 @@ class VariableFetchAnalyzer
         );
     }
 
-    public static function getGlobalType(string $var_id) : Type\Union
+    public static function getGlobalType(string $var_id): Union
     {
-        $config = \Psalm\Config::getInstance();
+        $config = Config::getInstance();
 
         if (isset($config->globals[$var_id])) {
             return Type::parseString($config->globals[$var_id]);
         }
 
         if ($var_id === '$argv') {
-            return new Type\Union([
-                new Type\Atomic\TArray([Type::getInt(), Type::getString()]),
+            return new Union([
+                new TArray([Type::getInt(), Type::getString()]),
             ]);
         }
 
@@ -551,13 +541,17 @@ class VariableFetchAnalyzer
         }
 
         if ($var_id === '$http_response_header') {
-            return new Type\Union([
-                new Type\Atomic\TList(Type::getString())
+            return new Union([
+                new TList(Type::getString())
             ]);
         }
 
         if (self::isSuperGlobal($var_id)) {
-            return Type::getArray();
+            $type = Type::getArray();
+            if ($var_id === '$_SESSION') {
+                $type->possibly_undefined = true;
+            }
+            return $type;
         }
 
         return Type::getMixed();

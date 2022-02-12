@@ -1,17 +1,20 @@
 <?php
 namespace Psalm\Example\Plugin;
 
+use Exception;
 use PhpParser;
-use PhpParser\Node\Expr\MethodCall;
-use PhpParser\Node\Expr\StaticCall;
 use Psalm\Checker;
 use Psalm\Checker\StatementsChecker;
 use Psalm\CodeLocation;
-use Psalm\FileManipulation;
+use Psalm\Issue\PluginIssue;
+use Psalm\IssueBuffer;
 use Psalm\Plugin\EventHandler\AfterFunctionCallAnalysisInterface;
 use Psalm\Plugin\EventHandler\AfterMethodCallAnalysisInterface;
 use Psalm\Plugin\EventHandler\Event\AfterFunctionCallAnalysisEvent;
 use Psalm\Plugin\EventHandler\Event\AfterMethodCallAnalysisEvent;
+use Psalm\Internal\Analyzer\StatementsAnalyzer;
+use Psalm\Internal\MethodIdentifier;
+
 use function explode;
 use function strtolower;
 use function end;
@@ -33,7 +36,7 @@ class FunctionCasingChecker implements AfterFunctionCallAnalysisInterface, After
 
         try {
             /** @psalm-suppress ArgumentTypeCoercion */
-            $method_id = new \Psalm\Internal\MethodIdentifier(...explode('::', $declaring_method_id));
+            $method_id = new MethodIdentifier(...explode('::', $declaring_method_id));
             $function_storage = $codebase->methods->getStorage($method_id);
 
             if ($function_storage->cased_name === '__call') {
@@ -45,7 +48,7 @@ class FunctionCasingChecker implements AfterFunctionCallAnalysisInterface, After
             }
 
             if ($function_storage->cased_name !== (string)$expr->name) {
-                if (\Psalm\IssueBuffer::accepts(
+                if (IssueBuffer::accepts(
                     new IncorrectFunctionCasing(
                         'Function is incorrectly cased, expecting ' . $function_storage->cased_name,
                         new CodeLocation($statements_source, $expr->name)
@@ -55,15 +58,11 @@ class FunctionCasingChecker implements AfterFunctionCallAnalysisInterface, After
                     // fall through
                 }
             }
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             // can throw if storage is missing
         }
     }
 
-    /**
-     * @param non-empty-string $function_id
-     * @param  FileManipulation[] $file_replacements
-     */
     public static function afterFunctionCallAnalysis(AfterFunctionCallAnalysisEvent $event): void
     {
         $expr = $event->getExpr();
@@ -76,7 +75,7 @@ class FunctionCasingChecker implements AfterFunctionCallAnalysisInterface, After
 
         try {
             $function_storage = $codebase->functions->getStorage(
-                $statements_source instanceof \Psalm\Internal\Analyzer\StatementsAnalyzer
+                $statements_source instanceof StatementsAnalyzer
                     ? $statements_source
                     : null,
                 strtolower($function_id)
@@ -89,7 +88,7 @@ class FunctionCasingChecker implements AfterFunctionCallAnalysisInterface, After
             $function_name_parts = explode('\\', $function_storage->cased_name);
 
             if (end($function_name_parts) !== end($expr->name->parts)) {
-                if (\Psalm\IssueBuffer::accepts(
+                if (IssueBuffer::accepts(
                     new IncorrectFunctionCasing(
                         'Function is incorrectly cased, expecting ' . $function_storage->cased_name,
                         new CodeLocation($statements_source, $expr->name)
@@ -99,12 +98,12 @@ class FunctionCasingChecker implements AfterFunctionCallAnalysisInterface, After
                     // fall through
                 }
             }
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             // can throw if storage is missing
         }
     }
 }
 
-class IncorrectFunctionCasing extends \Psalm\Issue\PluginIssue
+class IncorrectFunctionCasing extends PluginIssue
 {
 }

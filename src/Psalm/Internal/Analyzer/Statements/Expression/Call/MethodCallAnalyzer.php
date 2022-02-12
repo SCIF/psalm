@@ -1,15 +1,17 @@
 <?php
+
 namespace Psalm\Internal\Analyzer\Statements\Expression\Call;
 
 use PhpParser;
 use Psalm\CodeLocation;
 use Psalm\Context;
+use Psalm\Internal\Analyzer\Statements\Expression\Call\Method\AtomicMethodCallAnalysisResult;
+use Psalm\Internal\Analyzer\Statements\Expression\Call\Method\AtomicMethodCallAnalyzer;
+use Psalm\Internal\Analyzer\Statements\Expression\CallAnalyzer;
 use Psalm\Internal\Analyzer\Statements\Expression\ExpressionIdentifier;
 use Psalm\Internal\Analyzer\Statements\ExpressionAnalyzer;
 use Psalm\Internal\Analyzer\StatementsAnalyzer;
-use Psalm\Internal\MethodIdentifier;
-use Psalm\Internal\Type\Comparator\UnionTypeComparator;
-use Psalm\Issue\IfThisIsMismatch;
+use Psalm\Internal\Type\TemplateResult;
 use Psalm\Issue\InvalidMethodCall;
 use Psalm\Issue\InvalidScope;
 use Psalm\Issue\NullReference;
@@ -25,6 +27,8 @@ use Psalm\Issue\UndefinedMethod;
 use Psalm\IssueBuffer;
 use Psalm\Type;
 use Psalm\Type\Atomic\TNamedObject;
+use Psalm\Type\Atomic\TTemplateParam;
+use Psalm\Type\Union;
 
 use function array_reduce;
 use function count;
@@ -34,14 +38,15 @@ use function strtolower;
 /**
  * @internal
  */
-class MethodCallAnalyzer extends \Psalm\Internal\Analyzer\Statements\Expression\CallAnalyzer
+class MethodCallAnalyzer extends CallAnalyzer
 {
     public static function analyze(
         StatementsAnalyzer $statements_analyzer,
         PhpParser\Node\Expr\MethodCall $stmt,
         Context $context,
-        bool $real_method_call = true
-    ) : bool {
+        bool $real_method_call = true,
+        ?TemplateResult $template_result = null
+    ): bool {
         $was_inside_call = $context->inside_call;
 
         $context->inside_call = true;
@@ -55,15 +60,17 @@ class MethodCallAnalyzer extends \Psalm\Internal\Analyzer\Statements\Expression\
         if ($existing_stmt_var_type) {
             $statements_analyzer->node_data->setType($stmt->var, $existing_stmt_var_type);
         } elseif (ExpressionAnalyzer::analyze($statements_analyzer, $stmt->var, $context) === false) {
+            $context->inside_call = $was_inside_call;
+
             return false;
         }
-
-        $context->inside_call = $was_inside_call;
 
         if (!$stmt->name instanceof PhpParser\Node\Identifier) {
             $context->inside_call = true;
 
             if (ExpressionAnalyzer::analyze($statements_analyzer, $stmt->name, $context) === false) {
+                $context->inside_call = $was_inside_call;
+
                 return false;
             }
         }
@@ -139,15 +146,13 @@ class MethodCallAnalyzer extends \Psalm\Internal\Analyzer\Statements\Expression\
             && !($stmt->name->name === 'offsetGet' && $context->inside_isset)
             && !self::hasNullsafe($stmt->var)
         ) {
-            if (IssueBuffer::accepts(
+            IssueBuffer::maybeAdd(
                 new PossiblyNullReference(
                     'Cannot call method ' . $stmt->name->name . ' on possibly null value',
                     new CodeLocation($statements_analyzer->getSource(), $stmt->name)
                 ),
                 $statements_analyzer->getSuppressedIssues()
-            )) {
-                // fall through
-            }
+            );
         }
 
         if ($class_type
@@ -155,15 +160,13 @@ class MethodCallAnalyzer extends \Psalm\Internal\Analyzer\Statements\Expression\
             && $class_type->isFalsable()
             && !$class_type->ignore_falsable_issues
         ) {
-            if (IssueBuffer::accepts(
+            IssueBuffer::maybeAdd(
                 new PossiblyFalseReference(
                     'Cannot call method ' . $stmt->name->name . ' on possibly false value',
                     new CodeLocation($statements_analyzer->getSource(), $stmt->name)
                 ),
                 $statements_analyzer->getSuppressedIssues()
-            )) {
-                // fall through
-            }
+            );
         }
 
         $codebase = $statements_analyzer->getCodebase();
@@ -176,32 +179,36 @@ class MethodCallAnalyzer extends \Psalm\Internal\Analyzer\Statements\Expression\
 
         $lhs_types = $class_type->getAtomicTypes();
 
-        $result = new Method\AtomicMethodCallAnalysisResult();
+        $result = new AtomicMethodCallAnalysisResult();
 
         $possible_new_class_types = [];
         foreach ($lhs_types as $lhs_type_part) {
-            Method\AtomicMethodCallAnalyzer::analyze(
+            AtomicMethodCallAnalyzer::analyze(
                 $statements_analyzer,
                 $stmt,
                 $codebase,
                 $context,
                 $class_type,
                 $lhs_type_part,
-                $lhs_type_part instanceof Type\Atomic\TNamedObject
-                    || $lhs_type_part instanceof Type\Atomic\TTemplateParam
+                $lhs_type_part instanceof TNamedObject
+                    || $lhs_type_part instanceof TTemplateParam
                     ? $lhs_type_part
                     : null,
                 false,
                 $lhs_var_id,
-                $result
+                $result,
+                $template_result
             );
             if (isset($context->vars_in_scope[$lhs_var_id])
-                && ($possible_new_class_type = $context->vars_in_scope[$lhs_var_id]) instanceof Type\Union
+                && ($possible_new_class_type = $context->vars_in_scope[$lhs_var_id]) instanceof Union
                 && !$possible_new_class_type->equals($class_type)) {
                 $possible_new_class_types[] = $context->vars_in_scope[$lhs_var_id];
             }
         }
-        if (!$stmt->getArgs() && $lhs_var_id && $stmt->name instanceof PhpParser\Node\Identifier) {
+        if (!$stmt->isFirstClassCallable()
+            && !$stmt->getArgs()
+            && $lhs_var_id && $stmt->name instanceof PhpParser\Node\Identifier
+        ) {
             if ($codebase->config->memoize_method_calls || $result->can_memoize) {
                 $method_var_id = $lhs_var_id . '->' . strtolower($stmt->name->name) . '()';
 
@@ -221,9 +228,7 @@ class MethodCallAnalyzer extends \Psalm\Internal\Analyzer\Statements\Expression\
         if (count($possible_new_class_types) > 0) {
             $class_type = array_reduce(
                 $possible_new_class_types,
-                static function (?Type\Union $type_1, Type\Union $type_2) use ($codebase): Type\Union {
-                    return Type::combineUnionTypes($type_1, $type_2, $codebase);
-                }
+                static fn(?Union $type_1, Union $type_2): Union => Type::combineUnionTypes($type_1, $type_2, $codebase)
             );
         }
 
@@ -231,67 +236,57 @@ class MethodCallAnalyzer extends \Psalm\Internal\Analyzer\Statements\Expression\
             $invalid_class_type = $result->invalid_method_call_types[0];
 
             if ($result->has_valid_method_call_type || $result->has_mixed_method_call) {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new PossiblyInvalidMethodCall(
                         'Cannot call method on possible ' . $invalid_class_type . ' variable ' . $lhs_var_id,
                         new CodeLocation($source, $stmt->name)
                     ),
                     $statements_analyzer->getSuppressedIssues()
-                )) {
-                    // keep going
-                }
+                );
             } else {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new InvalidMethodCall(
                         'Cannot call method on ' . $invalid_class_type . ' variable ' . $lhs_var_id,
                         new CodeLocation($source, $stmt->name)
                     ),
                     $statements_analyzer->getSuppressedIssues()
-                )) {
-                    // keep going
-                }
+                );
             }
         }
 
         if ($result->non_existent_magic_method_ids) {
             if ($context->check_methods) {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new UndefinedMagicMethod(
                         'Magic method ' . $result->non_existent_magic_method_ids[0] . ' does not exist',
                         new CodeLocation($source, $stmt->name),
                         $result->non_existent_magic_method_ids[0]
                     ),
                     $statements_analyzer->getSuppressedIssues()
-                )) {
-                    // keep going
-                }
+                );
             }
         }
 
         if ($result->non_existent_class_method_ids) {
             if ($context->check_methods) {
                 if ($result->existent_method_ids || $result->has_mixed_method_call) {
-                    if (IssueBuffer::accepts(
+                    IssueBuffer::maybeAdd(
                         new PossiblyUndefinedMethod(
                             'Method ' . $result->non_existent_class_method_ids[0] . ' does not exist',
                             new CodeLocation($source, $stmt->name),
                             $result->non_existent_class_method_ids[0]
                         ),
                         $statements_analyzer->getSuppressedIssues()
-                    )) {
-                        // keep going
-                    }
+                    );
                 } else {
-                    if (IssueBuffer::accepts(
+                    IssueBuffer::maybeAdd(
                         new UndefinedMethod(
                             'Method ' . $result->non_existent_class_method_ids[0] . ' does not exist',
                             new CodeLocation($source, $stmt->name),
                             $result->non_existent_class_method_ids[0]
                         ),
                         $statements_analyzer->getSuppressedIssues()
-                    )) {
-                        // keep going
-                    }
+                    );
                 }
             }
 
@@ -301,27 +296,23 @@ class MethodCallAnalyzer extends \Psalm\Internal\Analyzer\Statements\Expression\
         if ($result->non_existent_interface_method_ids) {
             if ($context->check_methods) {
                 if ($result->existent_method_ids || $result->has_mixed_method_call) {
-                    if (IssueBuffer::accepts(
+                    IssueBuffer::maybeAdd(
                         new PossiblyUndefinedMethod(
                             'Method ' . $result->non_existent_interface_method_ids[0] . ' does not exist',
                             new CodeLocation($source, $stmt->name),
                             $result->non_existent_interface_method_ids[0]
                         ),
                         $statements_analyzer->getSuppressedIssues()
-                    )) {
-                        // keep going
-                    }
+                    );
                 } else {
-                    if (IssueBuffer::accepts(
+                    IssueBuffer::maybeAdd(
                         new UndefinedInterfaceMethod(
                             'Method ' . $result->non_existent_interface_method_ids[0] . ' does not exist',
                             new CodeLocation($source, $stmt->name),
                             $result->non_existent_interface_method_ids[0]
                         ),
                         $statements_analyzer->getSuppressedIssues()
-                    )) {
-                        // keep going
-                    }
+                    );
                 }
             }
 
@@ -331,37 +322,37 @@ class MethodCallAnalyzer extends \Psalm\Internal\Analyzer\Statements\Expression\
         if ($result->too_many_arguments && $result->too_many_arguments_method_ids) {
             $error_method_id = $result->too_many_arguments_method_ids[0];
 
-            if (IssueBuffer::accepts(
+            IssueBuffer::maybeAdd(
                 new TooManyArguments(
                     'Too many arguments for method ' . $error_method_id . ' - saw ' . count($stmt->getArgs()),
                     new CodeLocation($source, $stmt->name),
                     (string) $error_method_id
                 ),
                 $statements_analyzer->getSuppressedIssues()
-            )) {
-                // fall through
-            }
+            );
         }
 
         if ($result->too_few_arguments && $result->too_few_arguments_method_ids) {
             $error_method_id = $result->too_few_arguments_method_ids[0];
 
-            if (IssueBuffer::accepts(
+            IssueBuffer::maybeAdd(
                 new TooFewArguments(
                     'Too few arguments for method ' . $error_method_id . ' saw ' . count($stmt->getArgs()),
                     new CodeLocation($source, $stmt->name),
                     (string) $error_method_id
                 ),
                 $statements_analyzer->getSuppressedIssues()
-            )) {
-                // fall through
-            }
+            );
         }
 
         $stmt_type = $result->return_type;
 
         if ($stmt_type) {
             $statements_analyzer->node_data->setType($stmt, $stmt_type);
+
+            if ($stmt_type->isNever()) {
+                $context->has_returned = true;
+            }
         }
 
         if ($result->returns_by_ref) {
@@ -387,7 +378,7 @@ class MethodCallAnalyzer extends \Psalm\Internal\Analyzer\Statements\Expression\
         }
 
         if (!$result->existent_method_ids) {
-            return self::checkMethodArgs(
+            return $stmt->isFirstClassCallable() || self::checkMethodArgs(
                 null,
                 $stmt->getArgs(),
                 null,
@@ -430,40 +421,10 @@ class MethodCallAnalyzer extends \Psalm\Internal\Analyzer\Statements\Expression\
             $context->vars_in_scope[$lhs_var_id] = $class_type;
         }
 
-        if ($lhs_var_id) {
-            $method_id = MethodIdentifier::wrap($result->existent_method_ids[0]);
-            // TODO: When should a method have a storage?
-            if ($codebase->methods->hasStorage($method_id)) {
-                $storage = $codebase->methods->getStorage($method_id);
-                if ($storage->if_this_is_type
-                    && !UnionTypeComparator::isContainedBy(
-                        $codebase,
-                        $class_type,
-                        $storage->if_this_is_type
-                    )
-                ) {
-                    if (IssueBuffer::accepts(
-                        new IfThisIsMismatch(
-                            'Class is not ' . (string) $storage->if_this_is_type
-                            . ' as required by psalm-if-this-is',
-                            new CodeLocation($source, $stmt->name)
-                        ),
-                        $statements_analyzer->getSuppressedIssues()
-                    )) {
-                        // keep going
-                    }
-                }
-                if ($storage->self_out_type) {
-                    $self_out_type = $storage->self_out_type;
-                    $context->vars_in_scope[$lhs_var_id] = $self_out_type;
-                }
-            }
-        }
-
         return true;
     }
 
-    public static function hasNullsafe(PhpParser\Node\Expr $expr) : bool
+    public static function hasNullsafe(PhpParser\Node\Expr $expr): bool
     {
         if ($expr instanceof PhpParser\Node\Expr\MethodCall
             || $expr instanceof PhpParser\Node\Expr\PropertyFetch

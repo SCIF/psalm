@@ -1,11 +1,14 @@
 <?php
+
 namespace Psalm\Type\Atomic;
+
+use Psalm\Type\Atomic;
 
 /**
  * Denotes the `no-return`/`never-return` type for functions that never return, either throwing an exception or
  * terminating (like the builtin `exit()`).
  */
-class TNever extends \Psalm\Type\Atomic
+class TNever extends Atomic
 {
     public function __toString(): string
     {
@@ -24,13 +27,12 @@ class TNever extends \Psalm\Type\Atomic
         ?string $namespace,
         array $aliased_classes,
         ?string $this_class,
-        int $php_major_version,
-        int $php_minor_version
+        int $analysis_php_version_id
     ): ?string {
         return null;
     }
 
-    public function canBeFullyExpressedInPhp(int $php_major_version, int $php_minor_version): bool
+    public function canBeFullyExpressedInPhp(int $analysis_php_version_id): bool
     {
         return false;
     }

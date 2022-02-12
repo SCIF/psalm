@@ -1,6 +1,10 @@
 <?php
+
 namespace Psalm\Internal\Analyzer;
 
+/**
+ * @internal
+ */
 class ClassLikeNameOptions
 {
     /** @var bool */

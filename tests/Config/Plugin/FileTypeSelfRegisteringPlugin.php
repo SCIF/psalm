@@ -1,9 +1,11 @@
 <?php
+
 namespace Psalm\Tests\Config\Plugin;
 
-use Psalm\Plugin;
 use Psalm\Plugin\PluginEntryPointInterface;
+use Psalm\Plugin\RegistrationInterface;
 use SimpleXMLElement;
+use stdClass;
 
 class FileTypeSelfRegisteringPlugin implements PluginEntryPointInterface
 {
@@ -23,11 +25,11 @@ class FileTypeSelfRegisteringPlugin implements PluginEntryPointInterface
      */
     public static $flags = 0;
 
-    public function __invoke(Plugin\RegistrationInterface $registration, ?SimpleXMLElement $config = null): void
+    public function __invoke(RegistrationInterface $registration, ?SimpleXMLElement $config = null): void
     {
         if (self::$flags & self::FLAG_SCANNER_INVALID) {
             /** @psalm-suppress InvalidArgument */
-            $registration->addFileTypeScanner(self::$names['extension'], \stdClass::class);
+            $registration->addFileTypeScanner(self::$names['extension'], stdClass::class);
         } else {
             // that's the regular/valid case
             /** @psalm-suppress ArgumentTypeCoercion */
@@ -35,7 +37,7 @@ class FileTypeSelfRegisteringPlugin implements PluginEntryPointInterface
         }
         if (self::$flags & self::FLAG_ANALYZER_INVALID) {
             /** @psalm-suppress InvalidArgument */
-            $registration->addFileTypeAnalyzer(self::$names['extension'], \stdClass::class);
+            $registration->addFileTypeAnalyzer(self::$names['extension'], stdClass::class);
         } else {
             // that's the regular/valid case
             /** @psalm-suppress ArgumentTypeCoercion */

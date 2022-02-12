@@ -1,4 +1,5 @@
 <?php
+
 namespace Psalm\Internal\Analyzer\Statements\Expression\BinaryOp;
 
 use PhpParser;
@@ -6,6 +7,9 @@ use Psalm\Context;
 use Psalm\Internal\Analyzer\Statements\Expression\BinaryOpAnalyzer;
 use Psalm\Internal\Analyzer\StatementsAnalyzer;
 use Psalm\Type;
+use Psalm\Type\Atomic\TFloat;
+use Psalm\Type\Atomic\TInt;
+use Psalm\Type\Union;
 
 /**
  * @internal
@@ -16,7 +20,7 @@ class NonComparisonOpAnalyzer
         StatementsAnalyzer $statements_analyzer,
         PhpParser\Node\Expr\BinaryOp $stmt,
         Context $context
-    ) : void {
+    ): void {
         $stmt_left_type = $statements_analyzer->node_data->getType($stmt->left);
         $stmt_right_type = $statements_analyzer->node_data->getType($stmt->right);
 
@@ -67,7 +71,7 @@ class NonComparisonOpAnalyzer
             );
 
             if (!$result_type) {
-                $result_type = new Type\Union([new Type\Atomic\TInt(), new Type\Atomic\TFloat()]);
+                $result_type = new Union([new TInt(), new TFloat()]);
             }
 
             $statements_analyzer->node_data->setType($stmt, $result_type);
@@ -78,22 +82,6 @@ class NonComparisonOpAnalyzer
                 $stmt->left,
                 $stmt->right,
                 'nondivop'
-            );
-
-            return;
-        }
-
-        if ($stmt instanceof PhpParser\Node\Expr\BinaryOp\BitwiseXor) {
-            if ($stmt_left_type->hasBool() || $stmt_right_type->hasBool()) {
-                $statements_analyzer->node_data->setType($stmt, Type::getInt());
-            }
-
-            BinaryOpAnalyzer::addDataFlow(
-                $statements_analyzer,
-                $stmt,
-                $stmt->left,
-                $stmt->right,
-                'xor'
             );
 
             return;
@@ -127,7 +115,7 @@ class NonComparisonOpAnalyzer
             );
 
             if (!$result_type) {
-                $result_type = new Type\Union([new Type\Atomic\TInt(), new Type\Atomic\TFloat()]);
+                $result_type = new Union([new TInt(), new TFloat()]);
             }
 
             $statements_analyzer->node_data->setType($stmt, $result_type);
@@ -141,26 +129,6 @@ class NonComparisonOpAnalyzer
             );
 
             return;
-        }
-
-        if ($stmt instanceof PhpParser\Node\Expr\BinaryOp\BitwiseOr) {
-            ArithmeticOpAnalyzer::analyze(
-                $statements_analyzer,
-                $statements_analyzer->node_data,
-                $stmt->left,
-                $stmt->right,
-                $stmt,
-                $result_type,
-                $context
-            );
-
-            BinaryOpAnalyzer::addDataFlow(
-                $statements_analyzer,
-                $stmt,
-                $stmt->left,
-                $stmt->right,
-                'or'
-            );
         }
     }
 }

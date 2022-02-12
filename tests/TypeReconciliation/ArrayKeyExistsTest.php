@@ -1,19 +1,24 @@
 <?php
+
 namespace Psalm\Tests\TypeReconciliation;
 
-class ArrayKeyExistsTest extends \Psalm\Tests\TestCase
+use Psalm\Tests\TestCase;
+use Psalm\Tests\Traits\InvalidCodeAnalysisTestTrait;
+use Psalm\Tests\Traits\ValidCodeAnalysisTestTrait;
+
+class ArrayKeyExistsTest extends TestCase
 {
-    use \Psalm\Tests\Traits\ValidCodeAnalysisTestTrait;
-    use \Psalm\Tests\Traits\InvalidCodeAnalysisTestTrait;
+    use ValidCodeAnalysisTestTrait;
+    use InvalidCodeAnalysisTestTrait;
 
     /**
-     * @return iterable<string,array{string,assertions?:array<string,string>,error_levels?:string[]}>
+     * @return iterable<string,array{code:string,assertions?:array<string,string>,ignored_issues?:list<string>}>
      */
     public function providerValidCodeParse(): iterable
     {
         return [
             'arrayKeyExistsOnStringArrayShouldInformArrayness' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param string[] $a
                      * @return array{b: string}
@@ -27,7 +32,7 @@ class ArrayKeyExistsTest extends \Psalm\Tests\TestCase
                     }'
             ],
              'arrayKeyExistsThrice' => [
-                '<?php
+                'code' => '<?php
                     function three(array $a): void {
                         if (!array_key_exists("a", $a)
                             || !array_key_exists("b", $a)
@@ -44,7 +49,7 @@ class ArrayKeyExistsTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'arrayKeyExistsTwice' => [
-                '<?php
+                'code' => '<?php
                     function two(array $a): void {
                         if (!array_key_exists("a", $a) || !(is_string($a["a"]) || is_int($a["a"])) ||
                             !array_key_exists("b", $a) || !(is_string($a["b"]) || is_int($a["b"]))
@@ -57,7 +62,7 @@ class ArrayKeyExistsTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'assertConstantOffsetsInMethod' => [
-                '<?php
+                'code' => '<?php
                     class C {
                         public const ARR = [
                             "a" => ["foo" => true],
@@ -72,11 +77,11 @@ class ArrayKeyExistsTest extends \Psalm\Tests\TestCase
                             return self::ARR[$key]["foo"];
                         }
                     }',
-                [],
-                ['MixedReturnStatement', 'MixedInferredReturnType'],
+                'assertions' => [],
+                'ignored_issues' => ['MixedReturnStatement', 'MixedInferredReturnType'],
             ],
             'assertSelfClassConstantOffsetsInFunction' => [
-                '<?php
+                'code' => '<?php
                     namespace Ns;
 
                     class C {
@@ -93,11 +98,11 @@ class ArrayKeyExistsTest extends \Psalm\Tests\TestCase
                             return self::ARR[$key]["foo"];
                         }
                     }',
-                [],
-                ['MixedReturnStatement', 'MixedInferredReturnType'],
+                'assertions' => [],
+                'ignored_issues' => ['MixedReturnStatement', 'MixedInferredReturnType'],
             ],
             'assertNamedClassConstantOffsetsInFunction' => [
-                '<?php
+                'code' => '<?php
                     namespace Ns;
 
                     class C {
@@ -114,11 +119,11 @@ class ArrayKeyExistsTest extends \Psalm\Tests\TestCase
 
                         return C::ARR[$key]["foo"];
                     }',
-                [],
-                ['MixedReturnStatement', 'MixedInferredReturnType'],
+                'assertions' => [],
+                'ignored_issues' => ['MixedReturnStatement', 'MixedInferredReturnType'],
             ],
             'possiblyUndefinedArrayAccessWithArrayKeyExists' => [
-                '<?php
+                'code' => '<?php
                     if (rand(0,1)) {
                       $a = ["a" => 1];
                     } else {
@@ -130,7 +135,7 @@ class ArrayKeyExistsTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'arrayKeyExistsShoudldNotModifyIntType' => [
-                '<?php
+                'code' => '<?php
                     class HttpError {
                         const ERRS = [
                             403 => "a",
@@ -148,7 +153,7 @@ class ArrayKeyExistsTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'arrayKeyExistsWithClassConst' => [
-                '<?php
+                'code' => '<?php
                     class C {}
                     class D {}
 
@@ -166,7 +171,7 @@ class ArrayKeyExistsTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'constantArrayKeyExistsWithClassConstant' => [
-                '<?php
+                'code' => '<?php
                     class Foo {
                         public const F = "key";
                     }
@@ -179,7 +184,7 @@ class ArrayKeyExistsTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'assertTypeNarrowedByNestedIsset' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @psalm-suppress MixedMethodCall
                      * @psalm-suppress MixedArgument
@@ -195,7 +200,7 @@ class ArrayKeyExistsTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'assertArrayKeyExistsRefinesType' => [
-                '<?php
+                'code' => '<?php
                     class Foo {
                         /** @var array<int,string> */
                         public const DAYS = [
@@ -223,7 +228,7 @@ class ArrayKeyExistsTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'arrayKeyExistsInferString' => [
-                '<?php
+                'code' => '<?php
                     function foo(mixed $file) : string {
                         /** @psalm-suppress MixedArgument */
                         if (array_key_exists($file, ["a" => 1, "b" => 2])) {
@@ -232,12 +237,12 @@ class ArrayKeyExistsTest extends \Psalm\Tests\TestCase
 
                         return "";
                     }',
-                [],
-                [],
-                '8.0'
+                'assertions' => [],
+                'ignored_issues' => [],
+                'php_version' => '8.0'
             ],
             'arrayKeyExistsComplex' => [
-                '<?php
+                'code' => '<?php
                     class A {
                         private const MAP = [
                             "a" => 1,
@@ -259,7 +264,7 @@ class ArrayKeyExistsTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'arrayKeyExistsAccess' => [
-                '<?php
+                'code' => '<?php
                     /** @param array<int, string> $arr */
                     function foo(array $arr) : void {
                         if (array_key_exists(1, $arr)) {
@@ -268,7 +273,7 @@ class ArrayKeyExistsTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'arrayKeyExistsVariable' => [
-                '<?php
+                'code' => '<?php
                     class pony
                     {
                     }
@@ -286,7 +291,7 @@ class ArrayKeyExistsTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'noCrashOnArrayKeyExistsBracket' => [
-                '<?php
+                'code' => '<?php
                     class MyCollection {
                         /**
                          * @param int $commenter
@@ -312,13 +317,13 @@ class ArrayKeyExistsTest extends \Psalm\Tests\TestCase
                         }
                     }',
                 'assertions' => [],
-                'error_levels' => [
+                'ignored_issues' => [
                     'MixedArrayAccess', 'MixedAssignment', 'MixedArrayOffset',
                     'MixedArgument',
                 ],
             ],
             'arrayKeyExistsTwoVars' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param array{a: string, b: string, c?: string} $info
                      */
@@ -331,7 +336,7 @@ class ArrayKeyExistsTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'allowIntKeysToo' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param array<1|2|3, string> $arr
                      * @return 1|2|3
@@ -346,7 +351,7 @@ class ArrayKeyExistsTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'comparesStringAndAllIntKeysCorrectly' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param array<1|2|3, string> $arr
                      * @return bool
@@ -360,7 +365,7 @@ class ArrayKeyExistsTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'comparesStringAndAllIntKeysCorrectlyNegated' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param array<1|2|3, string> $arr
                      * @return bool
@@ -373,17 +378,46 @@ class ArrayKeyExistsTest extends \Psalm\Tests\TestCase
                         return true;
                     }'
             ],
+            'arrayKeyExistsAssertBothWays' => [
+                'code' => '<?php
+                    class a {
+                        const STATE_A = 0;
+                        const STATE_B = 1;
+                        const STATE_C = 2;
+                        /**
+                         * @return array<self::STATE_*, non-empty-string>
+                         * @psalm-pure
+                         */
+                        public static function getStateLabels(): array {
+                            return [
+                                self::STATE_A => "A",
+                                self::STATE_B => "B",
+                                self::STATE_C => "C",
+                            ];
+                        }
+                        /**
+                         * @param self::STATE_* $state
+                         */
+                        public static function getStateLabelIf(int $state): string {
+                            $states = self::getStateLabels();
+                            if (array_key_exists($state, $states)) {
+                                return $states[$state];
+                            }
+                            return "";
+                        }
+                    }'
+            ],
         ];
     }
 
     /**
-     * @return iterable<string,array{string,error_message:string,1?:string[],2?:bool,3?:string}>
+     * @return iterable<string,array{code:string,error_message:string,ignored_issues?:list<string>,php_version?:string}>
      */
     public function providerInvalidCodeParse(): iterable
     {
         return [
             'possiblyUndefinedArrayAccessWithArrayKeyExistsOnWrongKey' => [
-                '<?php
+                'code' => '<?php
                     if (rand(0,1)) {
                       $a = ["a" => 1];
                     } else {
@@ -396,7 +430,7 @@ class ArrayKeyExistsTest extends \Psalm\Tests\TestCase
                 'error_message' => 'PossiblyUndefinedArrayOffset',
             ],
             'possiblyUndefinedArrayAccessWithArrayKeyExistsOnMissingKey' => [
-                '<?php
+                'code' => '<?php
                     if (rand(0,1)) {
                       $a = ["a" => 1];
                     } else {
@@ -409,7 +443,7 @@ class ArrayKeyExistsTest extends \Psalm\Tests\TestCase
                 'error_message' => 'PossiblyUndefinedArrayOffset',
             ],
             'dontCreateWeirdString' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @psalm-param array{inner:string} $options
                      */

@@ -2,10 +2,13 @@
 
 namespace Psalm\Tests;
 
+use Psalm\Tests\Traits\InvalidCodeAnalysisTestTrait;
+use Psalm\Tests\Traits\ValidCodeAnalysisTestTrait;
+
 class ExtensionRequirementTest extends TestCase
 {
-    use Traits\ValidCodeAnalysisTestTrait;
-    use Traits\InvalidCodeAnalysisTestTrait;
+    use ValidCodeAnalysisTestTrait;
+    use InvalidCodeAnalysisTestTrait;
 
     public function setUp(): void
     {
@@ -37,7 +40,7 @@ class ExtensionRequirementTest extends TestCase
     {
         return [
             'extendsBaseClass' => [
-                '<?php
+                'code' => '<?php
                     use ExtensionRequirements\Base\MyBaseClass;
                     use ExtensionRequirements\Trait\ImposesExtensionRequirements;
 
@@ -53,7 +56,7 @@ class ExtensionRequirementTest extends TestCase
     {
         return [
             'extendsBaseClass' => [
-                '<?php
+                'code' => '<?php
                     use ExtensionRequirements\Trait\ImposesExtensionRequirements;
 
                     class Invalid {

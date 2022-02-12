@@ -1,4 +1,5 @@
 <?php
+
 namespace Psalm\Type\Atomic;
 
 use Psalm\Codebase;
@@ -59,9 +60,7 @@ class TObjectWithProperties extends TObject
                 /**
                  * @param  string|int $name
                  */
-                static function ($name, Union $type): string {
-                    return $name . ($type->possibly_undefined ? '?' : '') . ':' . $type;
-                },
+                static fn($name, Union $type): string => $name . ($type->possibly_undefined ? '?' : '') . ':' . $type,
                 array_keys($this->properties),
                 $this->properties
             )
@@ -70,9 +69,7 @@ class TObjectWithProperties extends TObject
         $methods_string = implode(
             ', ',
             array_map(
-                static function (string $name): string {
-                    return $name . '()';
-                },
+                static fn(string $name): string => $name . '()',
                 array_keys($this->methods)
             )
         );
@@ -97,9 +94,7 @@ class TObjectWithProperties extends TObject
                 /**
                  * @param  string|int $name
                  */
-                static function ($name, Union $type): string {
-                    return $name . ($type->possibly_undefined ? '?' : '') . ':' . $type->getId();
-                },
+                static fn($name, Union $type): string => $name . ($type->possibly_undefined ? '?' : '') . ':' . $type->getId(),
                 array_keys($this->properties),
                 $this->properties
             )
@@ -108,9 +103,7 @@ class TObjectWithProperties extends TObject
         $methods_string = implode(
             ', ',
             array_map(
-                static function (string $name): string {
-                    return $name . '()';
-                },
+                static fn(string $name): string => $name . '()',
                 array_keys($this->methods)
             )
         );
@@ -142,22 +135,16 @@ class TObjectWithProperties extends TObject
                         /**
                          * @param  string|int $name
                          */
-                        static function (
-                            $name,
-                            Union $type
-                        ) use (
-                            $namespace,
-                            $aliased_classes,
-                            $this_class,
-                            $use_phpdoc_format
-                        ): string {
-                            return $name . ($type->possibly_undefined ? '?' : '') . ':' . $type->toNamespacedString(
+                        static fn($name, Union $type): string =>
+                            $name .
+                            ($type->possibly_undefined ? '?' : '')
+                            . ':'
+                            . $type->toNamespacedString(
                                 $namespace,
                                 $aliased_classes,
                                 $this_class,
-                                $use_phpdoc_format
-                            );
-                        },
+                                false
+                            ),
                         array_keys($this->properties),
                         $this->properties
                     )
@@ -172,13 +159,12 @@ class TObjectWithProperties extends TObject
         ?string $namespace,
         array $aliased_classes,
         ?string $this_class,
-        int $php_major_version,
-        int $php_minor_version
+        int $analysis_php_version_id
     ): string {
         return $this->getKey();
     }
 
-    public function canBeFullyExpressedInPhp(int $php_major_version, int $php_minor_version): bool
+    public function canBeFullyExpressedInPhp(int $analysis_php_version_id): bool
     {
         return false;
     }
@@ -219,7 +205,7 @@ class TObjectWithProperties extends TObject
 
     public function replaceTemplateTypesWithStandins(
         TemplateResult $template_result,
-        ?Codebase $codebase = null,
+        Codebase $codebase,
         ?StatementsAnalyzer $statements_analyzer = null,
         ?Atomic $input_type = null,
         ?int $input_arg_offset = null,
@@ -228,13 +214,13 @@ class TObjectWithProperties extends TObject
         bool $replace = true,
         bool $add_lower_bound = false,
         int $depth = 0
-    ) : Atomic {
+    ): Atomic {
         $object_like = clone $this;
 
         foreach ($this->properties as $offset => $property) {
             $input_type_param = null;
 
-            if ($input_type instanceof Atomic\TKeyedArray
+            if ($input_type instanceof TKeyedArray
                 && isset($input_type->properties[$offset])
             ) {
                 $input_type_param = $input_type->properties[$offset];
@@ -262,7 +248,7 @@ class TObjectWithProperties extends TObject
     public function replaceTemplateTypesWithArgTypes(
         TemplateResult $template_result,
         ?Codebase $codebase
-    ) : void {
+    ): void {
         foreach ($this->properties as $property) {
             TemplateInferredTypeReplacer::replace(
                 $property,
@@ -272,12 +258,12 @@ class TObjectWithProperties extends TObject
         }
     }
 
-    public function getChildNodes() : array
+    public function getChildNodes(): array
     {
         return array_merge($this->properties, $this->extra_types !== null ? array_values($this->extra_types) : []);
     }
 
-    public function getAssertionString(bool $exact = false): string
+    public function getAssertionString(): string
     {
         return $this->getKey();
     }

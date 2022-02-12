@@ -1,11 +1,14 @@
 <?php
+
 namespace Psalm\Internal\Provider;
 
+use JsonException;
 use PhpParser;
+use PhpParser\Node\Stmt;
 use Psalm\Config;
+use RuntimeException;
 
 use function error_log;
-use function file_exists;
 use function file_get_contents;
 use function file_put_contents;
 use function filemtime;
@@ -29,6 +32,7 @@ use function unserialize;
 
 use const DIRECTORY_SEPARATOR;
 use const E_USER_ERROR;
+use const JSON_THROW_ON_ERROR;
 use const SCANDIR_SORT_NONE;
 
 /**
@@ -70,8 +74,6 @@ class ParserCacheProvider
 
     /**
      * @return list<PhpParser\Node\Stmt>|null
-     *
-     * @psalm-suppress UndefinedFunction
      */
     public function loadStatementsFromCache(
         string $file_path,
@@ -100,10 +102,10 @@ class ParserCacheProvider
             && filemtime($cache_location) > $file_modified_time
         ) {
             if ($this->use_igbinary) {
-                /** @var list<\PhpParser\Node\Stmt> */
+                /** @var list<Stmt> */
                 $stmts = igbinary_unserialize((string)file_get_contents($cache_location));
             } else {
-                /** @var list<\PhpParser\Node\Stmt> */
+                /** @var list<Stmt> */
                 $stmts = unserialize((string)file_get_contents($cache_location));
             }
 
@@ -115,8 +117,6 @@ class ParserCacheProvider
 
     /**
      * @return list<PhpParser\Node\Stmt>|null
-     *
-     * @psalm-suppress UndefinedFunction
      */
     public function loadExistingStatementsFromCache(string $file_path): ?array
     {
@@ -136,11 +136,11 @@ class ParserCacheProvider
 
         if (is_readable($cache_location)) {
             if ($this->use_igbinary) {
-                /** @var list<\PhpParser\Node\Stmt> */
+                /** @var list<Stmt> */
                 return igbinary_unserialize((string)file_get_contents($cache_location)) ?: null;
             }
 
-            /** @var list<\PhpParser\Node\Stmt> */
+            /** @var list<Stmt> */
             return unserialize((string)file_get_contents($cache_location)) ?: null;
         }
 
@@ -195,7 +195,14 @@ class ParserCacheProvider
                     return [];
                 }
 
-                $hashes_decoded = json_decode($hashes_encoded, true);
+                try {
+                    $hashes_decoded = json_decode($hashes_encoded, true, 512, JSON_THROW_ON_ERROR);
+                } catch (JsonException $e) {
+                    error_log('Failed to parse hashes: ' . $e->getMessage());
+                    $this->existing_file_content_hashes = [];
+
+                    return [];
+                }
 
                 if (!is_array($hashes_decoded)) {
                     error_log('Unexpected value ' . gettype($hashes_decoded));
@@ -216,9 +223,6 @@ class ParserCacheProvider
 
     /**
      * @param  list<PhpParser\Node\Stmt>        $stmts
-     *
-     *
-     * @psalm-suppress UndefinedFunction
      */
     public function saveStatementsToCache(
         string $file_path,
@@ -286,7 +290,7 @@ class ParserCacheProvider
 
         file_put_contents(
             $file_hashes_path,
-            json_encode($file_content_hashes)
+            json_encode($file_content_hashes, JSON_THROW_ON_ERROR)
         );
     }
 
@@ -319,7 +323,7 @@ class ParserCacheProvider
     {
         $cache_directory = Config::getInstance()->getCacheDirectory();
 
-        if ($cache_directory) {
+        if (!$cache_directory) {
             return 0;
         }
 
@@ -347,57 +351,6 @@ class ParserCacheProvider
         return $removed_count;
     }
 
-    public function processSuccessfulRun(): void
-    {
-        $cache_directory = Config::getInstance()->getCacheDirectory();
-
-        if (!$cache_directory) {
-            return;
-        }
-
-        $cache_directory .= DIRECTORY_SEPARATOR . self::PARSER_CACHE_DIRECTORY;
-
-        if (is_dir($cache_directory)) {
-            $directory_files = scandir($cache_directory, SCANDIR_SORT_NONE);
-
-            foreach ($directory_files as $directory_file) {
-                $full_path = $cache_directory . DIRECTORY_SEPARATOR . $directory_file;
-
-                if ($directory_file[0] === '.') {
-                    continue;
-                }
-
-                touch($full_path);
-            }
-        }
-    }
-
-    /**
-     * @param  array<string>    $file_names
-     */
-    public function touchParserCaches(array $file_names, int $min_time): void
-    {
-        $cache_directory = Config::getInstance()->getCacheDirectory();
-
-        if (!$cache_directory) {
-            return;
-        }
-
-        $cache_directory .= DIRECTORY_SEPARATOR . self::PARSER_CACHE_DIRECTORY;
-
-        if (is_dir($cache_directory)) {
-            foreach ($file_names as $file_name) {
-                $hash_file_name = $cache_directory . DIRECTORY_SEPARATOR . $this->getParserCacheKey($file_name);
-
-                if (file_exists($hash_file_name)) {
-                    if (filemtime($hash_file_name) < $min_time) {
-                        touch($hash_file_name, $min_time);
-                    }
-                }
-            }
-        }
-    }
-
     private function getParserCacheKey(string $file_name): string
     {
         return md5($file_name) . ($this->use_igbinary ? '-igbinary' : '') . '-r';
@@ -408,7 +361,7 @@ class ParserCacheProvider
         if (!is_dir($parser_cache_directory)) {
             try {
                 mkdir($parser_cache_directory, 0777, true);
-            } catch (\RuntimeException $e) {
+            } catch (RuntimeException $e) {
                 // Race condition (#4483)
                 if (!is_dir($parser_cache_directory)) {
                     trigger_error('Could not create parser cache directory: ' . $parser_cache_directory, E_USER_ERROR);

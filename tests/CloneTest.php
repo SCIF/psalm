@@ -4,19 +4,22 @@ declare(strict_types=1);
 
 namespace Psalm\Tests;
 
+use Psalm\Tests\Traits\InvalidCodeAnalysisTestTrait;
+use Psalm\Tests\Traits\ValidCodeAnalysisTestTrait;
+
 class CloneTest extends TestCase
 {
-    use Traits\InvalidCodeAnalysisTestTrait;
-    use Traits\ValidCodeAnalysisTestTrait;
+    use InvalidCodeAnalysisTestTrait;
+    use ValidCodeAnalysisTestTrait;
 
     /**
-     * @return iterable<string,array{string,assertions?:array<string,string>,error_levels?:string[]}>
+     * @return iterable<string,array{code:string,assertions?:array<string,string>,ignored_issues?:list<string>}>
      */
     public function providerValidCodeParse(): iterable
     {
         return [
             'cloneCorrect' => [
-                '<?php
+                'code' => '<?php
                     class A {}
                     function foo(A $a) : A {
                         return clone $a;
@@ -24,7 +27,7 @@ class CloneTest extends TestCase
                     $a = foo(new A());',
             ],
             'cloneCorrectWithPublicMethod' => [
-                '<?php
+                'code' => '<?php
                     class A {
                         public function __clone() {}
                     }
@@ -34,7 +37,7 @@ class CloneTest extends TestCase
                     foo(new A());',
             ],
             'clonePrivateInternally' => [
-                '<?php
+                'code' => '<?php
                     class A {
                         private function __clone() {}
                         public function foo(): self {
@@ -46,32 +49,32 @@ class CloneTest extends TestCase
     }
 
     /**
-     * @return iterable<string,array{string,error_message:string,1?:string[],2?:bool,3?:string}>
+     * @return iterable<string,array{code:string,error_message:string,ignored_issues?:list<string>,php_version?:string}>
      */
     public function providerInvalidCodeParse(): iterable
     {
         return [
             'invalidIntClone' => [
-                '<?php
+                'code' => '<?php
                     $a = 5;
                     clone $a;',
                 'error_message' => 'InvalidClone',
             ],
             'possiblyInvalidIntClone' => [
-                '<?php
+                'code' => '<?php
                     $a = rand(0, 1) ? 5 : new Exception();
                     clone $a;',
                 'error_message' => 'PossiblyInvalidClone',
             ],
             'invalidMixedClone' => [
-                '<?php
+                'code' => '<?php
                     /** @var mixed $a */
                     $a = 5;
                     clone $a;',
                 'error_message' => 'MixedClone',
             ],
             'notVisibleCloneMethod' => [
-                '<?php
+                'code' => '<?php
                     class A {
                         private function __clone() {}
                     }
@@ -80,7 +83,7 @@ class CloneTest extends TestCase
                 'error_message' => 'InvalidClone',
             ],
             'invalidGenericClone' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @template T as int|string
                      * @param T $a
@@ -91,7 +94,7 @@ class CloneTest extends TestCase
                 'error_message' => 'InvalidClone',
             ],
             'possiblyInvalidGenericClone' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @template T as int|Exception
                      * @param T $a
@@ -102,7 +105,7 @@ class CloneTest extends TestCase
                 'error_message' => 'PossiblyInvalidClone',
             ],
             'mixedGenericClone' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @template T
                      * @param T $a
@@ -113,7 +116,7 @@ class CloneTest extends TestCase
                 'error_message' => 'MixedClone',
             ],
             'mixedTypeInferredIfErrors' => [
-                '<?php
+                'code' => '<?php
                     class A {}
                     /**
                      * @param A|string $a
@@ -127,7 +130,7 @@ class CloneTest extends TestCase
                 'error_message' => 'MixedAssignment',
             ],
             'missingClass' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @psalm-suppress UndefinedDocblockClass
                      * @psalm-suppress InvalidReturnType

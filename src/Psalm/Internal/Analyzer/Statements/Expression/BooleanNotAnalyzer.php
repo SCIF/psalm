@@ -1,4 +1,5 @@
 <?php
+
 namespace Psalm\Internal\Analyzer\Statements\Expression;
 
 use PhpParser;
@@ -7,13 +8,16 @@ use Psalm\Internal\Analyzer\Statements\ExpressionAnalyzer;
 use Psalm\Internal\Analyzer\StatementsAnalyzer;
 use Psalm\Type;
 
+/**
+ * @internal
+ */
 class BooleanNotAnalyzer
 {
     public static function analyze(
         StatementsAnalyzer $statements_analyzer,
         PhpParser\Node\Expr\BooleanNot $stmt,
         Context $context
-    ) : bool {
+    ): bool {
 
 
         $inside_negation = $context->inside_negation;

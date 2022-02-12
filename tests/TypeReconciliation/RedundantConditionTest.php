@@ -1,21 +1,26 @@
 <?php
+
 namespace Psalm\Tests\TypeReconciliation;
+
+use Psalm\Tests\TestCase;
+use Psalm\Tests\Traits\InvalidCodeAnalysisTestTrait;
+use Psalm\Tests\Traits\ValidCodeAnalysisTestTrait;
 
 use const DIRECTORY_SEPARATOR;
 
-class RedundantConditionTest extends \Psalm\Tests\TestCase
+class RedundantConditionTest extends TestCase
 {
-    use \Psalm\Tests\Traits\ValidCodeAnalysisTestTrait;
-    use \Psalm\Tests\Traits\InvalidCodeAnalysisTestTrait;
+    use ValidCodeAnalysisTestTrait;
+    use InvalidCodeAnalysisTestTrait;
 
     /**
-     * @return iterable<string,array{string,assertions?:array<string,string>,error_levels?:string[]}>
+     * @return iterable<string,array{code:string,assertions?:array<string,string>,ignored_issues?:list<string>}>
      */
     public function providerValidCodeParse(): iterable
     {
         return [
             'ignoreIssueAndAssign' => [
-                '<?php
+                'code' => '<?php
                     function foo(): stdClass {
                         return new stdClass;
                     }
@@ -32,10 +37,10 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                 'assertions' => [
                     '$b' => 'null|stdClass',
                 ],
-                'error_levels' => ['RedundantCondition'],
+                'ignored_issues' => ['RedundantCondition'],
             ],
             'byrefNoRedundantCondition' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param int $min ref
                      * @param int $other
@@ -50,13 +55,13 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                         }
                     }',
                 'assertions' => [],
-                'error_levels' => [
+                'ignored_issues' => [
                     'RedundantConditionGivenDocblockType',
                     'DocblockTypeContradiction',
                 ],
             ],
             'assignmentInIf' => [
-                '<?php
+                'code' => '<?php
                     function test(int $x = null): int {
                         if (!$x && !($x = rand(0, 10))) {
                             echo "Failed to get non-empty x\n";
@@ -66,7 +71,7 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'noRedundantConditionAfterAssignment' => [
-                '<?php
+                'code' => '<?php
                     /** @param int $i */
                     function foo($i): void {
                         /** @psalm-suppress RedundantConditionGivenDocblockType */
@@ -80,7 +85,7 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                 'assertions' => [],
             ],
             'noRedundantConditionAfterDocblockTypeNullCheck' => [
-                '<?php
+                'code' => '<?php
                     class A {
                         /** @var ?int */
                         public $foo;
@@ -105,10 +110,10 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                         }
                     }',
                 'assertions' => [],
-                'error_levels' => ['DocblockTypeContradiction'],
+                'ignored_issues' => ['DocblockTypeContradiction'],
             ],
             'noRedundantConditionTypeReplacementWithDocblock' => [
-                '<?php
+                'code' => '<?php
                     class A {}
 
                     /**
@@ -126,22 +131,22 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
 
                     if ($maybe_a === null) {}',
                 'assertions' => [],
-                'error_levels' => [
+                'ignored_issues' => [
                     'DocblockTypeContradiction',
                 ],
             ],
             'noRedundantConditionAfterPossiblyNullCheck' => [
-                '<?php
+                'code' => '<?php
                     if (rand(0, 1)) {
                         $a = "hello";
                     }
 
                     if ($a) {}',
                 'assertions' => [],
-                'error_levels' => ['PossiblyUndefinedGlobalVariable'],
+                'ignored_issues' => ['PossiblyUndefinedGlobalVariable'],
             ],
             'noRedundantConditionAfterFromDocblockRemoval' => [
-                '<?php
+                'code' => '<?php
                     class A {
                         public function foo(): bool {
                             return (bool) rand(0, 1);
@@ -164,12 +169,12 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
 
                     if ($a->foo() || $a->bar()) {}',
                 'assertions' => [],
-                'error_levels' => [
+                'ignored_issues' => [
                     'DocblockTypeContradiction',
                 ],
             ],
             'noEmptyUndefinedArrayVar' => [
-                '<?php
+                'code' => '<?php
                     if (rand(0,1)) {
                       /** @psalm-suppress UndefinedGlobalVariable */
                       $a = $b[0];
@@ -178,16 +183,16 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                     }
                     if ($a) {}',
                 'assertions' => [],
-                'error_levels' => ['MixedAssignment', 'MixedArrayAccess'],
+                'ignored_issues' => ['MixedAssignment', 'MixedArrayAccess'],
             ],
             'noComplaintWithIsNumericThenIsEmpty' => [
-                '<?php
+                'code' => '<?php
                     function takesString(string $s): void {
                       if (!is_numeric($s) || empty($s)) {}
                     }',
             ],
             'noRedundantConditionOnTryCatchVars' => [
-                '<?php
+                'code' => '<?php
                     function trycatch(): void {
                         $value = null;
                         try {
@@ -208,12 +213,12 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'noRedundantConditionInFalseCheck' => [
-                '<?php
+                'code' => '<?php
                     $ch = curl_init();
                     if (!$ch) {}',
             ],
             'noRedundantConditionInForCheck' => [
-                '<?php
+                'code' => '<?php
                     class Node
                     {
                         /** @var Node|null */
@@ -226,7 +231,7 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'noRedundantConditionComparingBool' => [
-                '<?php
+                'code' => '<?php
                     function getBool(): bool {
                       return (bool)rand(0, 1);
                     }
@@ -236,7 +241,7 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'evaluateElseifProperly' => [
-                '<?php
+                'code' => '<?php
                     /** @param string $str */
                     function foo($str): int {
                       if (is_null($str)) {
@@ -247,13 +252,13 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                       return 2;
                     }',
                 'assertions' => [],
-                'error_levels' => [
+                'ignored_issues' => [
                     'DocblockTypeContradiction',
                     'RedundantConditionGivenDocblockType',
                 ],
             ],
             'evaluateArrayCheck' => [
-                '<?php
+                'code' => '<?php
                     function array_check(): void {
                         $data = ["f" => false];
                         while (rand(0, 1) > 0 && !$data["f"]) {
@@ -262,7 +267,7 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'mixedArrayAssignment' => [
-                '<?php
+                'code' => '<?php
                     /** @param mixed $arr */
                     function foo($arr): void {
                      if ($arr["a"] === false) {
@@ -272,10 +277,10 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                       }
                     }',
                 'assertions' => [],
-                'error_levels' => ['MixedAssignment', 'MixedArrayAccess'],
+                'ignored_issues' => ['MixedAssignment', 'MixedArrayAccess'],
             ],
             'hardPhpTypeAssertionsOnDocblockBoolType' => [
-                '<?php
+                'code' => '<?php
                     /** @param bool|null $bar */
                     function foo($bar): void {
                         if (!is_null($bar) && !is_bool($bar)) {
@@ -285,10 +290,10 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                         if ($bar !== null) {}
                     }',
                 'assertions' => [],
-                'error_levels' => ['DocblockTypeContradiction'],
+                'ignored_issues' => ['DocblockTypeContradiction'],
             ],
             'hardPhpTypeAssertionsOnDocblockStringType' => [
-                '<?php
+                'code' => '<?php
                     /** @param string|null $bar */
                     function foo($bar): void {
                         if (!is_null($bar) && !is_string($bar)) {
@@ -298,10 +303,10 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                         if ($bar !== null) {}
                     }',
                 'assertions' => [],
-                'error_levels' => ['DocblockTypeContradiction'],
+                'ignored_issues' => ['DocblockTypeContradiction'],
             ],
             'isObjectAssertionOnDocblockType' => [
-                '<?php
+                'code' => '<?php
                     class A {}
                     class B {}
 
@@ -320,10 +325,10 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                         }
                     }',
                 'assertions' => [],
-                'error_levels' => ['RedundantConditionGivenDocblockType', 'DocblockTypeContradiction'],
+                'ignored_issues' => ['RedundantConditionGivenDocblockType', 'DocblockTypeContradiction'],
             ],
             'nullToMixedWithNullCheckWithArraykey' => [
-                '<?php
+                'code' => '<?php
                     /** @return array<array-key, mixed> */
                     function getStrings(): array {
                         return ["hello", "world", 50];
@@ -333,10 +338,10 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
 
                     if (is_string($a[0]) && strlen($a[0]) > 3) {}',
                 'assignments' => [],
-                'error_levels' => [],
+                'ignored_issues' => [],
             ],
             'nullToMixedWithNullCheckWithIntKey' => [
-                '<?php
+                'code' => '<?php
                     /** @return array<int, mixed> */
                     function getStrings(): array {
                         return ["hello", "world", 50];
@@ -346,10 +351,10 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
 
                     if (is_string($a[0]) && strlen($a[0]) > 3) {}',
                 'assignments' => [],
-                'error_levels' => [],
+                'ignored_issues' => [],
             ],
             'replaceFalseTypeWithTrueConditionalOnMixedEquality' => [
-                '<?php
+                'code' => '<?php
                     function getData() {
                         return rand(0, 1) ? [1, 2, 3] : false;
                     }
@@ -364,10 +369,10 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                         if ($a === false) {}
                     }',
                 'assignments' => [],
-                'error_levels' => ['MixedAssignment', 'MissingReturnType', 'MixedArrayAccess'],
+                'ignored_issues' => ['MixedAssignment', 'MissingReturnType', 'MixedArrayAccess'],
             ],
             'nullCoalescePossiblyUndefined' => [
-                '<?php
+                'code' => '<?php
                     if (rand(0,1)) {
                         $options = ["option" => true];
                     }
@@ -377,10 +382,10 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
 
                     if ($option) {}',
                 'assignments' => [],
-                'error_levels' => ['MixedAssignment', 'MixedArrayAccess'],
+                'ignored_issues' => ['MixedAssignment', 'MixedArrayAccess'],
             ],
             'allowIntValueCheckAfterComparisonDueToOverflow' => [
-                '<?php
+                'code' => '<?php
                     function foo(int $x) : void {
                         $x = $x + 1;
 
@@ -402,7 +407,7 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'allowIntValueCheckAfterComparisonDueToOverflowInc' => [
-                '<?php
+                'code' => '<?php
                     function foo(int $x) : void {
                         $x++;
 
@@ -424,7 +429,7 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'allowIntValueCheckAfterComparisonDueToConditionalOverflow' => [
-                '<?php
+                'code' => '<?php
                     function foo(int $x) : void {
                         if (rand(0, 1)) {
                             $x = $x + 1;
@@ -438,7 +443,7 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'changeStringValue' => [
-                '<?php
+                'code' => '<?php
                     $concat = "";
                     foreach (["x", "y"] as $v) {
                         if ($concat != "") {
@@ -448,7 +453,7 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'arrayCanBeEmpty' => [
-                '<?php
+                'code' => '<?php
                     $x = ["key" => "value"];
                     if (rand(0, 1)) {
                         $x = [];
@@ -458,61 +463,61 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'noRedundantConditionStringNotFalse' => [
-                '<?php
+                'code' => '<?php
                     function foo(string $s) : void {
                         if ($s != false ) {}
                     }',
             ],
             'noRedundantConditionStringNotTrue' => [
-                '<?php
+                'code' => '<?php
                     function foo(string $s) : void {
                         if ($s != true ) {}
                     }',
             ],
             'noRedundantConditionBoolNotFalse' => [
-                '<?php
+                'code' => '<?php
                     function foo(bool $s) : void {
                         if ($s !== false ) {}
                     }',
             ],
             'noRedundantConditionBoolNotTrue' => [
-                '<?php
+                'code' => '<?php
                     function foo(bool $s) : void {
                         if ($s !== true ) {}
                     }',
             ],
             'noRedundantConditionNullableBoolIsFalseOrTrue' => [
-                '<?php
+                'code' => '<?php
                     function foo(?bool $s) : void {
                         if ($s === false ) {} elseif ($s === true) {}
                     }',
             ],
             'noRedundantConditionNullableBoolIsTrueOrFalse' => [
-                '<?php
+                'code' => '<?php
                     function foo(?bool $s) : void {
                         if ($s === true ) {} elseif ($s === false) {}
                     }',
             ],
             'noRedundantConditionAfterCheckingMixedTwice' => [
-                '<?php
+                'code' => '<?php
                     function foo($a) : void {
                         $b = $a ? 1 : 0;
                         $c = $a ? 1 : 0;
                     }',
-                [],
-                'error_levels' => ['MissingParamType'],
+                'assertions' => [],
+                'ignored_issues' => ['MissingParamType'],
             ],
             'notAlwaysTrueBinaryOp' => [
-                '<?php
+                'code' => '<?php
                     function foo ($a) : void {
                         if (!$a) {}
                         $b = $a && rand(0, 1);
                     }',
-                [],
-                'error_levels' => ['MissingParamType'],
+                'assertions' => [],
+                'ignored_issues' => ['MissingParamType'],
             ],
             'noRedundantConditionAfterAssertingValue' => [
-                '<?php
+                'code' => '<?php
                     function foo(string $t, bool $b) : void {
                         if (!$b && $t === "a") {
                             return;
@@ -528,7 +533,7 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'noRedundantConditionBleed' => [
-                '<?php
+                'code' => '<?php
                     $foo = getopt("i");
                     $i = $foo["i"];
 
@@ -540,7 +545,7 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                     if ($i) {}',
             ],
             'emptyWithoutKnowingArrayType' => [
-                '<?php
+                'code' => '<?php
                     function foo(array $a) : void {
                         if (!empty($a["foo"])) {
                             foreach ($a["foo"] as $key => $_) {
@@ -551,11 +556,11 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                             if (empty($a["foo"])) {}
                         }
                     }',
-                [],
-                ['MixedAssignment', 'MixedArrayAccess', 'MixedArrayOffset'],
+                'assertions' => [],
+                'ignored_issues' => ['MixedAssignment', 'MixedArrayAccess', 'MixedArrayOffset'],
             ],
             'emptyKnowingArrayType' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param array<string, array<string, int>> $a
                      */
@@ -571,7 +576,7 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'suppressRedundantConditionAfterAssertNonEmpty' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param array<int> $a
                      */
@@ -582,7 +587,7 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'allowChecksOnFalsyIf' => [
-                '<?php
+                'code' => '<?php
                     function foo(?string $s) : string {
                         if ($s == null) {
                             if ($s === null) {}
@@ -594,7 +599,7 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'updateArrayAfterUnset' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param string[] $arr
                      */
@@ -605,7 +610,7 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'updateArrayAfterUnsetInLoop' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param string[] $arr
                      */
@@ -620,7 +625,7 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'noRedundantConditionWhenAssertingOnIntersection' => [
-                '<?php
+                'code' => '<?php
                     class A {}
                     interface I {}
                     class AChild extends A implements I {}
@@ -638,7 +643,7 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'noRedundantConditionWhenAssertingOnIntersectionFlipped' => [
-                '<?php
+                'code' => '<?php
                     class A {}
                     interface I {}
                     class AChild extends A implements I {}
@@ -653,7 +658,7 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'noRedundantConditionWhenAssertingOnIntersectionOfInterfaces' => [
-                '<?php
+                'code' => '<?php
                     interface A {}
                     interface I {}
                     class AChild implements I, A {}
@@ -671,7 +676,7 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'noRedundantConditionWithUnionOfInterfaces' => [
-                '<?php
+                'code' => '<?php
                     interface One {}
                     interface Two {}
 
@@ -697,7 +702,7 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'invalidateAfterPostIncrement' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param array<int, int> $tokens
                      */
@@ -711,7 +716,7 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'invalidateAfterAssignOp' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param array<int, int> $tokens
                      */
@@ -725,7 +730,7 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'invalidateAfterAssign' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param array<int, int> $tokens
                      */
@@ -739,7 +744,7 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'numericNotString' => [
-                '<?php
+                'code' => '<?php
                     /** @param mixed $value */
                     function test($value) : void {
                         if (!is_numeric($value)) {
@@ -749,7 +754,7 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'checkClosedResource' => [
-                '<?php
+                'code' => '<?php
                     $fp = tmpfile();
 
                     if ($fp) {
@@ -761,12 +766,12 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                     echo var_export([$fp, is_resource($fp), !! $fp], true);
 
                     fclose($fp);',
-                [
+                'assertions' => [
                     '$fp' => 'closed-resource',
                 ]
             ],
             'allowCheckOnReturnTypeUnion' => [
-                '<?php
+                'code' => '<?php
                     /** @return int|string */
                     function returnsInt() {
                         return rand(0, 1) ? 1 : "hello";
@@ -776,7 +781,7 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                     if (!is_int(returnsInt())) {}',
             ],
             'noRedundantConditionInClosureForProperty' => [
-                '<?php
+                'code' => '<?php
                     class Queue {
                         private bool $closed = false;
 
@@ -792,13 +797,13 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'noRedundantCastAfterCalculation' => [
-                '<?php
+                'code' => '<?php
                     function x(string $x): int {
                         return (int) (hexdec($x) + 1);
                     }',
             ],
             'unsetArrayWithKnownOffset' => [
-                '<?php
+                'code' => '<?php
                     function bar(string $f) : void {
                         $filter = rand(0, 1) ? explode(",", $f) : [$f];
                         unset($filter[rand(0, 1)]);
@@ -806,7 +811,7 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'stringInScalar' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @template T of scalar
                      * @param T $value
@@ -817,7 +822,7 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'NumericCanBeFalsy' => [
-                '<?php
+                'code' => '<?php
                     function test(string|int|float|bool $value): bool {
                         if (is_numeric($value) || $value === true) {
                             if ($value) {
@@ -828,7 +833,7 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'NumericCanBeNotIntOrNotFloat' => [
-                '<?php
+                'code' => '<?php
                     /** @param mixed $a */
                     function a($a): void{
                         if (is_numeric($a)) {
@@ -841,36 +846,89 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                             assert(!is_int($a));
                         }
                     }'
-            ]
+            ],
+            'alwaysTrueAssignAllowedInsideAND' => [
+                'code' => '<?php
+                    class A{
+                        public function get(): stdClass{ return new stdClass;}
+                    }
+                    $a = new A();
+
+                    if (($c = $a->get()) && rand(0,1)){
+
+
+                    }
+                    '
+            ],
+            'alwaysTrueAssignAllowedInsideOr' => [
+                'code' => '<?php
+                    class A{
+                        public function get(): ?stdClass{ return new stdClass;}
+                    }
+                    $a = new A();
+
+                    if ($a->get() || ($c = rand(0,1))){
+
+
+                    }
+                    '
+            ],
+            'countWithNeverValuesInKeyedArray' => [
+                'code' => '<?php
+                    /** @var non-empty-array $report_data */
+                    $report_data = [];
+                    if ( array_key_exists( "A", $report_data ) ) {
+                    } elseif ( !empty( $report_data[0]["type"] ) && rand(0,1) ) {
+                        if ( rand(0,1) ) {}
+
+                        if ( count( $report_data ) === 1 ) {
+                        }
+                    }'
+            ],
+            'secondFalsyTwiceWithChange' => [
+                'code' => '<?php
+                    /**
+                     * @param array{a?:int,b?:string} $p
+                     */
+                    function f(array $p) : void {
+                        if (!$p) {
+                            throw new RuntimeException("");
+                        }
+                        if (rand(0, 1)) {
+                            $p["a"] = 3;
+                        }
+                        assert(!!$p);
+                    }',
+            ],
         ];
     }
 
     /**
-     * @return iterable<string,array{string,error_message:string,1?:string[],2?:bool,3?:string}>
+     * @return iterable<string,array{code:string,error_message:string,ignored_issues?:list<string>,php_version?:string}>
      */
     public function providerInvalidCodeParse(): iterable
     {
         return [
             'ifFalse' => [
-                '<?php
+                'code' => '<?php
                     $y = false;
                     if ($y) {}',
                 'error_message' => 'TypeDoesNotContainType',
             ],
             'ifNotTrue' => [
-                '<?php
+                'code' => '<?php
                     $y = true;
                     if (!$y) {}',
                 'error_message' => 'TypeDoesNotContainType',
             ],
             'ifTrue' => [
-                '<?php
+                'code' => '<?php
                     $y = true;
                     if ($y) {}',
                 'error_message' => 'RedundantCondition',
             ],
             'unnecessaryInstanceof' => [
-                '<?php
+                'code' => '<?php
                     class One {
                         public function fooFoo() : void {}
                     }
@@ -883,7 +941,7 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                 'error_message' => 'RedundantCondition',
             ],
             'failedTypeResolution' => [
-                '<?php
+                'code' => '<?php
                     class A { }
 
                     /**
@@ -896,7 +954,7 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                 'error_message' => 'RedundantCondition',
             ],
             'failedTypeResolutionWithDocblock' => [
-                '<?php
+                'code' => '<?php
                     class A { }
 
                     /**
@@ -910,7 +968,7 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                 'error_message' => 'RedundantCondition',
             ],
             'typeResolutionFromDocblockAndInstanceof' => [
-                '<?php
+                'code' => '<?php
                     class A { }
 
                     /**
@@ -927,45 +985,45 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                 'error_message' => 'RedundantCondition',
             ],
             'typeResolutionRepeatingConditionWithSingleVar' => [
-                '<?php
+                'code' => '<?php
                     $a = rand(0, 10) > 5;
                     if ($a && $a) {}',
                 'error_message' => 'RedundantCondition',
             ],
             'typeResolutionRepeatingConditionWithVarInMiddle' => [
-                '<?php
+                'code' => '<?php
                     $a = rand(0, 10) > 5;
                     $b = rand(0, 10) > 5;
                     if ($a && $b && $a) {}',
                 'error_message' => 'RedundantCondition',
             ],
             'typeResolutionRepeatingOredConditionWithSingleVar' => [
-                '<?php
+                'code' => '<?php
                     $a = rand(0, 10) > 5;
                     if ($a || $a) {}',
                 'error_message' => 'TypeDoesNotContainType',
             ],
             'typeResolutionRepeatingOredConditionWithVarInMiddle' => [
-                '<?php
+                'code' => '<?php
                     $a = rand(0, 10) > 5;
                     $b = rand(0, 10) > 5;
                     if ($a || $b || $a) {}',
                 'error_message' => 'TypeDoesNotContainType',
             ],
             'typeResolutionIsIntAndIsNumeric' => [
-                '<?php
+                'code' => '<?php
                     $c = rand(0, 10) > 5 ? "hello" : 3;
                     if (is_int($c) && is_numeric($c)) {}',
                 'error_message' => 'RedundantCondition',
             ],
             'typeResolutionWithInstanceOfAndNotEmpty' => [
-                '<?php
+                'code' => '<?php
                     $x = rand(0, 10) > 5 ? new stdClass : null;
                     if ($x instanceof stdClass && $x) {}',
                 'error_message' => 'RedundantCondition',
             ],
             'methodWithMeaninglessCheck' => [
-                '<?php
+                'code' => '<?php
                     class One {
                         /** @return void */
                         public function fooFoo() {}
@@ -984,7 +1042,7 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                 'error_message' => 'TypeDoesNotContainType',
             ],
             'twoVarLogicNotNestedWithElseifNegatedInIf' => [
-                '<?php
+                'code' => '<?php
                     function foo(?string $a, ?string $b): ?string {
                         if ($a) {
                             $a = null;
@@ -1000,7 +1058,7 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                 'error_message' => 'RedundantCondition',
             ],
             'refineTypeInMethodCall' => [
-                '<?php
+                'code' => '<?php
                     class A {}
 
                     /** @return ?A */
@@ -1018,7 +1076,7 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                 'error_message' => 'RedundantCondition - src' . DIRECTORY_SEPARATOR . 'somefile.php:15',
             ],
             'replaceFalseType' => [
-                '<?php
+                'code' => '<?php
                     function foo(bool $b) : void {
                       if (!$b) {
                         $b = true;
@@ -1029,7 +1087,7 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                 'error_message' => 'RedundantCondition',
             ],
             'replaceTrueType' => [
-                '<?php
+                'code' => '<?php
                     function foo(bool $b) : void {
                       if ($b) {
                         $b = false;
@@ -1040,7 +1098,7 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                 'error_message' => 'TypeDoesNotContainType - src' . DIRECTORY_SEPARATOR . 'somefile.php:7',
             ],
             'disallowFloatCheckAfterSettingToVar' => [
-                '<?php
+                'code' => '<?php
                     function foo(int $x) : void {
                         if (rand(0, 1)) {
                             $x = 125;
@@ -1055,7 +1113,7 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                 'error_message' => 'TypeDoesNotContainType - src' . DIRECTORY_SEPARATOR . 'somefile.php:7',
             ],
             'disallowTwoIntValueChecksDueToConditionalOverflow' => [
-                '<?php
+                'code' => '<?php
                     function foo(int $x) : void {
                         $x = $x + 1;
 
@@ -1065,7 +1123,7 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                 'error_message' => 'TypeDoesNotContainType - src' . DIRECTORY_SEPARATOR . 'somefile.php:6',
             ],
             'redundantEmptyArray' => [
-                '<?php
+                'code' => '<?php
                     $x = ["key" => "value"];
                     if ($x) {
                         var_export($x);
@@ -1073,21 +1131,21 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                 'error_message' => 'RedundantCondition',
             ],
             'redundantConditionStringNotFalse' => [
-                '<?php
+                'code' => '<?php
                     function foo(string $s) : void {
                         if ($s !== false ) {}
                     }',
                 'error_message' => 'RedundantCondition',
             ],
             'redundantConditionStringNotTrue' => [
-                '<?php
+                'code' => '<?php
                     function foo(string $s) : void {
                         if ($s !== true ) {}
                     }',
                 'error_message' => 'RedundantCondition',
             ],
             'redundantConditionAfterRemovingFalse' => [
-                '<?php
+                'code' => '<?php
                     $s = rand(0, 1) ? rand(0, 5) : false;
 
                     if ($s !== false) {
@@ -1096,7 +1154,7 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                 'error_message' => 'RedundantCondition',
             ],
             'redundantConditionAfterRemovingTrue' => [
-                '<?php
+                'code' => '<?php
                     $s = rand(0, 1) ? rand(0, 5) : true;
 
                     if ($s !== true) {
@@ -1105,40 +1163,40 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                 'error_message' => 'RedundantCondition',
             ],
             'impossibleNullEquality' => [
-                '<?php
+                'code' => '<?php
                     $i = 5;
                     echo $i !== null;',
                 'error_message' => 'RedundantCondition',
             ],
             'impossibleTrueEquality' => [
-                '<?php
+                'code' => '<?php
                     $i = 5;
                     echo $i !== true;',
                 'error_message' => 'RedundantCondition',
             ],
             'impossibleFalseEquality' => [
-                '<?php
+                'code' => '<?php
                     $i = 5;
                     echo $i !== false;',
                 'error_message' => 'RedundantCondition',
             ],
             'impossibleNumberEquality' => [
-                '<?php
+                'code' => '<?php
                     $i = 5;
                     echo $i !== 3;',
                 'error_message' => 'RedundantCondition',
             ],
             'alwaysTrueBinaryOp' => [
-                '<?php
+                'code' => '<?php
                     function foo ($a) : void {
                         if (!$a) return;
                         $b = $a && rand(0, 1);
                     }',
                 'error_message' => 'RedundantCondition',
-                'error_levels' => ['MissingParamType'],
+                'ignored_issues' => ['MissingParamType'],
             ],
             'negatedInstanceof' => [
-                '<?php
+                'code' => '<?php
                     class A {}
                     class B {}
 
@@ -1148,7 +1206,7 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                 'error_message' => 'RedundantCondition',
             ],
             'redundantInstanceof' => [
-                '<?php
+                'code' => '<?php
                     /** @param Exception $a */
                     function foo($a) : void {
                         if ($a instanceof \Exception) {}
@@ -1156,7 +1214,7 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                 'error_message' => 'RedundantConditionGivenDocblockType',
             ],
             'preventDocblockTypesBeingIdenticalToTrue' => [
-                '<?php
+                'code' => '<?php
                     class A {}
 
                     /**
@@ -1168,7 +1226,7 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                 'error_message' => 'DocblockTypeContradiction',
             ],
             'preventDocblockTypesBeingIdenticalToTrueReversed' => [
-                '<?php
+                'code' => '<?php
                     class A {}
 
                     /**
@@ -1180,7 +1238,7 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                 'error_message' => 'DocblockTypeContradiction',
             ],
             'preventDocblockTypesBeingIdenticalToFalse' => [
-                '<?php
+                'code' => '<?php
                     class A {}
 
                     /**
@@ -1192,7 +1250,7 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                 'error_message' => 'DocblockTypeContradiction',
             ],
             'preventDocblockTypesBeingIdenticalToFalseReversed' => [
-                '<?php
+                'code' => '<?php
                     class A {}
 
                     /**
@@ -1204,7 +1262,7 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                 'error_message' => 'DocblockTypeContradiction',
             ],
             'preventDocblockTypesBeingSameAsEmptyArrayReversed' => [
-                '<?php
+                'code' => '<?php
                     class A {}
 
                     /**
@@ -1216,7 +1274,7 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                 'error_message' => 'DocblockTypeContradiction',
             ],
             'preventDocblockTypesBeingIdenticalToEmptyArrayReversed' => [
-                '<?php
+                'code' => '<?php
                     class A {}
 
                     /**
@@ -1228,7 +1286,7 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                 'error_message' => 'DocblockTypeContradiction',
             ],
             'preventTypesBeingIdenticalToEmptyArrayReversed' => [
-                '<?php
+                'code' => '<?php
                     class A {}
 
                     function foo(A $a, $b) : void {
@@ -1237,7 +1295,7 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                 'error_message' => 'TypeDoesNotContainType',
             ],
             'SKIPPED-secondInterfaceAssertionIsRedundant' => [
-                '<?php
+                'code' => '<?php
                     interface One {}
                     interface Two {}
 
@@ -1252,7 +1310,7 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                 'error_message' => 'RedundantConditionGivenDocblockType',
             ],
             'errorAfterStatementThatCannotBeConvertedToAssertion' => [
-                '<?php
+                'code' => '<?php
                     function a(float $b) : void {
                         if ($b === 0.0) {
                             return;
@@ -1265,7 +1323,7 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                 'error_message' => 'RedundantCondition',
             ],
             'noLongerWarnsAboutRedundancyHere' => [
-                '<?php
+                'code' => '<?php
                     function a(bool $a, bool $b) : void {
                         if ($a || $b) {
                             if ($a) {
@@ -1276,7 +1334,7 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                 'error_message' => 'RedundantCondition',
             ],
             'prohibitFalsyChecksOnPropertiesWithMethodCall' => [
-                '<?php
+                'code' => '<?php
                     class RequestHeaders {
                         public function has(string $s) : bool {
                             return true;
@@ -1296,7 +1354,7 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                 'error_message' => 'RedundantCondition',
             ],
             'prohibitFalsyChecksOnPropertiesWithoutMethodCall' => [
-                '<?php
+                'code' => '<?php
                     class RequestHeaders {}
 
                     class Request {
@@ -1312,7 +1370,7 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                 'error_message' => 'RedundantCondition',
             ],
             'checkResourceTwice' => [
-                '<?php
+                'code' => '<?php
                     $fp = tmpfile();
 
                     if ($fp && is_resource($fp)) {
@@ -1321,7 +1379,7 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                 'error_message' => 'RedundantCondition',
             ],
             'preventAlwaysReturningInt' => [
-                '<?php
+                'code' => '<?php
                     function returnsInt(): int {
                         return 3;
                     }
@@ -1330,7 +1388,7 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                 'error_message' => 'RedundantCondition',
             ],
             'preventAlwaysReturningSpecificInt' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @return 3|4
                      */
@@ -1342,7 +1400,7 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                 'error_message' => 'RedundantConditionGivenDocblockType',
             ],
             'preventNotAlwaysReturningInt' => [
-                '<?php
+                'code' => '<?php
                     function returnsInt(): int {
                         return 3;
                     }
@@ -1351,7 +1409,7 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                 'error_message' => 'TypeDoesNotContainType',
             ],
             'classAlwaysParent' => [
-                '<?php
+                'code' => '<?php
                     class AParent {}
 
                     class A extends AParent {
@@ -1366,7 +1424,7 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                 'error_message' => 'RedundantCondition',
             ],
             'staticClassIsAlwaysNull' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @psalm-consistent-constructor
                      */
@@ -1387,7 +1445,7 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                 'error_message' => 'RedundantConditionGivenDocblockType',
             ],
             'classStringNotEmpty' => [
-                '<?php
+                'code' => '<?php
                     function foo(object $o) : void {
                         $oc = get_class($o);
                         if ($oc) {}
@@ -1395,7 +1453,7 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                 'error_message' => 'RedundantCondition',
             ],
             'leftCannotBeTrue' => [
-                '<?php
+                'code' => '<?php
                     /** @psalm-type F = ""|"0" */
                     /**
                      * @param F $a
@@ -1407,7 +1465,7 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                 'error_message' => 'DocblockTypeContradiction',
             ],
             'rightCannotBeTrue' => [
-                '<?php
+                'code' => '<?php
                     /** @param false $a */
                     function foo(bool $a): void {
                         if (rand(0, 1) || $a) {
@@ -1417,25 +1475,52 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
                 'error_message' => 'DocblockTypeContradiction',
             ],
             'OrTrue' => [
-                '<?php
+                'code' => '<?php
                     if(rand(0,1) || true){}',
                 'error_message' => 'RedundantCondition',
             ],
             'AndTrue' => [
-                '<?php
+                'code' => '<?php
                     if(rand(0,1) && true){}',
                 'error_message' => 'RedundantCondition',
             ],
             'OrFalse' => [
-                '<?php
+                'code' => '<?php
                     if(rand(0,1) || false){}',
                 'error_message' => 'TypeDoesNotContainType',
             ],
             'AndFalse' => [
-                '<?php
+                'code' => '<?php
                     if(rand(0,1) && false){}',
                 'error_message' => 'TypeDoesNotContainType',
-            ]
+            ],
+            'alwaysTrueAssign' => [
+                'code' => '<?php
+                    class A{
+                        public function get(): stdClass{ return new stdClass;}
+                    }
+                    $a = new A();
+
+                    if ($c = $a->get()){
+
+
+                    }
+                    ',
+                'error_message' => 'RedundantCondition',
+            ],
+            'secondFalsyTwiceWithoutChange' => [
+                'code' => '<?php
+                    /**
+                     * @param array{a?:int,b?:string} $p
+                     */
+                    function f(array $p) : void {
+                        if (!$p) {
+                            throw new RuntimeException("");
+                        }
+                        assert(!!$p);
+                    }',
+                'error_message' => 'RedundantCondition'
+            ],
         ];
     }
 }

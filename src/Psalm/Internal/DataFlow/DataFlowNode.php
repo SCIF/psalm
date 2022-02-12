@@ -8,6 +8,8 @@ use function strtolower;
 
 /**
  * @psalm-consistent-constructor
+ *
+ * @internal
  */
 class DataFlowNode
 {
@@ -123,7 +125,7 @@ class DataFlowNode
         }
 
         return new static(
-            \strtolower($method_id),
+            strtolower($method_id),
             $cased_method_id,
             $code_location,
             $specialization_key

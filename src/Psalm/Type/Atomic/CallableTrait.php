@@ -1,4 +1,5 @@
 <?php
+
 namespace Psalm\Type\Atomic;
 
 use Psalm\Codebase;
@@ -8,6 +9,7 @@ use Psalm\Internal\Type\TemplateResult;
 use Psalm\Internal\Type\TemplateStandinTypeReplacer;
 use Psalm\Storage\FunctionLikeParameter;
 use Psalm\Type\Atomic;
+use Psalm\Type\TypeNode;
 use Psalm\Type\Union;
 
 use function array_map;
@@ -136,8 +138,7 @@ trait CallableTrait
         ?string $namespace,
         array $aliased_classes,
         ?string $this_class,
-        int $php_major_version,
-        int $php_minor_version
+        int $analysis_php_version_id
     ): string {
         if ($this instanceof TNamedObject) {
             return parent::toNamespacedString($namespace, $aliased_classes, $this_class, true);
@@ -181,7 +182,7 @@ trait CallableTrait
 
     public function replaceTemplateTypesWithStandins(
         TemplateResult $template_result,
-        ?Codebase $codebase = null,
+        Codebase $codebase,
         ?StatementsAnalyzer $statements_analyzer = null,
         ?Atomic $input_type = null,
         ?int $input_arg_offset = null,
@@ -190,14 +191,14 @@ trait CallableTrait
         bool $replace = true,
         bool $add_lower_bound = false,
         int $depth = 0
-    ) : Atomic {
+    ): Atomic {
         $callable = clone $this;
 
         if ($callable->params) {
             foreach ($callable->params as $offset => $param) {
                 $input_param_type = null;
 
-                if (($input_type instanceof Atomic\TClosure || $input_type instanceof Atomic\TCallable)
+                if (($input_type instanceof TClosure || $input_type instanceof TCallable)
                     && isset($input_type->params[$offset])
                 ) {
                     $input_param_type = $input_type->params[$offset]->type;
@@ -230,7 +231,7 @@ trait CallableTrait
                 $template_result,
                 $codebase,
                 $statements_analyzer,
-                $input_type instanceof Atomic\TCallable || $input_type instanceof Atomic\TClosure
+                $input_type instanceof TCallable || $input_type instanceof TClosure
                     ? $input_type->return_type
                     : null,
                 $input_arg_offset,
@@ -247,7 +248,7 @@ trait CallableTrait
     public function replaceTemplateTypesWithArgTypes(
         TemplateResult $template_result,
         ?Codebase $codebase
-    ) : void {
+    ): void {
         if ($this->params) {
             foreach ($this->params as $param) {
                 if (!$param->type) {
@@ -272,9 +273,9 @@ trait CallableTrait
     }
 
     /**
-     * @return list<\Psalm\Type\TypeNode>
+     * @return list<TypeNode>
      */
-    public function getChildNodes() : array
+    public function getChildNodes(): array
     {
         $child_nodes = [];
 

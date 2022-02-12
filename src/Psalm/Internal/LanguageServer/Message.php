@@ -1,5 +1,7 @@
 <?php
-declare(strict_types = 1);
+
+declare(strict_types=1);
+
 namespace Psalm\Internal\LanguageServer;
 
 use AdvancedJsonRpc\Message as MessageBody;
@@ -14,7 +16,7 @@ use function strlen;
 class Message
 {
     /**
-     * @var ?\AdvancedJsonRpc\Message
+     * @var ?MessageBody
      */
     public $body;
 

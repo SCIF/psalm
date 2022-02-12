@@ -1,4 +1,5 @@
 <?php
+
 namespace Psalm\Internal\Analyzer\Statements;
 
 use PhpParser;
@@ -24,7 +25,7 @@ class ThrowAnalyzer
         StatementsAnalyzer $statements_analyzer,
         PhpParser\Node $stmt,
         Context $context
-    ) : bool {
+    ): bool {
         $context->inside_throw = true;
         if (ExpressionAnalyzer::analyze($statements_analyzer, $stmt->expr, $context) === false) {
             return false;
@@ -84,7 +85,7 @@ class ThrowAnalyzer
         }
 
         if ($stmt instanceof PhpParser\Node\Expr\Throw_) {
-            $statements_analyzer->node_data->setType($stmt, \Psalm\Type::getEmpty());
+            $statements_analyzer->node_data->setType($stmt, Type::getNever());
         }
 
         return true;

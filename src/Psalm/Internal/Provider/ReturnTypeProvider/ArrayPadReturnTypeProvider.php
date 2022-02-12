@@ -1,14 +1,25 @@
-<?php declare(strict_types=1);
+<?php
+
+declare(strict_types=1);
 
 namespace Psalm\Internal\Provider\ReturnTypeProvider;
 
 use Psalm\Internal\Type\ArrayType;
 use Psalm\Plugin\EventHandler\Event\FunctionReturnTypeProviderEvent;
+use Psalm\Plugin\EventHandler\FunctionReturnTypeProviderInterface;
 use Psalm\Type;
+use Psalm\Type\Atomic\TArray;
+use Psalm\Type\Atomic\TList;
+use Psalm\Type\Atomic\TNonEmptyArray;
+use Psalm\Type\Atomic\TNonEmptyList;
+use Psalm\Type\Union;
 
 use function count;
 
-class ArrayPadReturnTypeProvider implements \Psalm\Plugin\EventHandler\FunctionReturnTypeProviderInterface
+/**
+ * @internal
+ */
+class ArrayPadReturnTypeProvider implements FunctionReturnTypeProviderInterface
 {
     /**
      * @return array<lowercase-string>
@@ -18,7 +29,7 @@ class ArrayPadReturnTypeProvider implements \Psalm\Plugin\EventHandler\FunctionR
         return ['array_pad'];
     }
 
-    public static function getFunctionReturnType(FunctionReturnTypeProviderEvent $event): ?Type\Union
+    public static function getFunctionReturnType(FunctionReturnTypeProviderEvent $event): ?Union
     {
         $statements_source = $event->getStatementsSource();
         $call_args = $event->getCallArgs();
@@ -40,17 +51,17 @@ class ArrayPadReturnTypeProvider implements \Psalm\Plugin\EventHandler\FunctionR
                 || $size_arg_type->getSingleIntLiteral()->value === 0
             );
 
-            return new Type\Union([
+            return new Union([
                 $array_type->is_list
                     ? (
                         $can_return_empty
-                            ? new Type\Atomic\TList($value_type)
-                            : new Type\Atomic\TNonEmptyList($value_type)
+                            ? new TList($value_type)
+                            : new TNonEmptyList($value_type)
                     )
                     : (
                         $can_return_empty
-                            ? new Type\Atomic\TArray([$key_type, $value_type])
-                            : new Type\Atomic\TNonEmptyArray([$key_type, $value_type])
+                            ? new TArray([$key_type, $value_type])
+                            : new TNonEmptyArray([$key_type, $value_type])
                     )
             ]);
         }

@@ -1,4 +1,6 @@
-<?php declare(strict_types=1);
+<?php
+
+declare(strict_types=1);
 
 namespace Psalm\Internal\Provider\PropertyTypeProvider;
 
@@ -10,6 +12,9 @@ use Psalm\Type\Union;
 
 use function strtolower;
 
+/**
+ * @internal
+ */
 class DomDocumentPropertyTypeProvider implements PropertyTypeProviderInterface
 {
     public static function getPropertyType(PropertyTypeProviderEvent $event): ?Union

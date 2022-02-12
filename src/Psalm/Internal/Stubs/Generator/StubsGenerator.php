@@ -2,6 +2,25 @@
 
 namespace Psalm\Internal\Stubs\Generator;
 
+use Psalm\Codebase;
+use Psalm\Internal\Provider\ClassLikeStorageProvider;
+use Psalm\Internal\Provider\FileStorageProvider;
+use Psalm\Storage\FunctionLikeStorage;
+use Psalm\Type\Atomic\TArray;
+use Psalm\Type\Atomic\TAssertionFalsy;
+use Psalm\Type\Atomic\TEnumCase;
+use Psalm\Type\Atomic\TFalse;
+use Psalm\Type\Atomic\TIterable;
+use Psalm\Type\Atomic\TKeyedArray;
+use Psalm\Type\Atomic\TLiteralClassString;
+use Psalm\Type\Atomic\TLiteralFloat;
+use Psalm\Type\Atomic\TLiteralInt;
+use Psalm\Type\Atomic\TLiteralString;
+use Psalm\Type\Atomic\TNamedObject;
+use Psalm\Type\Atomic\TNull;
+use Psalm\Type\Atomic\TObject;
+use Psalm\Type\Atomic\TTrue;
+use Psalm\Type\Atomic\Scalar;
 use PhpParser;
 use Psalm\Internal\Scanner\ParsedDocblock;
 use Psalm\Node\Expr\VirtualArray;
@@ -22,21 +41,30 @@ use Psalm\Node\VirtualName;
 use Psalm\Node\VirtualNullableType;
 use Psalm\Node\VirtualParam;
 use Psalm\Type;
-use function dirname;
+use Psalm\Type\Union;
 
+use UnexpectedValueException;
+use function dirname;
+use function is_int;
+use function rtrim;
+use function strpos;
+
+/**
+ * @internal
+ */
 class StubsGenerator
 {
     public static function getAll(
-        \Psalm\Codebase $codebase,
-        \Psalm\Internal\Provider\ClassLikeStorageProvider $class_provider,
-        \Psalm\Internal\Provider\FileStorageProvider $file_provider
-    ) : string {
+        Codebase $codebase,
+        ClassLikeStorageProvider $class_provider,
+        FileStorageProvider $file_provider
+    ): string {
         $namespaced_nodes = [];
 
         $psalm_base = dirname(__DIR__, 5);
 
         foreach ($class_provider->getAll() as $storage) {
-            if (\strpos($storage->name, 'Psalm\\') === 0) {
+            if (strpos($storage->name, 'Psalm\\') === 0) {
                 continue;
             }
 
@@ -70,13 +98,13 @@ class StubsGenerator
 
         foreach ($codebase->functions->getAllStubbedFunctions() as $function_storage) {
             if ($function_storage->location
-                && \strpos($function_storage->location->file_path, $psalm_base) === 0
+                && strpos($function_storage->location->file_path, $psalm_base) === 0
             ) {
                 continue;
             }
 
             if (!$function_storage->cased_name) {
-                throw new \UnexpectedValueException('very bad');
+                throw new UnexpectedValueException('very bad');
             }
 
             $fq_name = $function_storage->cased_name;
@@ -116,7 +144,7 @@ class StubsGenerator
         }
 
         foreach ($file_provider->getAll() as $file_storage) {
-            if (\strpos($file_storage->file_path, $psalm_base) === 0) {
+            if (strpos($file_storage->file_path, $psalm_base) === 0) {
                 continue;
             }
 
@@ -189,7 +217,7 @@ class StubsGenerator
     }
 
     private static function getFunctionNode(
-        \Psalm\Storage\FunctionLikeStorage $function_storage,
+        FunctionLikeStorage $function_storage,
         string $function_name,
         string $namespace_name
     ) : PhpParser\Node\Stmt\Function_ {
@@ -251,7 +279,7 @@ class StubsGenerator
                 'comments' => $docblock->tags
                     ? [
                         new PhpParser\Comment\Doc(
-                            \rtrim($docblock->render('        '))
+                            rtrim($docblock->render('        '))
                         )
                     ]
                     : []
@@ -262,14 +290,14 @@ class StubsGenerator
     /**
      * @return list<PhpParser\Node\Param>
      */
-    public static function getFunctionParamNodes(\Psalm\Storage\FunctionLikeStorage $method_storage): array
+    public static function getFunctionParamNodes(FunctionLikeStorage $method_storage): array
     {
         $param_nodes = [];
 
         foreach ($method_storage->params as $param) {
             $param_nodes[] = new VirtualParam(
                 new VirtualVariable($param->name),
-                $param->default_type instanceof Type\Union
+                $param->default_type instanceof Union
                     ? self::getExpressionFromType($param->default_type)
                     : null,
                 $param->signature_type
@@ -286,24 +314,24 @@ class StubsGenerator
     /**
      * @return PhpParser\Node\Identifier|PhpParser\Node\Name\FullyQualified|PhpParser\Node\NullableType|null
      */
-    public static function getParserTypeFromPsalmType(Type\Union $type): ?PhpParser\NodeAbstract
+    public static function getParserTypeFromPsalmType(Union $type): ?PhpParser\NodeAbstract
     {
         $nullable = $type->isNullable();
 
         foreach ($type->getAtomicTypes() as $atomic_type) {
-            if ($atomic_type instanceof Type\Atomic\TNull) {
+            if ($atomic_type instanceof TNull) {
                 continue;
             }
 
-            if ($atomic_type instanceof Type\Atomic\Scalar
-                || $atomic_type instanceof Type\Atomic\TObject
-                || $atomic_type instanceof Type\Atomic\TArray
-                || $atomic_type instanceof Type\Atomic\TIterable
+            if ($atomic_type instanceof Scalar
+                || $atomic_type instanceof TObject
+                || $atomic_type instanceof TArray
+                || $atomic_type instanceof TIterable
             ) {
-                $identifier_string = $atomic_type->toPhpString(null, [], null, 8, 0);
+                $identifier_string = $atomic_type->toPhpString(null, [], null, 8_00_00);
 
                 if ($identifier_string === null) {
-                    throw new \UnexpectedValueException(
+                    throw new UnexpectedValueException(
                         $atomic_type->getId() . ' could not be converted to an identifier'
                     );
                 }
@@ -316,7 +344,7 @@ class StubsGenerator
                 return $identifier;
             }
 
-            if ($atomic_type instanceof Type\Atomic\TNamedObject) {
+            if ($atomic_type instanceof TNamedObject) {
                 $name_node = new VirtualFullyQualified($atomic_type->value);
 
                 if ($nullable) {
@@ -330,48 +358,48 @@ class StubsGenerator
         return null;
     }
 
-    public static function getExpressionFromType(Type\Union $type) : PhpParser\Node\Expr
+    public static function getExpressionFromType(Union $type) : PhpParser\Node\Expr
     {
         foreach ($type->getAtomicTypes() as $atomic_type) {
-            if ($atomic_type instanceof Type\Atomic\TLiteralClassString) {
+            if ($atomic_type instanceof TLiteralClassString) {
                 return new VirtualClassConstFetch(new VirtualName('\\' . $atomic_type->value), new VirtualIdentifier('class'));
             }
 
-            if ($atomic_type instanceof Type\Atomic\TLiteralString) {
+            if ($atomic_type instanceof TLiteralString) {
                 return new VirtualString($atomic_type->value);
             }
 
-            if ($atomic_type instanceof Type\Atomic\TLiteralInt) {
+            if ($atomic_type instanceof TLiteralInt) {
                 return new VirtualLNumber($atomic_type->value);
             }
 
-            if ($atomic_type instanceof Type\Atomic\TLiteralFloat) {
+            if ($atomic_type instanceof TLiteralFloat) {
                 return new VirtualDNumber($atomic_type->value);
             }
 
-            if ($atomic_type instanceof Type\Atomic\TFalse) {
+            if ($atomic_type instanceof TFalse) {
                 return new VirtualConstFetch(new VirtualName('false'));
             }
 
-            if ($atomic_type instanceof Type\Atomic\TTrue) {
+            if ($atomic_type instanceof TTrue) {
                 return new VirtualConstFetch(new VirtualName('true'));
             }
 
-            if ($atomic_type instanceof Type\Atomic\TNull) {
+            if ($atomic_type instanceof TNull) {
                 return new VirtualConstFetch(new VirtualName('null'));
             }
 
-            if ($atomic_type instanceof Type\Atomic\TArray) {
+            if ($atomic_type instanceof TArray) {
                 return new VirtualArray([]);
             }
 
-            if ($atomic_type instanceof Type\Atomic\TKeyedArray) {
+            if ($atomic_type instanceof TKeyedArray) {
                 $new_items = [];
 
                 foreach ($atomic_type->properties as $property_name => $property_type) {
                     if ($atomic_type->is_list) {
                         $key_type = null;
-                    } elseif (\is_int($property_name)) {
+                    } elseif (is_int($property_name)) {
                         $key_type = new VirtualLNumber($property_name);
                     } else {
                         $key_type = new VirtualString($property_name);
@@ -384,6 +412,10 @@ class StubsGenerator
                 }
 
                 return new VirtualArray($new_items);
+            }
+
+            if ($atomic_type instanceof TEnumCase) {
+                return new VirtualClassConstFetch(new VirtualName('\\' . $atomic_type->value), new VirtualIdentifier($atomic_type->case_name));
             }
         }
 

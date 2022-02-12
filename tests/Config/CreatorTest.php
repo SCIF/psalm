@@ -1,19 +1,21 @@
 <?php
+
 namespace Psalm\Tests\Config;
 
 use Psalm\Config\Creator;
+use Psalm\Tests\TestCase;
 
 use function dirname;
 
 use const DIRECTORY_SEPARATOR;
 
-class CreatorTest extends \Psalm\Tests\TestCase
+class CreatorTest extends TestCase
 {
-    public static function setUpBeforeClass() : void
+    public static function setUpBeforeClass(): void
     {
     }
 
-    public function setUp() : void
+    public function setUp(): void
     {
     }
 

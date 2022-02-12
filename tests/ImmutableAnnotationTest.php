@@ -1,19 +1,23 @@
 <?php
+
 namespace Psalm\Tests;
+
+use Psalm\Tests\Traits\InvalidCodeAnalysisTestTrait;
+use Psalm\Tests\Traits\ValidCodeAnalysisTestTrait;
 
 class ImmutableAnnotationTest extends TestCase
 {
-    use Traits\InvalidCodeAnalysisTestTrait;
-    use Traits\ValidCodeAnalysisTestTrait;
+    use InvalidCodeAnalysisTestTrait;
+    use ValidCodeAnalysisTestTrait;
 
     /**
-     * @return iterable<string,array{string,assertions?:array<string,string>,error_levels?:string[]}>
+     * @return iterable<string,array{code:string,assertions?:array<string,string>,ignored_issues?:list<string>}>
      */
     public function providerValidCodeParse(): iterable
     {
         return [
             'immutableClassGenerating' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @psalm-immutable
                      */
@@ -35,7 +39,7 @@ class ImmutableAnnotationTest extends TestCase
                     }',
             ],
             'callInternalClassMethod' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @psalm-immutable
                      */
@@ -57,7 +61,7 @@ class ImmutableAnnotationTest extends TestCase
                     }',
             ],
             'addToCart' => [
-                '<?php
+                'code' => '<?php
                     /** @psalm-immutable */
                     class Cart {
                         /** @var CartItem[] */
@@ -92,7 +96,7 @@ class ImmutableAnnotationTest extends TestCase
                     }',
             ],
             'allowImpureStaticMethod' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @psalm-immutable
                      */
@@ -112,7 +116,7 @@ class ImmutableAnnotationTest extends TestCase
                     }'
             ],
             'allowPropertySetOnNewInstance' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @psalm-immutable
                      */
@@ -132,7 +136,7 @@ class ImmutableAnnotationTest extends TestCase
                     }'
             ],
             'allowArrayMapCallable' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @psalm-immutable
                      */
@@ -170,7 +174,7 @@ class ImmutableAnnotationTest extends TestCase
                     }'
             ],
             'allowPropertyAssignmentInUnserialize' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @psalm-immutable
                      */
@@ -196,7 +200,7 @@ class ImmutableAnnotationTest extends TestCase
                     }'
             ],
             'allowPropertyAssignmentInMagicUnserialize' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @psalm-immutable
                      */
@@ -223,7 +227,7 @@ class ImmutableAnnotationTest extends TestCase
                     }'
             ],
             'allowMethodOverriding' => [
-                '<?php
+                'code' => '<?php
                     class A {
                         private string $a;
 
@@ -240,7 +244,7 @@ class ImmutableAnnotationTest extends TestCase
                     class B extends A {}',
             ],
             'immutableClassWithCloneAndPropertyChange' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @psalm-immutable
                      */
@@ -259,7 +263,7 @@ class ImmutableAnnotationTest extends TestCase
                     }',
             ],
             'immutableClassWithCloneAndPropertyAppend' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @psalm-immutable
                      */
@@ -278,7 +282,7 @@ class ImmutableAnnotationTest extends TestCase
                     }',
             ],
             'memoizeImmutableCalls' => [
-                '<?php
+                'code' => '<?php
                     function takesString(string $s) : void {}
 
                     /**
@@ -304,7 +308,7 @@ class ImmutableAnnotationTest extends TestCase
                     }'
             ],
             'allowConstructorPrivateUnusedMethods' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @psalm-immutable
                      */
@@ -323,7 +327,7 @@ class ImmutableAnnotationTest extends TestCase
                     }'
             ],
             'canPassImmutableIntoImmutable' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @psalm-immutable
                      */
@@ -359,7 +363,7 @@ class ImmutableAnnotationTest extends TestCase
                     new Immutable($item);',
             ],
             'preventNonImmutableTraitInImmutableClass' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @psalm-immutable
                      */
@@ -379,7 +383,7 @@ class ImmutableAnnotationTest extends TestCase
                     }',
             ],
             'preventImmutableClassInheritingMutableParent' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @psalm-immutable
                      */
@@ -397,11 +401,11 @@ class ImmutableAnnotationTest extends TestCase
                     final class ImmutableClass extends ImmutableParent {}',
             ],
             'passDateTimeZone' => [
-                '<?php
+                'code' => '<?php
                     echo (new DateTimeImmutable("now", new DateTimeZone("UTC")))->format("Y-m-d");'
             ],
             'allowPassingCloneOfMutableIntoImmutable' => [
-                '<?php
+                'code' => '<?php
                     class Item {
                         private int $i = 0;
 
@@ -434,7 +438,7 @@ class ImmutableAnnotationTest extends TestCase
                     new Immutable($item);',
             ],
             'noCrashWhenCheckingValueTwice' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @psalm-template T
                      * @psalm-immutable
@@ -472,7 +476,7 @@ class ImmutableAnnotationTest extends TestCase
                     }'
             ],
             'allowMutablePropertyFetch' => [
-                '<?php
+                'code' => '<?php
                     class B {
                         public int $j = 5;
                     }
@@ -493,7 +497,7 @@ class ImmutableAnnotationTest extends TestCase
                     }',
             ],
             'allowPassingMutableIntoImmutable' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @psalm-immutable
                      */
@@ -522,17 +526,38 @@ class ImmutableAnnotationTest extends TestCase
                         }
                     }',
             ],
+            'allowMutationFreeCallInMutationFreeContext' => [
+                'code' => '<?php
+
+                    /**
+                     * @psalm-mutation-free
+                     */
+                    function getData(): array {
+                        /** @var mixed $arr */
+                        $arr = $GLOBALS["cachedData"] ?? [];
+
+                        return is_array($arr) ? $arr : [];
+                    }
+
+                    /**
+                     * @psalm-mutation-free
+                     * @return mixed
+                     */
+                    function getDataItem(string $key) {
+                        return getData()[$key] ?? null;
+                    }',
+            ],
         ];
     }
 
     /**
-     * @return iterable<string,array{string,error_message:string,1?:string[],2?:bool,3?:string}>
+     * @return iterable<string,array{code:string,error_message:string,ignored_issues?:list<string>,php_version?:string}>
      */
     public function providerInvalidCodeParse(): iterable
     {
         return [
             'immutablePropertyAssignmentInternally' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @psalm-immutable
                      */
@@ -555,7 +580,7 @@ class ImmutableAnnotationTest extends TestCase
                 'error_message' => 'InaccessibleProperty',
             ],
             'immutablePropertyAssignmentExternally' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @psalm-immutable
                      */
@@ -578,7 +603,7 @@ class ImmutableAnnotationTest extends TestCase
                 'error_message' => 'InaccessibleProperty',
             ],
             'callImpureFunction' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @psalm-immutable
                      */
@@ -601,7 +626,7 @@ class ImmutableAnnotationTest extends TestCase
                 'error_message' => 'ImpureFunctionCall',
             ],
             'callExternalClassMethod' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @psalm-immutable
                      */
@@ -630,7 +655,7 @@ class ImmutableAnnotationTest extends TestCase
                 'error_message' => 'ImpureMethodCall',
             ],
             'mustBeImmutableLikeInterfaces' => [
-                '<?php
+                'code' => '<?php
                     /** @psalm-immutable */
                     interface SomethingImmutable {
                         public function someInteger() : int;
@@ -645,7 +670,7 @@ class ImmutableAnnotationTest extends TestCase
                 'error_message' => 'MissingImmutableAnnotation',
             ],
             'inheritImmutabilityFromParent' => [
-                '<?php
+                'code' => '<?php
                     /** @psalm-immutable */
                     abstract class SomethingImmutable {
                         abstract public function someInteger() : int;
@@ -660,7 +685,7 @@ class ImmutableAnnotationTest extends TestCase
                 'error_message' => 'MissingImmutableAnnotation',
             ],
             'preventNonImmutableTraitInImmutableClass' => [
-                '<?php
+                'code' => '<?php
                     trait MutableTrait {
                         public int $i = 0;
 
@@ -678,7 +703,7 @@ class ImmutableAnnotationTest extends TestCase
                 'error_message' => 'MutableDependency'
             ],
             'preventImmutableClassInheritingMutableParent' => [
-                '<?php
+                'code' => '<?php
                     class MutableParent {
                         public int $i = 0;
 
@@ -694,7 +719,7 @@ class ImmutableAnnotationTest extends TestCase
                 'error_message' => 'MutableDependency'
             ],
             'mutationInPropertyAssignment' => [
-                '<?php
+                'code' => '<?php
                     class D {
                         private string $s;
 
@@ -720,7 +745,7 @@ class ImmutableAnnotationTest extends TestCase
                 'error_message' => 'ImpurePropertyAssignment',
             ],
             'mutationInPropertyConcat' => [
-                '<?php
+                'code' => '<?php
                     class D {
                         private string $s;
 
@@ -746,7 +771,7 @@ class ImmutableAnnotationTest extends TestCase
                 'error_message' => 'ImpurePropertyAssignment',
             ],
             'preventUnset' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @psalm-immutable
                      */

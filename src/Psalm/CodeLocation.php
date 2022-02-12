@@ -1,8 +1,13 @@
 <?php
+
 namespace Psalm;
 
+use Exception;
+use LogicException;
 use PhpParser;
 use Psalm\Internal\Analyzer\CommentAnalyzer;
+use Psalm\Internal\Analyzer\ProjectAnalyzer;
+use UnexpectedValueException;
 
 use function explode;
 use function max;
@@ -134,9 +139,6 @@ class CodeLocation
         $this->docblock_line_number = $line;
     }
 
-    /**
-     * @psalm-suppress MixedArrayAccess
-     */
     private function calculateRealLocation(): void
     {
         if ($this->have_recalculated) {
@@ -148,7 +150,7 @@ class CodeLocation
         $this->selection_start = $this->file_start;
         $this->selection_end = $this->file_end + 1;
 
-        $project_analyzer = Internal\Analyzer\ProjectAnalyzer::getInstance();
+        $project_analyzer = ProjectAnalyzer::getInstance();
 
         $codebase = $project_analyzer->getCodebase();
 
@@ -197,7 +199,7 @@ class CodeLocation
             }
 
             if (!isset($preview_lines[$i])) {
-                throw new \Exception('Should have offset');
+                throw new Exception('Should have offset');
             }
 
             $key_line = $preview_lines[$i];
@@ -245,7 +247,7 @@ class CodeLocation
                     break;
 
                 default:
-                    throw new \UnexpectedValueException('Unrecognised regex type ' . $this->regex_type);
+                    throw new UnexpectedValueException('Unrecognised regex type ' . $this->regex_type);
             }
 
             $preview_snippet = mb_strcut(
@@ -259,14 +261,14 @@ class CodeLocation
             }
 
             if (preg_match($regex, $preview_snippet, $matches, PREG_OFFSET_CAPTURE)) {
-                if (!isset($matches[1]) || (int)$matches[1][1] === -1) {
-                    throw new \LogicException(
+                if (!isset($matches[1]) || $matches[1][1] === -1) {
+                    throw new LogicException(
                         "Failed to match anything to 1st capturing group, "
                         . "or regex doesn't contain 1st capturing group, regex type " . $this->regex_type
                     );
                 }
-                $this->selection_start = $this->selection_start + (int)$matches[1][1];
-                $this->selection_end = $this->selection_start + strlen((string)$matches[1][0]);
+                $this->selection_start = $this->selection_start + $matches[1][1];
+                $this->selection_end = $this->selection_start + strlen($matches[1][0]);
             }
         }
 
@@ -297,8 +299,12 @@ class CodeLocation
         $this->text = mb_strcut($file_contents, $this->selection_start, $this->selection_end - $this->selection_start);
 
         // reset preview start to beginning of line
-        $this->column_from = $this->selection_start -
-            (int)strrpos($file_contents, "\n", $this->selection_start - strlen($file_contents));
+        if ($file_contents !== '') {
+            $this->column_from = $this->selection_start -
+                (int)strrpos($file_contents, "\n", $this->selection_start - strlen($file_contents));
+        } else {
+            $this->column_from = $this->selection_start;
+        }
 
         $newlines = substr_count($this->text, "\n");
 
@@ -377,7 +383,7 @@ class CodeLocation
         return $this->file_name . ' ' . $this->raw_file_start . $this->raw_file_end;
     }
 
-    public function getShortSummary() : string
+    public function getShortSummary(): string
     {
         return $this->file_name . ':' . $this->getLineNumber() . ':' . $this->getColumn();
     }

@@ -1,10 +1,16 @@
 <?php
+
 namespace Psalm\Tests\FileUpdates;
 
+use Psalm\Config;
 use Psalm\Internal\Analyzer\ProjectAnalyzer;
 use Psalm\Internal\Provider\FakeFileProvider;
 use Psalm\Internal\Provider\Providers;
-use Psalm\Tests\Internal\Provider;
+use Psalm\IssueBuffer;
+use Psalm\Tests\Internal\Provider\FakeFileReferenceCacheProvider;
+use Psalm\Tests\Internal\Provider\ParserInstanceCacheProvider;
+use Psalm\Tests\Internal\Provider\ProjectCacheProvider;
+use Psalm\Tests\TestCase;
 use Psalm\Tests\TestConfig;
 
 use function array_keys;
@@ -13,9 +19,9 @@ use function getcwd;
 
 use const DIRECTORY_SEPARATOR;
 
-class ErrorFixTest extends \Psalm\Tests\TestCase
+class ErrorFixTest extends TestCase
 {
-    public function setUp() : void
+    public function setUp(): void
     {
         parent::setUp();
 
@@ -26,18 +32,18 @@ class ErrorFixTest extends \Psalm\Tests\TestCase
 
         $providers = new Providers(
             $this->file_provider,
-            new \Psalm\Tests\Internal\Provider\ParserInstanceCacheProvider(),
+            new ParserInstanceCacheProvider(),
             null,
             null,
-            new Provider\FakeFileReferenceCacheProvider(),
-            new \Psalm\Tests\Internal\Provider\ProjectCacheProvider()
+            new FakeFileReferenceCacheProvider(),
+            new ProjectCacheProvider()
         );
 
         $this->project_analyzer = new ProjectAnalyzer(
             $config,
             $providers
         );
-        $this->project_analyzer->setPhpVersion('7.3');
+        $this->project_analyzer->setPhpVersion('7.3', 'tests');
     }
 
     /**
@@ -87,7 +93,7 @@ class ErrorFixTest extends \Psalm\Tests\TestCase
 
             $expected_count = 0;
 
-            $data = \Psalm\IssueBuffer::clear();
+            $data = IssueBuffer::clear();
 
             foreach ($data as $file_issues) {
                 $expected_count += count($file_issues);
@@ -98,7 +104,7 @@ class ErrorFixTest extends \Psalm\Tests\TestCase
     }
 
     /**
-     * @return array<string,array{files: array<int, array<string,string>>,error_counts:array<int,int>,error_levels?:array<string,string>}>
+     * @return array<string,array{files: array<int, array<string,string>>,error_counts:array<int,int>,ignored_issues?:array<string,string>}>
      */
     public function providerTestErrorFix(): array
     {
@@ -188,7 +194,7 @@ class ErrorFixTest extends \Psalm\Tests\TestCase
                 ],
                 'error_counts' => [2, 1, 0],
                 [
-                    'MissingReturnType' => \Psalm\Config::REPORT_INFO,
+                    'MissingReturnType' => Config::REPORT_INFO,
                 ],
             ],
             'traitMethodRenameFirstCorrect' => [

@@ -1,14 +1,24 @@
-<?php declare(strict_types=1);
+<?php
+
+declare(strict_types=1);
 
 namespace Psalm\Internal\Provider\ReturnTypeProvider;
 
 use Psalm\Internal\Type\ArrayType;
 use Psalm\Plugin\EventHandler\Event\FunctionReturnTypeProviderEvent;
+use Psalm\Plugin\EventHandler\FunctionReturnTypeProviderInterface;
 use Psalm\Type;
+use Psalm\Type\Atomic\TList;
+use Psalm\Type\Atomic\TNonEmptyArray;
+use Psalm\Type\Atomic\TNonEmptyList;
+use Psalm\Type\Union;
 
 use function count;
 
-class ArrayChunkReturnTypeProvider implements \Psalm\Plugin\EventHandler\FunctionReturnTypeProviderInterface
+/**
+ * @internal
+ */
+class ArrayChunkReturnTypeProvider implements FunctionReturnTypeProviderInterface
 {
     /**
      * @return array<lowercase-string>
@@ -18,7 +28,7 @@ class ArrayChunkReturnTypeProvider implements \Psalm\Plugin\EventHandler\Functio
         return ['array_chunk'];
     }
 
-    public static function getFunctionReturnType(FunctionReturnTypeProviderEvent $event): ?Type\Union
+    public static function getFunctionReturnType(FunctionReturnTypeProviderEvent $event): ?Union
     {
         $call_args = $event->getCallArgs();
         $statements_source = $event->getStatementsSource();
@@ -32,17 +42,17 @@ class ArrayChunkReturnTypeProvider implements \Psalm\Plugin\EventHandler\Functio
                 && ($preserve_keys_arg_type = $statements_source->getNodeTypeProvider()->getType($call_args[2]->value))
                 && (string) $preserve_keys_arg_type !== 'false';
 
-            return new Type\Union([
-                new Type\Atomic\TList(
-                    new Type\Union([
+            return new Union([
+                new TList(
+                    new Union([
                         $preserve_keys
-                            ? new Type\Atomic\TNonEmptyArray([$array_type->key, $array_type->value])
-                            : new Type\Atomic\TNonEmptyList($array_type->value)
+                            ? new TNonEmptyArray([$array_type->key, $array_type->value])
+                            : new TNonEmptyList($array_type->value)
                     ])
                 )
             ]);
         }
 
-        return new Type\Union([new Type\Atomic\TList(Type::getArray())]);
+        return new Union([new TList(Type::getArray())]);
     }
 }

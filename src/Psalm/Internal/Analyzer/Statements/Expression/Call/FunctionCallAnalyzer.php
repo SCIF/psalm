@@ -1,18 +1,26 @@
 <?php
+
 namespace Psalm\Internal\Analyzer\Statements\Expression\Call;
 
 use PhpParser;
 use Psalm\CodeLocation;
+use Psalm\Codebase;
 use Psalm\Context;
 use Psalm\Internal\Algebra;
 use Psalm\Internal\Algebra\FormulaGenerator;
+use Psalm\Internal\Analyzer\AlgebraAnalyzer;
+use Psalm\Internal\Analyzer\FunctionLikeAnalyzer;
 use Psalm\Internal\Analyzer\Statements\Expression\CallAnalyzer;
 use Psalm\Internal\Analyzer\Statements\ExpressionAnalyzer;
 use Psalm\Internal\Analyzer\StatementsAnalyzer;
+use Psalm\Internal\Analyzer\TraitAnalyzer;
 use Psalm\Internal\Codebase\InternalCallMapHandler;
 use Psalm\Internal\Codebase\TaintFlowGraph;
+use Psalm\Internal\DataFlow\TaintSink;
+use Psalm\Internal\MethodIdentifier;
 use Psalm\Internal\Type\Comparator\CallableTypeComparator;
 use Psalm\Internal\Type\TemplateResult;
+use Psalm\Internal\Type\TypeCombiner;
 use Psalm\Issue\DeprecatedFunction;
 use Psalm\Issue\ImpureFunctionCall;
 use Psalm\Issue\InvalidFunctionCall;
@@ -29,26 +37,40 @@ use Psalm\Node\VirtualArg;
 use Psalm\Node\VirtualIdentifier;
 use Psalm\Plugin\EventHandler\Event\AddRemoveTaintsEvent;
 use Psalm\Plugin\EventHandler\Event\AfterEveryFunctionCallAnalysisEvent;
-use Psalm\Storage\Assertion;
 use Psalm\Storage\FunctionLikeParameter;
+use Psalm\Storage\Possibilities;
 use Psalm\Type;
+use Psalm\Type\Atomic;
+use Psalm\Type\Atomic\TArray;
 use Psalm\Type\Atomic\TCallable;
 use Psalm\Type\Atomic\TCallableObject;
 use Psalm\Type\Atomic\TCallableString;
+use Psalm\Type\Atomic\TClosure;
+use Psalm\Type\Atomic\TKeyedArray;
+use Psalm\Type\Atomic\TList;
+use Psalm\Type\Atomic\TLiteralString;
 use Psalm\Type\Atomic\TMixed;
 use Psalm\Type\Atomic\TNamedObject;
 use Psalm\Type\Atomic\TNull;
+use Psalm\Type\Atomic\TObjectWithProperties;
 use Psalm\Type\Atomic\TString;
 use Psalm\Type\Atomic\TTemplateParam;
 use Psalm\Type\Reconciler;
+use Psalm\Type\TaintKind;
+use Psalm\Type\Union;
+use UnexpectedValueException;
 
 use function array_map;
 use function array_merge;
+use function array_shift;
+use function array_slice;
 use function count;
 use function explode;
 use function implode;
 use function in_array;
+use function preg_replace;
 use function reset;
+use function spl_object_id;
 use function strpos;
 use function strtolower;
 
@@ -60,8 +82,9 @@ class FunctionCallAnalyzer extends CallAnalyzer
     public static function analyze(
         StatementsAnalyzer $statements_analyzer,
         PhpParser\Node\Expr\FuncCall $stmt,
-        Context $context
-    ) : bool {
+        Context $context,
+        ?TemplateResult $template_result = null
+    ): bool {
         $function_name = $stmt->name;
 
         $codebase = $statements_analyzer->getCodebase();
@@ -69,16 +92,19 @@ class FunctionCallAnalyzer extends CallAnalyzer
         $code_location = new CodeLocation($statements_analyzer->getSource(), $stmt);
         $config = $codebase->config;
 
+        $is_first_class_callable = $stmt->isFirstClassCallable();
+
         $real_stmt = $stmt;
 
         if ($function_name instanceof PhpParser\Node\Name
+            && !$is_first_class_callable
             && isset($stmt->getArgs()[0])
             && !$stmt->getArgs()[0]->unpack
         ) {
             $original_function_id = implode('\\', $function_name->parts);
 
             if ($original_function_id === 'call_user_func') {
-                $other_args = \array_slice($stmt->getArgs(), 1);
+                $other_args = array_slice($stmt->getArgs(), 1);
 
                 $function_name = $stmt->getArgs()[0]->value;
 
@@ -140,14 +166,25 @@ class FunctionCallAnalyzer extends CallAnalyzer
             $set_inside_conditional = true;
         }
 
-        ArgumentsAnalyzer::analyze(
-            $statements_analyzer,
-            $stmt->getArgs(),
-            $function_call_info->function_params,
-            $function_call_info->function_id,
-            $function_call_info->allow_named_args,
-            $context
-        );
+        if (!$is_first_class_callable) {
+            if (isset($function_call_info->function_storage->template_types)) {
+                if (!$template_result) {
+                    $template_result = new TemplateResult([], []);
+                }
+
+                $template_result->template_types += $function_call_info->function_storage->template_types ?: [];
+            }
+
+            ArgumentsAnalyzer::analyze(
+                $statements_analyzer,
+                $stmt->getArgs(),
+                $function_call_info->function_params,
+                $function_call_info->function_id,
+                $function_call_info->allow_named_args,
+                $context,
+                $template_result
+            );
+        }
 
         if ($set_inside_conditional) {
             $context->inside_conditional = false;
@@ -155,9 +192,12 @@ class FunctionCallAnalyzer extends CallAnalyzer
 
         $function_callable = null;
 
-        if ($function_name instanceof PhpParser\Node\Name && $function_call_info->function_id) {
+        if (!$is_first_class_callable
+            && $function_name instanceof PhpParser\Node\Name
+            && $function_call_info->function_id
+        ) {
             if (!$function_call_info->is_stubbed && $function_call_info->in_call_map) {
-                $function_callable = \Psalm\Internal\Codebase\InternalCallMapHandler::getCallableFromCallMapById(
+                $function_callable = InternalCallMapHandler::getCallableFromCallMapById(
                     $codebase,
                     $function_call_info->function_id,
                     $stmt->getArgs(),
@@ -168,10 +208,14 @@ class FunctionCallAnalyzer extends CallAnalyzer
             }
         }
 
+        $already_inferred_lower_bounds = $template_result
+            ? $template_result->lower_bounds
+            : [];
+
         $template_result = new TemplateResult([], []);
 
         // do this here to allow closure param checks
-        if ($function_call_info->function_params !== null) {
+        if (!$is_first_class_callable && $function_call_info->function_params !== null) {
             ArgumentsAnalyzer::checkArgumentsMatch(
                 $statements_analyzer,
                 $stmt->getArgs(),
@@ -192,6 +236,8 @@ class FunctionCallAnalyzer extends CallAnalyzer
             $function_call_info->function_id
         );
 
+        $template_result->lower_bounds += $already_inferred_lower_bounds;
+
         if ($function_name instanceof PhpParser\Node\Name && $function_call_info->function_id) {
             $stmt_type = FunctionCallReturnTypeFetcher::fetch(
                 $statements_analyzer,
@@ -209,6 +255,10 @@ class FunctionCallAnalyzer extends CallAnalyzer
 
             $statements_analyzer->node_data->setType($real_stmt, $stmt_type);
 
+            if ($stmt_type->isNever()) {
+                $context->has_returned = true;
+            }
+
             $event = new AfterEveryFunctionCallAnalysisEvent(
                 $stmt,
                 $function_call_info->function_id,
@@ -218,6 +268,45 @@ class FunctionCallAnalyzer extends CallAnalyzer
             );
 
             $config->eventDispatcher->dispatchAfterEveryFunctionCallAnalysis($event);
+
+            if ($is_first_class_callable) {
+                return true;
+            }
+        }
+
+        if ($is_first_class_callable) {
+            $type_provider = $statements_analyzer->getNodeTypeProvider();
+            $closure_types = [];
+
+            if ($input_type = $type_provider->getType($function_name)) {
+                foreach ($input_type->getAtomicTypes() as $atomic_type) {
+                    $candidate_callable = CallableTypeComparator::getCallableFromAtomic(
+                        $codebase,
+                        $atomic_type,
+                        null,
+                        $statements_analyzer
+                    );
+
+                    if ($candidate_callable) {
+                        $closure_types[] = new TClosure(
+                            'Closure',
+                            $candidate_callable->params,
+                            $candidate_callable->return_type,
+                            $candidate_callable->is_pure
+                        );
+                    }
+                }
+            }
+
+            if ($closure_types) {
+                $stmt_type = TypeCombiner::combine($closure_types, $codebase);
+            } else {
+                $stmt_type = Type::getClosure();
+            }
+
+            $statements_analyzer->node_data->setType($real_stmt, $stmt_type);
+
+            return true;
         }
 
         foreach ($function_call_info->defined_constants as $const_name => $const_type) {
@@ -265,15 +354,13 @@ class FunctionCallAnalyzer extends CallAnalyzer
         );
 
         if ($function_call_info->function_storage) {
-            $inferred_lower_bounds = $template_result->lower_bounds;
-
             if ($function_call_info->function_storage->assertions && $function_name instanceof PhpParser\Node\Name) {
                 self::applyAssertionsToContext(
                     $function_name,
                     null,
                     $function_call_info->function_storage->assertions,
                     $stmt->getArgs(),
-                    $inferred_lower_bounds,
+                    $template_result,
                     $context,
                     $statements_analyzer
                 );
@@ -283,9 +370,8 @@ class FunctionCallAnalyzer extends CallAnalyzer
                 $statements_analyzer->node_data->setIfTrueAssertions(
                     $stmt,
                     array_map(
-                        static function (Assertion $assertion) use ($inferred_lower_bounds, $codebase) : Assertion {
-                            return $assertion->getUntemplatedCopy($inferred_lower_bounds ?: [], null, $codebase);
-                        },
+                        static fn(Possibilities $assertion): Possibilities =>
+                            $assertion->getUntemplatedCopy($template_result, null, $codebase),
                         $function_call_info->function_storage->if_true_assertions
                     )
                 );
@@ -295,25 +381,22 @@ class FunctionCallAnalyzer extends CallAnalyzer
                 $statements_analyzer->node_data->setIfFalseAssertions(
                     $stmt,
                     array_map(
-                        static function (Assertion $assertion) use ($inferred_lower_bounds, $codebase) : Assertion {
-                            return $assertion->getUntemplatedCopy($inferred_lower_bounds ?: [], null, $codebase);
-                        },
+                        static fn(Possibilities $assertion): Possibilities =>
+                            $assertion->getUntemplatedCopy($template_result, null, $codebase),
                         $function_call_info->function_storage->if_false_assertions
                     )
                 );
             }
 
             if ($function_call_info->function_storage->deprecated && $function_call_info->function_id) {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new DeprecatedFunction(
                         'The function ' . $function_call_info->function_id . ' has been marked as deprecated',
                         $code_location,
                         $function_call_info->function_id
                     ),
                     $statements_analyzer->getSuppressedIssues()
-                )) {
-                    // continue
-                }
+                );
             }
         }
 
@@ -343,9 +426,6 @@ class FunctionCallAnalyzer extends CallAnalyzer
         return true;
     }
 
-    /**
-     * @return FunctionCallInfo
-     */
     private static function handleNamedFunction(
         StatementsAnalyzer $statements_analyzer,
         PhpParser\Node\Expr\FuncCall $stmt,
@@ -445,13 +525,14 @@ class FunctionCallAnalyzer extends CallAnalyzer
         $function_call_info->function_params = null;
         $function_call_info->defined_constants = [];
         $function_call_info->global_variables = [];
+        $args = $stmt->isFirstClassCallable() ? [] : $stmt->getArgs();
 
         if ($function_call_info->function_exists) {
             if ($codebase->functions->params_provider->has($function_call_info->function_id)) {
                 $function_call_info->function_params = $codebase->functions->params_provider->getFunctionParams(
                     $statements_analyzer,
                     $function_call_info->function_id,
-                    $stmt->getArgs(),
+                    $args,
                     null,
                     $code_location
                 );
@@ -475,7 +556,7 @@ class FunctionCallAnalyzer extends CallAnalyzer
                             $function_call_info->defined_constants = $function_storage->defined_constants;
                             $function_call_info->global_variables = $function_storage->global_variables;
                         }
-                    } catch (\UnexpectedValueException $e) {
+                    } catch (UnexpectedValueException $e) {
                         $function_call_info->function_params = [
                             new FunctionLikeParameter('args', false, null, null, null, false, false, true)
                         ];
@@ -484,7 +565,7 @@ class FunctionCallAnalyzer extends CallAnalyzer
                     $function_callable = InternalCallMapHandler::getCallableFromCallMapById(
                         $codebase,
                         $function_call_info->function_id,
-                        $stmt->getArgs(),
+                        $args,
                         $statements_analyzer->node_data
                     );
 
@@ -533,29 +614,25 @@ class FunctionCallAnalyzer extends CallAnalyzer
 
         if ($stmt_name_type = $statements_analyzer->node_data->getType($function_name)) {
             if ($stmt_name_type->isNull()) {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new NullFunctionCall(
                         'Cannot call function on null value',
                         new CodeLocation($statements_analyzer->getSource(), $stmt)
                     ),
                     $statements_analyzer->getSuppressedIssues()
-                )) {
-                    // fall through
-                }
+                );
 
                 return $function_call_info;
             }
 
             if ($stmt_name_type->isNullable()) {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new PossiblyNullFunctionCall(
                         'Cannot call function on possibly null value',
                         new CodeLocation($statements_analyzer->getSource(), $stmt)
                     ),
                     $statements_analyzer->getSuppressedIssues()
-                )) {
-                    // fall through
-                }
+                );
             }
 
             $invalid_function_call_types = [];
@@ -564,24 +641,22 @@ class FunctionCallAnalyzer extends CallAnalyzer
             $var_atomic_types = $stmt_name_type->getAtomicTypes();
 
             while ($var_atomic_types) {
-                $var_type_part = \array_shift($var_atomic_types);
+                $var_type_part = array_shift($var_atomic_types);
 
                 if ($var_type_part instanceof TTemplateParam) {
-                    $var_atomic_types = \array_merge($var_atomic_types, $var_type_part->as->getAtomicTypes());
+                    $var_atomic_types = array_merge($var_atomic_types, $var_type_part->as->getAtomicTypes());
                     continue;
                 }
 
-                if ($var_type_part instanceof Type\Atomic\TClosure || $var_type_part instanceof TCallable) {
-                    if (!$var_type_part->is_pure && $context->pure) {
-                        if (IssueBuffer::accepts(
+                if ($var_type_part instanceof TClosure || $var_type_part instanceof TCallable) {
+                    if (!$var_type_part->is_pure && ($context->pure || $context->mutation_free)) {
+                        IssueBuffer::maybeAdd(
                             new ImpureFunctionCall(
                                 'Cannot call an impure function from a mutation-free context',
                                 new CodeLocation($statements_analyzer->getSource(), $stmt)
                             ),
                             $statements_analyzer->getSuppressedIssues()
-                        )) {
-                            // fall through
-                        }
+                        );
                     }
 
                     $function_call_info->function_params = $var_type_part->params;
@@ -603,41 +678,38 @@ class FunctionCallAnalyzer extends CallAnalyzer
                         );
                     }
 
-                    if ($var_type_part instanceof Type\Atomic\TClosure) {
+                    if ($var_type_part instanceof TClosure) {
                         $function_call_info->byref_uses += $var_type_part->byref_uses;
                     }
 
                     $function_call_info->function_exists = true;
                     $has_valid_function_call_type = true;
-                } elseif ($var_type_part instanceof TMixed || $var_type_part instanceof TTemplateParam) {
+                } elseif ($var_type_part instanceof TMixed) {
                     $has_valid_function_call_type = true;
 
-                    if (IssueBuffer::accepts(
+                    IssueBuffer::maybeAdd(
                         new MixedFunctionCall(
                             'Cannot call function on ' . $var_type_part->getId(),
                             new CodeLocation($statements_analyzer->getSource(), $stmt)
                         ),
                         $statements_analyzer->getSuppressedIssues()
-                    )) {
-                        // fall through
-                    }
+                    );
                 } elseif ($var_type_part instanceof TCallableObject
                     || $var_type_part instanceof TCallableString
+                    || ($var_type_part instanceof TNamedObject && $var_type_part->value === 'Closure')
+                    || ($var_type_part instanceof TObjectWithProperties && isset($var_type_part->methods['__invoke']))
                 ) {
                     // this is fine
                     $has_valid_function_call_type = true;
-                } elseif (($var_type_part instanceof TNamedObject && $var_type_part->value === 'Closure')) {
-                    // this is fine
-                    $has_valid_function_call_type = true;
                 } elseif ($var_type_part instanceof TString
-                    || $var_type_part instanceof Type\Atomic\TArray
-                    || $var_type_part instanceof Type\Atomic\TList
-                    || ($var_type_part instanceof Type\Atomic\TKeyedArray
+                    || $var_type_part instanceof TArray
+                    || $var_type_part instanceof TList
+                    || ($var_type_part instanceof TKeyedArray
                         && count($var_type_part->properties) === 2)
                 ) {
                     $potential_method_id = null;
 
-                    if ($var_type_part instanceof Type\Atomic\TKeyedArray) {
+                    if ($var_type_part instanceof TKeyedArray) {
                         $potential_method_id = CallableTypeComparator::getCallableMethodIdFromTKeyedArray(
                             $var_type_part,
                             $codebase,
@@ -648,7 +720,7 @@ class FunctionCallAnalyzer extends CallAnalyzer
                         if ($potential_method_id === 'not-callable') {
                             $potential_method_id = null;
                         }
-                    } elseif ($var_type_part instanceof Type\Atomic\TLiteralString) {
+                    } elseif ($var_type_part instanceof TLiteralString) {
                         if (!$var_type_part->value) {
                             $invalid_function_call_types[] = '\'\'';
                             continue;
@@ -657,8 +729,8 @@ class FunctionCallAnalyzer extends CallAnalyzer
                         if (strpos($var_type_part->value, '::')) {
                             $parts = explode('::', strtolower($var_type_part->value));
                             $fq_class_name = $parts[0];
-                            $fq_class_name = \preg_replace('/^\\\\/', '', $fq_class_name);
-                            $potential_method_id = new \Psalm\Internal\MethodIdentifier($fq_class_name, $parts[1]);
+                            $fq_class_name = preg_replace('/^\\\\/', '', $fq_class_name);
+                            $potential_method_id = new MethodIdentifier($fq_class_name, $parts[1]);
                         } else {
                             $function_call_info->new_function_name = new VirtualFullyQualified(
                                 $var_type_part->value,
@@ -684,7 +756,7 @@ class FunctionCallAnalyzer extends CallAnalyzer
                 } elseif (!$var_type_part instanceof TNamedObject
                     || !$codebase->classlikes->classOrInterfaceExists($var_type_part->value)
                     || !$codebase->methods->methodExists(
-                        new \Psalm\Internal\MethodIdentifier(
+                        new MethodIdentifier(
                             $var_type_part->value,
                             '__invoke'
                         )
@@ -707,25 +779,21 @@ class FunctionCallAnalyzer extends CallAnalyzer
                 $var_type_part = reset($invalid_function_call_types);
 
                 if ($has_valid_function_call_type) {
-                    if (IssueBuffer::accepts(
+                    IssueBuffer::maybeAdd(
                         new PossiblyInvalidFunctionCall(
                             'Cannot treat type ' . $var_type_part . ' as callable',
                             new CodeLocation($statements_analyzer->getSource(), $stmt)
                         ),
                         $statements_analyzer->getSuppressedIssues()
-                    )) {
-                        // fall through
-                    }
+                    );
                 } else {
-                    if (IssueBuffer::accepts(
+                    IssueBuffer::maybeAdd(
                         new InvalidFunctionCall(
                             'Cannot treat type ' . $var_type_part . ' as callable',
                             new CodeLocation($statements_analyzer->getSource(), $stmt)
                         ),
                         $statements_analyzer->getSuppressedIssues()
-                    )) {
-                        // fall through
-                    }
+                    );
                 }
 
                 return $function_call_info;
@@ -734,11 +802,11 @@ class FunctionCallAnalyzer extends CallAnalyzer
             if ($statements_analyzer->data_flow_graph instanceof TaintFlowGraph
                 && $stmt_name_type->parent_nodes
                 && $stmt_name_type->hasString()
-                && !\in_array('TaintedInput', $statements_analyzer->getSuppressedIssues())
+                && !in_array('TaintedInput', $statements_analyzer->getSuppressedIssues())
             ) {
                 $arg_location = new CodeLocation($statements_analyzer->getSource(), $function_name);
 
-                $custom_call_sink = \Psalm\Internal\DataFlow\TaintSink::getForMethodArgument(
+                $custom_call_sink = TaintSink::getForMethodArgument(
                     'variable-call',
                     'variable-call',
                     0,
@@ -746,7 +814,7 @@ class FunctionCallAnalyzer extends CallAnalyzer
                     $arg_location
                 );
 
-                $custom_call_sink->taints = [\Psalm\Type\TaintKind::INPUT_CALLABLE];
+                $custom_call_sink->taints = [TaintKind::INPUT_CALLABLE];
 
                 $statements_analyzer->data_flow_graph->addSink($custom_call_sink);
 
@@ -780,8 +848,8 @@ class FunctionCallAnalyzer extends CallAnalyzer
         PhpParser\Node\Expr\FuncCall $real_stmt,
         PhpParser\Node\Expr $function_name,
         Context $context,
-        Type\Atomic $atomic_type
-    ) : void {
+        Atomic $atomic_type
+    ): void {
         $old_data_provider = $statements_analyzer->node_data;
 
         $statements_analyzer->node_data = clone $statements_analyzer->node_data;
@@ -789,7 +857,7 @@ class FunctionCallAnalyzer extends CallAnalyzer
         $fake_method_call = new VirtualMethodCall(
             $function_name,
             new VirtualIdentifier('__invoke', $function_name->getAttributes()),
-            $stmt->getArgs()
+            $stmt->args
         );
 
         $suppressed_issues = $statements_analyzer->getSuppressedIssues();
@@ -798,9 +866,9 @@ class FunctionCallAnalyzer extends CallAnalyzer
             $statements_analyzer->addSuppressedIssues(['InternalMethod']);
         }
 
-        $statements_analyzer->node_data->setType($function_name, new Type\Union([$atomic_type]));
+        $statements_analyzer->node_data->setType($function_name, new Union([$atomic_type]));
 
-        \Psalm\Internal\Analyzer\Statements\Expression\Call\MethodCallAnalyzer::analyze(
+        MethodCallAnalyzer::analyze(
             $statements_analyzer,
             $fake_method_call,
             $context,
@@ -833,12 +901,12 @@ class FunctionCallAnalyzer extends CallAnalyzer
 
     private static function processAssertFunctionEffects(
         StatementsAnalyzer $statements_analyzer,
-        \Psalm\Codebase $codebase,
+        Codebase $codebase,
         PhpParser\Node\Expr\FuncCall $stmt,
         PhpParser\Node\Arg $first_arg,
         Context $context
-    ) : void {
-        $first_arg_value_id = \spl_object_id($first_arg->value);
+    ): void {
+        $first_arg_value_id = spl_object_id($first_arg->value);
 
         $assert_clauses = FormulaGenerator::getFormula(
             $first_arg_value_id,
@@ -849,7 +917,7 @@ class FunctionCallAnalyzer extends CallAnalyzer
             $codebase
         );
 
-        \Psalm\Internal\Analyzer\AlgebraAnalyzer::checkForParadox(
+        AlgebraAnalyzer::checkForParadox(
             $context->clauses,
             $assert_clauses,
             $statements_analyzer,
@@ -872,9 +940,7 @@ class FunctionCallAnalyzer extends CallAnalyzer
                 $context->vars_in_scope,
                 $changed_var_ids,
                 array_map(
-                    static function ($_): bool {
-                        return true;
-                    },
+                    static fn($_): bool => true,
                     $assert_type_assertions
                 ),
                 $statements_analyzer,
@@ -894,8 +960,8 @@ class FunctionCallAnalyzer extends CallAnalyzer
                         && !$context->collect_mutations
                         && $statements_analyzer->getFilePath() === $statements_analyzer->getRootFilePath()
                         && (!(($parent_source = $statements_analyzer->getSource())
-                                    instanceof \Psalm\Internal\Analyzer\FunctionLikeAnalyzer)
-                                || !$parent_source->getSource() instanceof \Psalm\Internal\Analyzer\TraitAnalyzer)
+                                    instanceof FunctionLikeAnalyzer)
+                                || !$parent_source->getSource() instanceof TraitAnalyzer)
                     ) {
                         $codebase->analyzer->decrementMixedCount($statements_analyzer->getFilePath());
                     }
@@ -924,12 +990,12 @@ class FunctionCallAnalyzer extends CallAnalyzer
 
     private static function checkFunctionCallPurity(
         StatementsAnalyzer $statements_analyzer,
-        \Psalm\Codebase $codebase,
+        Codebase $codebase,
         PhpParser\Node\Expr\FuncCall $stmt,
         PhpParser\Node $function_name,
         FunctionCallInfo $function_call_info,
         Context $context
-    ) : void {
+    ): void {
         $config = $codebase->config;
 
         if (!$context->collect_initializations
@@ -938,7 +1004,7 @@ class FunctionCallAnalyzer extends CallAnalyzer
                 || $context->external_mutation_free
                 || $codebase->find_unused_variables
                 || !$config->remember_property_assignments_after_call
-                || ($statements_analyzer->getSource() instanceof \Psalm\Internal\Analyzer\FunctionLikeAnalyzer
+                || ($statements_analyzer->getSource() instanceof FunctionLikeAnalyzer
                     && $statements_analyzer->getSource()->track_mutations))
         ) {
             $must_use = true;
@@ -948,27 +1014,26 @@ class FunctionCallAnalyzer extends CallAnalyzer
                     $codebase,
                     $statements_analyzer->node_data,
                     $function_call_info->function_id,
-                    $stmt->getArgs(),
+                    $stmt->isFirstClassCallable() ? [] : $stmt->getArgs(),
                     $must_use
                 )
                 : null;
 
             if ((!$function_call_info->in_call_map
                     && $function_call_info->function_storage
-                    && !$function_call_info->function_storage->pure)
+                    && !$function_call_info->function_storage->pure
+                    && !$function_call_info->function_storage->mutation_free)
                 || ($callmap_function_pure === false)
             ) {
                 if ($context->mutation_free || $context->external_mutation_free) {
-                    if (IssueBuffer::accepts(
+                    IssueBuffer::maybeAdd(
                         new ImpureFunctionCall(
                             'Cannot call an impure function from a mutation-free context',
                             new CodeLocation($statements_analyzer, $function_name)
                         ),
                         $statements_analyzer->getSuppressedIssues()
-                    )) {
-                        // fall through
-                    }
-                } elseif ($statements_analyzer->getSource() instanceof \Psalm\Internal\Analyzer\FunctionLikeAnalyzer
+                    );
+                } elseif ($statements_analyzer->getSource() instanceof FunctionLikeAnalyzer
                     && $statements_analyzer->getSource()->track_mutations
                 ) {
                     $statements_analyzer->getSource()->inferred_has_mutation = true;
@@ -1000,16 +1065,14 @@ class FunctionCallAnalyzer extends CallAnalyzer
                         $function_call_info->function_storage->return_type->isNever()
                     )
                 ) {
-                    if (IssueBuffer::accepts(
+                    IssueBuffer::maybeAdd(
                         new UnusedFunctionCall(
                             'The call to ' . $function_call_info->function_id . ' is not used',
                             new CodeLocation($statements_analyzer, $function_name),
                             $function_call_info->function_id
                         ),
                         $statements_analyzer->getSuppressedIssues()
-                    )) {
-                        // fall through
-                    }
+                    );
                 } else {
                     $stmt->setAttribute('pure', true);
                 }
@@ -1030,7 +1093,7 @@ class FunctionCallAnalyzer extends CallAnalyzer
         $parameters = $function_call_info->function_params;
 
         // If no arguments were passed
-        if (0 === \count($stmt->getArgs())) {
+        if (0 === count($stmt->getArgs())) {
             return false;
         }
 

@@ -1,4 +1,5 @@
 <?php
+
 namespace Psalm\SourceControl\Git;
 
 use Psalm\SourceControl\SourceControlInfo;
@@ -63,7 +64,7 @@ class GitInfo extends SourceControlInfo
         $this->remotes = $remotes;
     }
 
-    public function toArray() : array
+    public function toArray(): array
     {
         $remotes = [];
 
@@ -84,7 +85,7 @@ class GitInfo extends SourceControlInfo
      * Return branch name.
      *
      */
-    public function getBranch() : string
+    public function getBranch(): string
     {
         return $this->branch;
     }
@@ -93,7 +94,7 @@ class GitInfo extends SourceControlInfo
      * Return HEAD commit.
      *
      */
-    public function getHead() : CommitInfo
+    public function getHead(): CommitInfo
     {
         return $this->head;
     }
@@ -103,7 +104,7 @@ class GitInfo extends SourceControlInfo
      *
      * @return RemoteInfo[]
      */
-    public function getRemotes() : array
+    public function getRemotes(): array
     {
         return $this->remotes;
     }

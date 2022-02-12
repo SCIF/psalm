@@ -1,35 +1,50 @@
 <?php
+
 namespace Psalm\Internal\Provider\ReturnTypeProvider;
 
 use PhpParser;
+use Psalm\Internal\Analyzer\StatementsAnalyzer;
 use Psalm\Plugin\EventHandler\Event\FunctionReturnTypeProviderEvent;
+use Psalm\Plugin\EventHandler\FunctionReturnTypeProviderInterface;
 use Psalm\Type;
+use Psalm\Type\Atomic\TFalse;
+use Psalm\Type\Atomic\TList;
+use Psalm\Type\Atomic\TLowercaseString;
+use Psalm\Type\Atomic\TNonEmptyList;
+use Psalm\Type\Atomic\TNonEmptyString;
+use Psalm\Type\Atomic\TString;
+use Psalm\Type\Union;
 
-class ExplodeReturnTypeProvider implements \Psalm\Plugin\EventHandler\FunctionReturnTypeProviderInterface
+use function count;
+
+/**
+ * @internal
+ */
+class ExplodeReturnTypeProvider implements FunctionReturnTypeProviderInterface
 {
     /**
      * @return array<lowercase-string>
      */
-    public static function getFunctionIds() : array
+    public static function getFunctionIds(): array
     {
         return ['explode'];
     }
 
-    public static function getFunctionReturnType(FunctionReturnTypeProviderEvent $event) : Type\Union
+    public static function getFunctionReturnType(FunctionReturnTypeProviderEvent $event): Union
     {
         $statements_source = $event->getStatementsSource();
         $call_args = $event->getCallArgs();
-        if (!$statements_source instanceof \Psalm\Internal\Analyzer\StatementsAnalyzer) {
+        if (!$statements_source instanceof StatementsAnalyzer) {
             return Type::getMixed();
         }
 
-        if (\count($call_args) >= 2) {
+        if (count($call_args) >= 2) {
             $second_arg_type = $statements_source->node_data->getType($call_args[1]->value);
 
-            $inner_type = new Type\Union([
+            $inner_type = new Union([
                 $second_arg_type && $second_arg_type->hasLowercaseString()
-                    ? new Type\Atomic\TLowercaseString()
-                    : new Type\Atomic\TString
+                    ? new TLowercaseString()
+                    : new TString
             ]);
 
             $can_return_empty = isset($call_args[2])
@@ -43,10 +58,10 @@ class ExplodeReturnTypeProvider implements \Psalm\Plugin\EventHandler\FunctionRe
                     return Type::getFalse();
                 }
 
-                return new Type\Union([
+                return new Union([
                     $can_return_empty
-                        ? new Type\Atomic\TList($inner_type)
-                        : new Type\Atomic\TNonEmptyList($inner_type)
+                        ? new TList($inner_type)
+                        : new TNonEmptyList($inner_type)
                 ]);
             }
 
@@ -56,28 +71,28 @@ class ExplodeReturnTypeProvider implements \Psalm\Plugin\EventHandler\FunctionRe
                 if ($first_arg_type->isString()) {
                     $can_be_false = false;
                     foreach ($first_arg_type->getAtomicTypes() as $string_type) {
-                        if (!($string_type instanceof Type\Atomic\TNonEmptyString)) {
+                        if (!($string_type instanceof TNonEmptyString)) {
                             $can_be_false = true;
                             break;
                         }
                     }
                 }
                 if ($can_be_false) {
-                    $array_type = new Type\Union([
+                    $array_type = new Union([
                         $can_return_empty
-                            ? new Type\Atomic\TList($inner_type)
-                            : new Type\Atomic\TNonEmptyList($inner_type),
-                        new Type\Atomic\TFalse
+                            ? new TList($inner_type)
+                            : new TNonEmptyList($inner_type),
+                        new TFalse
                     ]);
 
                     if ($statements_source->getCodebase()->config->ignore_internal_falsable_issues) {
                         $array_type->ignore_falsable_issues = true;
                     }
                 } else {
-                    $array_type = new Type\Union([
+                    $array_type = new Union([
                         $can_return_empty
-                            ? new Type\Atomic\TList($inner_type)
-                            : new Type\Atomic\TNonEmptyList($inner_type),
+                            ? new TList($inner_type)
+                            : new TNonEmptyList($inner_type),
                     ]);
                 }
 

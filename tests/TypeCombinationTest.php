@@ -1,14 +1,15 @@
 <?php
+
 namespace Psalm\Tests;
 
 use Psalm\Internal\Type\TypeCombiner;
+use Psalm\Tests\Traits\ValidCodeAnalysisTestTrait;
 use Psalm\Type;
-
-use function array_values;
+use Psalm\Type\Atomic;
 
 class TypeCombinationTest extends TestCase
 {
-    use Traits\ValidCodeAnalysisTestTrait;
+    use ValidCodeAnalysisTestTrait;
 
     /**
      * @dataProvider providerTestValidTypeCombination
@@ -34,13 +35,13 @@ class TypeCombinationTest extends TestCase
     }
 
     /**
-     * @return iterable<string,array{string,assertions?:array<string,string>,error_levels?:string[]}>
+     * @return iterable<string,array{code:string,assertions?:array<string,string>,ignored_issues?:list<string>}>
      */
     public function providerValidCodeParse(): iterable
     {
         return [
             'multipleValuedArray' => [
-                '<?php
+                'code' => '<?php
                     class A {}
                     class B {}
                     $var = [];
@@ -48,7 +49,7 @@ class TypeCombinationTest extends TestCase
                     $var[] = new B();',
             ],
             'preventLiteralAndClassString' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param "array"|class-string $type_name
                      */
@@ -57,13 +58,33 @@ class TypeCombinationTest extends TestCase
                     }',
             ],
             'NeverTwice' => [
-                '<?php
+                'code' => '<?php
                     /** @return no-return */
                     function other() {
                         throw new Exception();
                     }
 
                     rand(0,1) ? die() : other();',
+            ],
+            'ArrayAndTraversableNotIterable' => [
+                'code' => '<?php declare(strict_types=1);
+
+                    /** @param mixed $identifier */
+                    function isNullIdentifier($identifier): bool
+                    {
+                        if ($identifier instanceof \Traversable || is_array($identifier)) {
+                            expectsTraversableOrArray($identifier);
+                        }
+
+                        return false;
+                    }
+
+                    /** @param Traversable|array<array-key, mixed> $_a */
+                    function expectsTraversableOrArray($_a): void
+                    {
+
+                    }
+                    ',
             ],
         ];
     }
@@ -88,10 +109,10 @@ class TypeCombinationTest extends TestCase
                     'null',
                 ],
             ],
-            'mixedOrEmpty' => [
+            'mixedOrNever' => [
                 'mixed',
                 [
-                    'empty',
+                    'never',
                     'mixed',
                 ],
             ],
@@ -103,10 +124,10 @@ class TypeCombinationTest extends TestCase
                 ],
             ],
             'mixedOrEmptyArray' => [
-                'array<empty, empty>|mixed',
+                'array<never, never>|mixed',
                 [
                     'mixed',
-                    'array<empty, empty>',
+                    'array<never, never>',
                 ],
             ],
             'falseTrueToBool' => [
@@ -176,16 +197,16 @@ class TypeCombinationTest extends TestCase
                 ],
             ],
             'emptyArrays' => [
-                'array<empty, empty>',
+                'array<never, never>',
                 [
-                    'array<empty,empty>',
-                    'array<empty,empty>',
+                    'array<never, never>',
+                    'array<never, never>',
                 ],
             ],
             'arrayStringOrEmptyArray' => [
                 'array<array-key, string>',
                 [
-                    'array<empty>',
+                    'array<never>',
                     'array<string>',
                 ],
             ],
@@ -206,7 +227,7 @@ class TypeCombinationTest extends TestCase
             'arrayMixedOrEmpty' => [
                 'array<array-key, mixed>',
                 [
-                    'array<empty>',
+                    'array<never>',
                     'array<mixed>',
                 ],
             ],
@@ -288,16 +309,16 @@ class TypeCombinationTest extends TestCase
                 ],
             ],
             'arrayObjectAndParamsWithEmptyArray' => [
-                'ArrayObject<int, string>|array<empty, empty>',
+                'ArrayObject<int, string>|array<never, never>',
                 [
                     'ArrayObject<int, string>',
-                    'array<empty, empty>',
+                    'array<never, never>',
                 ],
             ],
             'emptyArrayWithArrayObjectAndParams' => [
-                'ArrayObject<int, string>|array<empty, empty>',
+                'ArrayObject<int, string>|array<never, never>',
                 [
-                    'array<empty, empty>',
+                    'array<never, never>',
                     'ArrayObject<int, string>',
                 ],
             ],
@@ -780,6 +801,20 @@ class TypeCombinationTest extends TestCase
                     'positive-int',
                 ]
             ],
+            'combineNonEmptyStringAndNonEmptyNonSpecificLiteralString' => [
+                'non-empty-string',
+                [
+                    'non-empty-literal-string',
+                    'non-empty-string',
+                ],
+            ],
+            'combineNonEmptyNonSpecificLiteralStringAndNonEmptyString' => [
+                'non-empty-string',
+                [
+                    'non-empty-string',
+                    'non-empty-literal-string',
+                ],
+            ],
         ];
     }
 
@@ -787,8 +822,8 @@ class TypeCombinationTest extends TestCase
      * @param  string $string
      *
      */
-    private static function getAtomic($string): Type\Atomic
+    private static function getAtomic($string): Atomic
     {
-        return array_values(Type::parseString($string)->getAtomicTypes())[0];
+        return Type::parseString($string)->getSingleAtomic();
     }
 }

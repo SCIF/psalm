@@ -1,4 +1,5 @@
 <?php
+
 namespace Psalm\Internal\Analyzer\Statements\Expression;
 
 use PhpParser;
@@ -7,6 +8,9 @@ use Psalm\Internal\Analyzer\Statements\ExpressionAnalyzer;
 use Psalm\Internal\Analyzer\StatementsAnalyzer;
 use Psalm\Type;
 
+/**
+ * @internal
+ */
 class IssetAnalyzer
 {
     public static function analyze(
@@ -38,7 +42,7 @@ class IssetAnalyzer
         StatementsAnalyzer $statements_analyzer,
         PhpParser\Node\Expr $stmt,
         Context $context
-    ) : void {
+    ): void {
         $context->inside_isset = true;
 
         ExpressionAnalyzer::analyze($statements_analyzer, $stmt, $context);

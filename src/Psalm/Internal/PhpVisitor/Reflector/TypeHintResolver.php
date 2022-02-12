@@ -1,4 +1,5 @@
 <?php
+
 namespace Psalm\Internal\PhpVisitor\Reflector;
 
 use PhpParser;
@@ -8,10 +9,16 @@ use Psalm\Internal\Codebase\Scanner as CodebaseScanner;
 use Psalm\Storage\ClassLikeStorage;
 use Psalm\Storage\FileStorage;
 use Psalm\Type;
+use Psalm\Type\Atomic\TNull;
+use Psalm\Type\Union;
+use UnexpectedValueException;
 
 use function implode;
 use function strtolower;
 
+/**
+ * @internal
+ */
 class TypeHintResolver
 {
     /**
@@ -23,14 +30,13 @@ class TypeHintResolver
         FileStorage $file_storage,
         ?ClassLikeStorage $classlike_storage,
         Aliases $aliases,
-        int $php_major_version,
-        int $php_minor_version
-    ) : Type\Union {
+        int $analysis_php_version_id
+    ): Union {
         if ($hint instanceof PhpParser\Node\UnionType) {
             $type = null;
 
             if (!$hint->types) {
-                throw new \UnexpectedValueException('bad');
+                throw new UnexpectedValueException('bad');
             }
 
             foreach ($hint->types as $atomic_typehint) {
@@ -40,8 +46,7 @@ class TypeHintResolver
                     $file_storage,
                     $classlike_storage,
                     $aliases,
-                    $php_major_version,
-                    $php_minor_version
+                    $analysis_php_version_id
                 );
 
                 $type = Type::combineUnionTypes($resolved_type, $type);
@@ -89,18 +94,17 @@ class TypeHintResolver
 
         $type = Type::parseString(
             $fq_type_string,
-            [$php_major_version, $php_minor_version],
+            $analysis_php_version_id,
             []
         );
 
         if ($type_string) {
-            $atomic_types = $type->getAtomicTypes();
-            $atomic_type = \reset($atomic_types);
+            $atomic_type = $type->getSingleAtomic();
             $atomic_type->text = $type_string;
         }
 
         if ($is_nullable) {
-            $type->addType(new Type\Atomic\TNull);
+            $type->addType(new TNull);
         }
 
         return $type;

@@ -1,10 +1,13 @@
 <?php
+
 namespace Psalm\Type\Atomic;
+
+use Psalm\Type\Atomic;
 
 /**
  * Denotes the `resource` type (e.g. a file handle).
  */
-class TResource extends \Psalm\Type\Atomic
+class TResource extends Atomic
 {
     public function __toString(): string
     {
@@ -23,13 +26,12 @@ class TResource extends \Psalm\Type\Atomic
         ?string $namespace,
         array $aliased_classes,
         ?string $this_class,
-        int $php_major_version,
-        int $php_minor_version
+        int $analysis_php_version_id
     ): ?string {
         return null;
     }
 
-    public function canBeFullyExpressedInPhp(int $php_major_version, int $php_minor_version): bool
+    public function canBeFullyExpressedInPhp(int $analysis_php_version_id): bool
     {
         return false;
     }

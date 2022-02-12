@@ -1,10 +1,16 @@
 <?php
+
 namespace Psalm\Type;
 
+use InvalidArgumentException;
 use Psalm\CodeLocation;
 use Psalm\Codebase;
 use Psalm\Internal\Analyzer\StatementsAnalyzer;
+use Psalm\Internal\Codebase\TaintFlowGraph;
+use Psalm\Internal\Codebase\VariableUseGraph;
+use Psalm\Internal\MethodIdentifier;
 use Psalm\Internal\Type\AssertionReconciler;
+use Psalm\Internal\Type\TypeExpander;
 use Psalm\Issue\DocblockTypeContradiction;
 use Psalm\Issue\PsalmInternalError;
 use Psalm\Issue\RedundantCondition;
@@ -13,23 +19,51 @@ use Psalm\Issue\RedundantPropertyInitializationCheck;
 use Psalm\Issue\TypeDoesNotContainNull;
 use Psalm\Issue\TypeDoesNotContainType;
 use Psalm\IssueBuffer;
+use Psalm\Storage\Assertion;
+use Psalm\Storage\Assertion\ArrayKeyExists;
+use Psalm\Storage\Assertion\Empty_;
+use Psalm\Storage\Assertion\Falsy;
+use Psalm\Storage\Assertion\HasArrayKey;
+use Psalm\Storage\Assertion\HasIntOrStringArrayAccess;
+use Psalm\Storage\Assertion\HasStringArrayAccess;
+use Psalm\Storage\Assertion\IsEqualIsset;
+use Psalm\Storage\Assertion\IsIdentical;
+use Psalm\Storage\Assertion\IsIsset;
+use Psalm\Storage\Assertion\IsNotIsset;
+use Psalm\Storage\Assertion\IsNotLooselyEqual;
+use Psalm\Storage\Assertion\NestedAssertions;
+use Psalm\Storage\Assertion\NonEmpty;
+use Psalm\Storage\Assertion\NonEmptyCountable;
+use Psalm\Storage\Assertion\NotNestedAssertions;
+use Psalm\Storage\Assertion\Truthy;
 use Psalm\Type;
-use Psalm\Type\Atomic\TEmpty;
+use Psalm\Type\Atomic\TArray;
+use Psalm\Type\Atomic\TArrayKey;
+use Psalm\Type\Atomic\TBool;
+use Psalm\Type\Atomic\TClassStringMap;
+use Psalm\Type\Atomic\TFalse;
 use Psalm\Type\Atomic\TInt;
+use Psalm\Type\Atomic\TKeyedArray;
+use Psalm\Type\Atomic\TList;
 use Psalm\Type\Atomic\TMixed;
 use Psalm\Type\Atomic\TNamedObject;
+use Psalm\Type\Atomic\TNever;
 use Psalm\Type\Atomic\TNull;
 use Psalm\Type\Atomic\TObject;
 use Psalm\Type\Atomic\TScalar;
 use Psalm\Type\Atomic\TString;
 use Psalm\Type\Atomic\TTemplateParam;
+use ReflectionProperty;
+use UnexpectedValueException;
 
 use function array_merge;
 use function array_pop;
 use function array_shift;
+use function array_values;
 use function count;
 use function explode;
 use function implode;
+use function is_numeric;
 use function ksort;
 use function preg_match;
 use function preg_quote;
@@ -41,20 +75,24 @@ use function substr;
 
 class Reconciler
 {
+    public const RECONCILIATION_OK = 0;
+    public const RECONCILIATION_REDUNDANT = 1;
+    public const RECONCILIATION_EMPTY = 2;
+
     /** @var array<string, non-empty-list<string>> */
     private static $broken_paths = [];
 
     /**
      * Takes two arrays and consolidates them, removing null values from existing types where applicable
      *
-     * @param  array<string, array<array<int, string>>> $new_types
-     * @param  array<string, array<array<int, string>>> $active_new_types - types we can complain about
-     * @param  array<string, Type\Union> $existing_types
+     * @param  array<string, array<array<int, Assertion>>> $new_types
+     * @param  array<string, array<array<int, Assertion>>> $active_new_types - types we can complain about
+     * @param  array<string, Union> $existing_types
      * @param  array<string, bool>       $changed_var_ids
      * @param  array<string, bool>       $referenced_var_ids
-     * @param  array<string, array<string, Type\Union>> $template_type_map
+     * @param  array<string, array<string, Union>> $template_type_map
      *
-     * @return array<string, Type\Union>
+     * @return array<string, Union>
      */
     public static function reconcileKeyedTypes(
         array $new_types,
@@ -94,7 +132,7 @@ class Reconciler
             $has_negation = false;
             $has_isset = false;
             $has_inverted_isset = false;
-            $has_falsyish = false;
+            $has_truthy_or_falsy_or_empty = false;
             $has_empty = false;
             $has_count_check = false;
             $is_real = ($old_new_types[$key] ?? null) === $new_type_parts;
@@ -102,30 +140,31 @@ class Reconciler
 
             foreach ($new_type_parts as $new_type_part_parts) {
                 foreach ($new_type_part_parts as $new_type_part_part) {
-                    if ($new_type_part_part[0] === '!') {
+                    if ($new_type_part_part->isNegation()) {
                         $has_negation = true;
                     }
 
                     $has_isset = $has_isset
-                        || $new_type_part_part === 'isset'
-                        || $new_type_part_part === '=isset'
-                        || $new_type_part_part === 'array-key-exists'
-                        || $new_type_part_part === '=string-array-access';
+                        || $new_type_part_part instanceof IsIsset
+                        || $new_type_part_part instanceof IsEqualIsset
+                        || $new_type_part_part instanceof ArrayKeyExists
+                        || $new_type_part_part instanceof HasStringArrayAccess;
 
-                    $has_empty = $has_empty || $new_type_part_part === 'empty';
+                    $has_empty = $has_empty || $new_type_part_part instanceof Empty_;
 
-                    $has_falsyish = $has_falsyish
-                        || $new_type_part_part === 'empty'
-                        || $new_type_part_part === 'falsy';
+                    $has_truthy_or_falsy_or_empty = $has_truthy_or_falsy_or_empty
+                        || $new_type_part_part instanceof NonEmpty
+                        || $new_type_part_part instanceof Truthy
+                        || $new_type_part_part instanceof Empty_
+                        || $new_type_part_part instanceof Falsy;
 
                     $is_equality = $is_equality
-                        && $new_type_part_part[0] === '='
-                        && $new_type_part_part !== '=isset';
+                        && $new_type_part_part instanceof IsIdentical;
 
-                    $has_inverted_isset = $has_inverted_isset || $new_type_part_part === '!isset';
+                    $has_inverted_isset = $has_inverted_isset || $new_type_part_part instanceof IsNotIsset;
 
                     $has_count_check = $has_count_check
-                        || $new_type_part_part === 'non-empty-countable';
+                        || $new_type_part_part instanceof NonEmptyCountable;
                 }
             }
 
@@ -148,31 +187,27 @@ class Reconciler
                     $has_object_array_access
                 );
 
-            if ($result_type && empty($result_type->getAtomicTypes())) {
-                throw new \InvalidArgumentException('Union::$types cannot be empty after get value for ' . $key);
+            if ($result_type && $result_type->isUnionEmpty()) {
+                throw new InvalidArgumentException('Union::$types cannot be empty after get value for ' . $key);
             }
 
             $before_adjustment = $result_type ? clone $result_type : null;
 
-            $failed_reconciliation = 0;
+            $failed_reconciliation = self::RECONCILIATION_OK;
 
             foreach ($new_type_parts as $offset => $new_type_part_parts) {
                 $orred_type = null;
 
                 foreach ($new_type_part_parts as $new_type_part_part) {
-                    if ($new_type_part_part[0] === '@'
-                        || ($new_type_part_part[0] === '!'
-                            && $new_type_part_part[1] === '@')
+                    if ($new_type_part_part instanceof NestedAssertions
+                        || $new_type_part_part instanceof NotNestedAssertions
                     ) {
-                        if ($new_type_part_part[0] === '!') {
-                            $nested_negated = !$negated;
+                        $data = $new_type_part_part->assertions;
 
-                            /** @var array<string, array<int, array<int, string>>> */
-                            $data = \json_decode(substr($new_type_part_part, 2), true);
+                        if ($new_type_part_part instanceof NotNestedAssertions) {
+                            $nested_negated = !$negated;
                         } else {
                             $nested_negated = $negated;
-                            /** @var array<string, array<int, array<int, string>>> */
-                            $data = \json_decode(substr($new_type_part_part, 1), true);
                         }
 
                         $existing_types = self::reconcileKeyedTypes(
@@ -188,7 +223,7 @@ class Reconciler
                             $nested_negated
                         );
 
-                        $new_type_part_part = ($nested_negated ? '' : '!') . 'falsy';
+                        $new_type_part_part = $nested_negated ? new Falsy() : new Truthy();
                     }
 
                     $result_type_candidate = AssertionReconciler::reconcile(
@@ -208,9 +243,8 @@ class Reconciler
                         $negated
                     );
 
-                    /** @psalm-suppress TypeDoesNotContainType can be empty after removing above */
-                    if (!$result_type_candidate->getAtomicTypes()) {
-                        $result_type_candidate->addType(new TEmpty);
+                    if ($result_type_candidate->isUnionEmpty()) {
+                        $result_type_candidate->addType(new TNever);
                     }
 
                     $orred_type = Type::combineUnionTypes(
@@ -224,17 +258,17 @@ class Reconciler
             }
 
             if (!$result_type) {
-                throw new \UnexpectedValueException('$result_type should not be null');
+                throw new UnexpectedValueException('$result_type should not be null');
             }
 
-            if (!$did_type_exist && $result_type->isEmpty()) {
+            if (!$did_type_exist && $result_type->isNever()) {
                 continue;
             }
 
-            if (($statements_analyzer->data_flow_graph instanceof \Psalm\Internal\Codebase\TaintFlowGraph
+            if (($statements_analyzer->data_flow_graph instanceof TaintFlowGraph
                     && (!$result_type->hasScalarType()
                         || ($result_type->hasString() && !$result_type->hasLiteralString())))
-                || $statements_analyzer->data_flow_graph instanceof \Psalm\Internal\Codebase\VariableUseGraph
+                || $statements_analyzer->data_flow_graph instanceof VariableUseGraph
             ) {
                 if ($before_adjustment && $before_adjustment->parent_nodes) {
                     $result_type->parent_nodes = $before_adjustment->parent_nodes;
@@ -276,11 +310,11 @@ class Reconciler
                         }
                     }
                 }
-            } elseif (!$has_negation && !$has_falsyish && !$has_isset) {
+            } elseif (!$has_negation && !$has_truthy_or_falsy_or_empty && !$has_isset) {
                 $changed_var_ids[$key] = true;
             }
 
-            if ($failed_reconciliation === 2) {
+            if ($failed_reconciliation === self::RECONCILIATION_EMPTY) {
                 $result_type->failed_reconciliation = true;
             }
 
@@ -306,21 +340,20 @@ class Reconciler
      *     '$a[0]->foo->bar' => 'isset' // original assertion
      * ]
      *
-     * @param array<string, array<array<int, string>>> $new_types
-     * @param array<string, Type\Union> $existing_types
+     * @param array<string, array<array<int, Assertion>>> $new_types
+     * @param array<string, Union> $existing_types
      *
-     * @return array<string, array<array<int, string>>>
+     * @return array<string, array<array<int, Assertion>>>
      */
-    private static function addNestedAssertions(array $new_types, array $existing_types) : array
+    private static function addNestedAssertions(array $new_types, array $existing_types): array
     {
         foreach ($new_types as $nk => $type) {
             if (strpos($nk, '[') || strpos($nk, '->')) {
-                if ($type[0][0] === '=isset'
-                    || $type[0][0] === '!=empty'
-                    || $type[0][0] === 'isset'
-                    || $type[0][0] === '!empty'
+                if ($type[0][0] instanceof IsEqualIsset
+                    || $type[0][0] instanceof IsIsset
+                    || $type[0][0] instanceof NonEmpty
                 ) {
-                    $key_parts = Reconciler::breakUpPathIntoParts($nk);
+                    $key_parts = self::breakUpPathIntoParts($nk);
 
                     $base_key = array_shift($key_parts);
 
@@ -331,9 +364,9 @@ class Reconciler
 
                     if (!isset($existing_types[$base_key]) || $existing_types[$base_key]->isNullable()) {
                         if (!isset($new_types[$base_key])) {
-                            $new_types[$base_key] = [['=isset']];
+                            $new_types[$base_key] = [[new IsEqualIsset()]];
                         } else {
-                            $new_types[$base_key][] = ['=isset'];
+                            $new_types[$base_key][] = [new IsEqualIsset()];
                         }
                     }
 
@@ -347,9 +380,9 @@ class Reconciler
                             $new_base_key = $base_key . '[' . $array_key . ']';
 
                             if (strpos($array_key, '\'') !== false) {
-                                $new_types[$base_key][] = ['=string-array-access'];
+                                $new_types[$base_key][] = [new HasStringArrayAccess()];
                             } else {
-                                $new_types[$base_key][] = ['=int-or-string-array-access'];
+                                $new_types[$base_key][] = [new HasIntOrStringArrayAccess()];
                             }
 
                             $base_key = $new_base_key;
@@ -362,7 +395,7 @@ class Reconciler
                             $new_base_key = $base_key . '->' . $property_name;
 
                             if (!isset($new_types[$base_key])) {
-                                $new_types[$base_key] = [['=isset']];
+                                $new_types[$base_key] = [[new IsEqualIsset()]];
                             }
 
                             $base_key = $new_base_key;
@@ -375,34 +408,32 @@ class Reconciler
                         }
 
                         if (!isset($new_types[$base_key])) {
-                            $new_types[$base_key] = [['!~bool'], ['!~int'], ['=isset']];
+                            $new_types[$base_key] = [
+                                [new IsNotLooselyEqual(new TBool())],
+                                [new IsNotLooselyEqual(new TInt())],
+                                [new IsEqualIsset()]
+                            ];
                         } else {
-                            $new_types[$base_key][] = ['!~bool'];
-                            $new_types[$base_key][] = ['!~int'];
-                            $new_types[$base_key][] = ['=isset'];
+                            $new_types[$base_key][] = [new IsNotLooselyEqual(new TBool())];
+                            $new_types[$base_key][] = [new IsNotLooselyEqual(new TInt())];
+                            $new_types[$base_key][] = [new IsEqualIsset()];
                         }
                     }
                 }
 
-                if ($type[0][0] === 'array-key-exists') {
-                    $key_parts = Reconciler::breakUpPathIntoParts($nk);
+                if ($type[0][0] instanceof ArrayKeyExists) {
+                    $key_parts = self::breakUpPathIntoParts($nk);
 
                     if (count($key_parts) === 4
                         && $key_parts[1] === '['
                         && $key_parts[2][0] !== '\''
-                        && !\is_numeric($key_parts[2])
+                        && !is_numeric($key_parts[2])
                     ) {
-                        if (isset($new_types[$key_parts[2]])) {
-                            $new_types[$key_parts[2]][] = ['=in-array-' . $key_parts[0]];
-                        } else {
-                            $new_types[$key_parts[2]] = [['=in-array-' . $key_parts[0]]];
-                        }
-
                         if ($key_parts[0][0] === '$') {
                             if (isset($new_types[$key_parts[0]])) {
-                                $new_types[$key_parts[0]][] = ['=has-array-key-' . $key_parts[2]];
+                                $new_types[$key_parts[0]][] = [new HasArrayKey($key_parts[2])];
                             } else {
-                                $new_types[$key_parts[0]] = [['=has-array-key-' . $key_parts[2]]];
+                                $new_types[$key_parts[0]] = [[new HasArrayKey($key_parts[2])]];
                             }
                         }
                     }
@@ -511,7 +542,7 @@ class Reconciler
             }
         }
 
-        $parts = \array_values($parts);
+        $parts = array_values($parts);
 
         self::$broken_paths[$path] = $parts;
 
@@ -521,7 +552,7 @@ class Reconciler
     /**
      * Gets the type for a given (non-existent key) based on the passed keys
      *
-     * @param array<string,Type\Union>  $existing_keys
+     * @param array<string, Union>  $existing_keys
      * @param array<string,mixed>       $new_assertions
      */
     private static function getValueForKey(
@@ -560,7 +591,7 @@ class Reconciler
                 $class_constant = $codebase->classlikes->getClassConstantType(
                     $fq_class_name,
                     $const_name,
-                    \ReflectionProperty::IS_PRIVATE,
+                    ReflectionProperty::IS_PRIVATE,
                     null
                 );
 
@@ -596,7 +627,7 @@ class Reconciler
                             continue;
                         }
 
-                        if ($existing_key_type_part instanceof Type\Atomic\TArray) {
+                        if ($existing_key_type_part instanceof TArray) {
                             if ($has_empty) {
                                 return null;
                             }
@@ -609,12 +640,12 @@ class Reconciler
 
                             if (($has_isset || $has_inverted_isset) && isset($new_assertions[$new_base_key])) {
                                 if ($has_inverted_isset && $new_base_key === $key) {
-                                    $new_base_type_candidate->addType(new Type\Atomic\TNull);
+                                    $new_base_type_candidate->addType(new TNull);
                                 }
 
                                 $new_base_type_candidate->possibly_undefined = true;
                             }
-                        } elseif ($existing_key_type_part instanceof Type\Atomic\TList) {
+                        } elseif ($existing_key_type_part instanceof TList) {
                             if ($has_empty) {
                                 return null;
                             }
@@ -623,29 +654,29 @@ class Reconciler
 
                             if (($has_isset || $has_inverted_isset) && isset($new_assertions[$new_base_key])) {
                                 if ($has_inverted_isset && $new_base_key === $key) {
-                                    $new_base_type_candidate->addType(new Type\Atomic\TNull);
+                                    $new_base_type_candidate->addType(new TNull);
                                 }
 
                                 $new_base_type_candidate->possibly_undefined = true;
                             }
-                        } elseif ($existing_key_type_part instanceof Type\Atomic\TNull
-                            || $existing_key_type_part instanceof Type\Atomic\TFalse
+                        } elseif ($existing_key_type_part instanceof TNull
+                            || $existing_key_type_part instanceof TFalse
                         ) {
                             $new_base_type_candidate = Type::getNull();
 
                             if ($existing_keys[$base_key]->ignore_nullable_issues) {
                                 $new_base_type_candidate->ignore_nullable_issues = true;
                             }
-                        } elseif ($existing_key_type_part instanceof Type\Atomic\TClassStringMap) {
+                        } elseif ($existing_key_type_part instanceof TClassStringMap) {
                             return Type::getMixed();
-                        } elseif ($existing_key_type_part instanceof Type\Atomic\TEmpty
-                            || ($existing_key_type_part instanceof Type\Atomic\TMixed
+                        } elseif ($existing_key_type_part instanceof TNever
+                            || ($existing_key_type_part instanceof TMixed
                                 && $existing_key_type_part->from_loop_isset)
                         ) {
                             return Type::getMixed($inside_loop);
                         } elseif ($existing_key_type_part instanceof TString) {
                             $new_base_type_candidate = Type::getString();
-                        } elseif ($existing_key_type_part instanceof Type\Atomic\TNamedObject
+                        } elseif ($existing_key_type_part instanceof TNamedObject
                             && ($has_isset || $has_inverted_isset)
                         ) {
                             $has_object_array_access = true;
@@ -653,9 +684,9 @@ class Reconciler
                             unset($existing_keys[$new_base_key]);
 
                             return null;
-                        } elseif (!$existing_key_type_part instanceof Type\Atomic\TKeyedArray) {
+                        } elseif (!$existing_key_type_part instanceof TKeyedArray) {
                             return Type::getMixed();
-                        } elseif ($array_key[0] === '$' || ($array_key[0] !== '\'' && !\is_numeric($array_key[0]))) {
+                        } elseif ($array_key[0] === '$' || ($array_key[0] !== '\'' && !is_numeric($array_key[0]))) {
                             if ($has_empty) {
                                 return null;
                             }
@@ -709,7 +740,6 @@ class Reconciler
                         if ($existing_key_type_part instanceof TNull) {
                             $class_property_type = Type::getNull();
                         } elseif ($existing_key_type_part instanceof TMixed
-                            || $existing_key_type_part instanceof TTemplateParam
                             || $existing_key_type_part instanceof TObject
                             || ($existing_key_type_part instanceof TNamedObject
                                 && strtolower($existing_key_type_part->value) === 'stdclass')
@@ -720,7 +750,7 @@ class Reconciler
                                 $class_property_type = Type::getMixed();
                             } else {
                                 if (substr($property_name, -2) === '()') {
-                                    $method_id = new \Psalm\Internal\MethodIdentifier(
+                                    $method_id = new MethodIdentifier(
                                         $existing_key_type_part->value,
                                         strtolower(substr($property_name, 0, -2))
                                     );
@@ -747,7 +777,7 @@ class Reconciler
                                     );
 
                                     if ($method_return_type) {
-                                        $class_property_type = \Psalm\Internal\Type\TypeExpander::expandUnion(
+                                        $class_property_type = TypeExpander::expandUnion(
                                             $codebase,
                                             clone $method_return_type,
                                             $declaring_class,
@@ -809,7 +839,7 @@ class Reconciler
         Codebase $codebase,
         string $fq_class_name,
         string $property_name
-    ) : ?Type\Union {
+    ): ?Union {
         $property_id = $fq_class_name . '::$' . $property_name;
 
         if (!$codebase->properties->propertyExists($property_id, true)) {
@@ -845,7 +875,7 @@ class Reconciler
         );
 
         if ($class_property_type) {
-            return \Psalm\Internal\Type\TypeExpander::expandUnion(
+            return TypeExpander::expandUnion(
                 $codebase,
                 clone $class_property_type,
                 $declaring_class_storage->name,
@@ -865,16 +895,24 @@ class Reconciler
         Union $existing_var_type,
         string $old_var_type_string,
         string $key,
-        string $assertion,
+        Assertion $assertion,
         bool $redundant,
         bool $negated,
         CodeLocation $code_location,
         array $suppressed_issues
     ): void {
-        $not = $assertion[0] === '!';
+        $assertion_string = (string)$assertion;
+        $not = $assertion_string[0] === '!';
 
         if ($not) {
-            $assertion = substr($assertion, 1);
+            $assertion_string = substr($assertion_string, 1);
+        }
+
+        $operator = substr($assertion_string, 0, 1);
+        if ($operator === '>') {
+            $assertion_string = '>= '.substr($assertion_string, 1);
+        } elseif ($operator === '<') {
+            $assertion_string = '<= '.substr($assertion_string, 1);
         }
 
         if ($negated) {
@@ -885,13 +923,15 @@ class Reconciler
         $existing_var_atomic_types = $existing_var_type->getAtomicTypes();
 
         $from_docblock = $existing_var_type->from_docblock
-            || (isset($existing_var_atomic_types[$assertion])
-                && $existing_var_atomic_types[$assertion]->from_docblock);
+            || (isset($existing_var_atomic_types[$assertion_string])
+                && $existing_var_atomic_types[$assertion_string]->from_docblock);
 
         if ($redundant) {
-            if ($existing_var_type->from_property && $assertion === 'isset') {
+            if ($existing_var_type->from_property
+                && ($assertion instanceof IsIsset || $assertion instanceof IsNotIsset)
+            ) {
                 if ($existing_var_type->from_static_property) {
-                    if (IssueBuffer::accepts(
+                    IssueBuffer::maybeAdd(
                         new RedundantPropertyInitializationCheck(
                             'Static property ' . $key . ' with type '
                                 . $old_var_type_string
@@ -899,70 +939,60 @@ class Reconciler
                             $code_location
                         ),
                         $suppressed_issues
-                    )) {
-                        // fall through
-                    }
+                    );
                 } else {
-                    if (IssueBuffer::accepts(
+                    IssueBuffer::maybeAdd(
                         new RedundantPropertyInitializationCheck(
                             'Property ' . $key . ' with type '
                                 . $old_var_type_string . ' should already be set in the constructor',
                             $code_location
                         ),
                         $suppressed_issues
-                    )) {
-                        // fall through
-                    }
+                    );
                 }
             } elseif ($from_docblock) {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new RedundantConditionGivenDocblockType(
                         'Docblock-defined type ' . $old_var_type_string
                         . ' for ' . $key
-                        . ' is ' . ($not ? 'never ' : 'always ') . $assertion,
+                        . ' is ' . ($not ? 'never ' : 'always ') . $assertion_string,
                         $code_location,
-                        $old_var_type_string . ' ' . $assertion
+                        $old_var_type_string . ' ' . $assertion_string
                     ),
                     $suppressed_issues
-                )) {
-                    // fall through
-                }
+                );
             } else {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new RedundantCondition(
                         'Type ' . $old_var_type_string
                         . ' for ' . $key
-                        . ' is ' . ($not ? 'never ' : 'always ') . $assertion,
+                        . ' is ' . ($not ? 'never ' : 'always ') . $assertion_string,
                         $code_location,
-                        $old_var_type_string . ' ' . $assertion
+                        $old_var_type_string . ' ' . $assertion_string
                     ),
                     $suppressed_issues
-                )) {
-                    // fall through
-                }
+                );
             }
         } else {
             if ($from_docblock) {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new DocblockTypeContradiction(
                         'Docblock-defined type ' . $old_var_type_string
                             . ' for ' . $key
-                            . ' is ' . ($not ? 'always ' : 'never ') . $assertion,
+                            . ' is ' . ($not ? 'always ' : 'never ') . $assertion_string,
                         $code_location,
-                        $old_var_type_string . ' ' . $assertion
+                        $old_var_type_string . ' ' . $assertion_string
                     ),
                     $suppressed_issues
-                )) {
-                    // fall through
-                }
+                );
             } else {
-                if ($assertion === 'null' && !$not) {
+                if ($assertion_string === 'null' && !$not) {
                     $issue = new TypeDoesNotContainNull(
                         'Type ' . $old_var_type_string
                             . ' for ' . $key
-                            . ' is never ' . $assertion,
+                            . ' is never ' . $assertion_string,
                         $code_location,
-                        $old_var_type_string . ' ' . $assertion
+                        $old_var_type_string . ' ' . $assertion_string
                     );
                 } else {
                     $issue = new TypeDoesNotContainType(
@@ -974,33 +1004,31 @@ class Reconciler
                     );
                 }
 
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     $issue,
                     $suppressed_issues
-                )) {
-                    // fall through
-                }
+                );
             }
         }
     }
 
     /**
      * @param  string[]                  $key_parts
-     * @param  array<string,Type\Union>  $existing_types
+     * @param  array<string, Union>  $existing_types
      * @param  array<string, bool>       $changed_var_ids
      */
     private static function adjustTKeyedArrayType(
         array $key_parts,
         array &$existing_types,
         array &$changed_var_ids,
-        Type\Union $result_type
+        Union $result_type
     ): void {
         array_pop($key_parts);
         $array_key = array_pop($key_parts);
         array_pop($key_parts);
 
         if ($array_key === null) {
-            throw new \UnexpectedValueException('Not expecting null array key');
+            throw new UnexpectedValueException('Not expecting null array key');
         }
 
         if ($array_key[0] === '$') {
@@ -1013,34 +1041,34 @@ class Reconciler
 
         if (isset($existing_types[$base_key]) && $array_key_offset !== false) {
             foreach ($existing_types[$base_key]->getAtomicTypes() as $base_atomic_type) {
-                if ($base_atomic_type instanceof Type\Atomic\TKeyedArray
-                    || ($base_atomic_type instanceof Type\Atomic\TArray
-                        && !$base_atomic_type->type_params[1]->isEmpty())
-                    || $base_atomic_type instanceof Type\Atomic\TList
-                    || $base_atomic_type instanceof Type\Atomic\TClassStringMap
+                if ($base_atomic_type instanceof TKeyedArray
+                    || ($base_atomic_type instanceof TArray
+                        && !$base_atomic_type->isEmptyArray())
+                    || $base_atomic_type instanceof TList
+                    || $base_atomic_type instanceof TClassStringMap
                 ) {
                     $new_base_type = clone $existing_types[$base_key];
 
-                    if ($base_atomic_type instanceof Type\Atomic\TArray) {
+                    if ($base_atomic_type instanceof TArray) {
                         $previous_key_type = clone $base_atomic_type->type_params[0];
                         $previous_value_type = clone $base_atomic_type->type_params[1];
 
-                        $base_atomic_type = new Type\Atomic\TKeyedArray(
+                        $base_atomic_type = new TKeyedArray(
                             [
                                 $array_key_offset => clone $result_type,
                             ],
                             null
                         );
 
-                        if (!$previous_key_type->isEmpty()) {
+                        if (!$previous_key_type->isNever()) {
                             $base_atomic_type->previous_key_type = $previous_key_type;
                         }
                         $base_atomic_type->previous_value_type = $previous_value_type;
-                    } elseif ($base_atomic_type instanceof Type\Atomic\TList) {
+                    } elseif ($base_atomic_type instanceof TList) {
                         $previous_key_type = Type::getInt();
                         $previous_value_type = clone $base_atomic_type->type_param;
 
-                        $base_atomic_type = new Type\Atomic\TKeyedArray(
+                        $base_atomic_type = new TKeyedArray(
                             [
                                 $array_key_offset => clone $result_type,
                             ],
@@ -1051,7 +1079,7 @@ class Reconciler
 
                         $base_atomic_type->previous_key_type = $previous_key_type;
                         $base_atomic_type->previous_value_type = $previous_value_type;
-                    } elseif ($base_atomic_type instanceof Type\Atomic\TClassStringMap) {
+                    } elseif ($base_atomic_type instanceof TClassStringMap) {
                         // do nothing
                     } else {
                         $base_atomic_type = clone $base_atomic_type;
@@ -1078,7 +1106,7 @@ class Reconciler
         }
     }
 
-    protected static function refineArrayKey(Union $key_type) : void
+    protected static function refineArrayKey(Union $key_type): void
     {
         foreach ($key_type->getAtomicTypes() as $key => $cat) {
             if ($cat instanceof TTemplateParam) {
@@ -1086,17 +1114,16 @@ class Reconciler
                 $key_type->bustCache();
             } elseif ($cat instanceof TScalar || $cat instanceof TMixed) {
                 $key_type->removeType($key);
-                $key_type->addType(new Type\Atomic\TArrayKey());
+                $key_type->addType(new TArrayKey());
             } elseif (!$cat instanceof TString && !$cat instanceof TInt) {
                 $key_type->removeType($key);
-                $key_type->addType(new Type\Atomic\TArrayKey());
+                $key_type->addType(new TArrayKey());
             }
         }
 
-        /** @psalm-suppress TypeDoesNotContainType can be empty after removing above */
-        if (!$key_type->getAtomicTypes()) {
+        if ($key_type->isUnionEmpty()) {
             // this should ideally prompt some sort of error
-            $key_type->addType(new Type\Atomic\TArrayKey());
+            $key_type->addType(new TArrayKey());
         }
     }
 }

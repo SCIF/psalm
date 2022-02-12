@@ -1,8 +1,11 @@
 <?php
-declare(strict_types = 1);
+
+declare(strict_types=1);
+
 namespace Psalm\Internal\LanguageServer\Client;
 
 use Amp\Promise;
+use Generator;
 use JsonMapper;
 use LanguageServerProtocol\Diagnostic;
 use LanguageServerProtocol\TextDocumentIdentifier;
@@ -13,6 +16,8 @@ use function Amp\call;
 
 /**
  * Provides method handlers for all textDocument/* methods
+ *
+ * @internal
  */
 class TextDocument
 {
@@ -57,7 +62,7 @@ class TextDocument
     {
         return call(
             /**
-             * @return \Generator<int, Promise<object>, object, TextDocumentItem>
+             * @return Generator<int, Promise<object>, object, TextDocumentItem>
              */
             static function () use ($textDocument) {
                 /** @var Promise<object> */

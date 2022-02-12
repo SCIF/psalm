@@ -4,6 +4,8 @@ namespace Psalm\Internal\Analyzer;
 
 /**
  * @psalm-immutable
+ *
+ * @internal
  */
 class DataFlowNodeData
 {
@@ -26,6 +28,11 @@ class DataFlowNodeData
      * @var string
      */
     public $file_name;
+
+    /**
+     * @var string
+     */
+    public $file_path;
 
     /**
      * @var string
@@ -62,6 +69,7 @@ class DataFlowNodeData
         int $line_from,
         int $line_to,
         string $file_name,
+        string $file_path,
         string $snippet,
         int $from,
         int $to,
@@ -73,6 +81,7 @@ class DataFlowNodeData
         $this->line_from = $line_from;
         $this->line_to = $line_to;
         $this->file_name = $file_name;
+        $this->file_path = $file_path;
         $this->snippet = $snippet;
         $this->from = $from;
         $this->to = $to;

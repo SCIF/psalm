@@ -1,24 +1,32 @@
 <?php
+
 namespace Psalm\Internal\Provider\ReturnTypeProvider;
 
+use Psalm\Internal\Analyzer\StatementsAnalyzer;
 use Psalm\Internal\Type\Comparator\CallableTypeComparator;
 use Psalm\Internal\Type\TypeCombiner;
 use Psalm\Plugin\EventHandler\Event\MethodReturnTypeProviderEvent;
+use Psalm\Plugin\EventHandler\MethodReturnTypeProviderInterface;
 use Psalm\Type;
+use Psalm\Type\Atomic\TClosure;
+use Psalm\Type\Union;
 
-class ClosureFromCallableReturnTypeProvider implements \Psalm\Plugin\EventHandler\MethodReturnTypeProviderInterface
+/**
+ * @internal
+ */
+class ClosureFromCallableReturnTypeProvider implements MethodReturnTypeProviderInterface
 {
-    public static function getClassLikeNames() : array
+    public static function getClassLikeNames(): array
     {
         return ['Closure'];
     }
 
-    public static function getMethodReturnType(MethodReturnTypeProviderEvent $event): ?Type\Union
+    public static function getMethodReturnType(MethodReturnTypeProviderEvent $event): ?Union
     {
         $source = $event->getSource();
         $method_name_lowercase = $event->getMethodNameLowercase();
         $call_args = $event->getCallArgs();
-        if (!$source instanceof \Psalm\Internal\Analyzer\StatementsAnalyzer) {
+        if (!$source instanceof StatementsAnalyzer) {
             return null;
         }
 
@@ -36,11 +44,12 @@ class ClosureFromCallableReturnTypeProvider implements \Psalm\Plugin\EventHandle
                         $codebase,
                         $atomic_type,
                         null,
-                        $source
+                        $source,
+                        true
                     );
 
                     if ($candidate_callable) {
-                        $closure_types[] = new Type\Atomic\TClosure(
+                        $closure_types[] = new TClosure(
                             'Closure',
                             $candidate_callable->params,
                             $candidate_callable->return_type,

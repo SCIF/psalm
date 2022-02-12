@@ -1,22 +1,24 @@
 <?php
+
 namespace Psalm\Tests\Template;
 
 use Psalm\Tests\TestCase;
-use Psalm\Tests\Traits;
+use Psalm\Tests\Traits\InvalidCodeAnalysisTestTrait;
+use Psalm\Tests\Traits\ValidCodeAnalysisTestTrait;
 
 class NestedTemplateTest extends TestCase
 {
-    use Traits\InvalidCodeAnalysisTestTrait;
-    use Traits\ValidCodeAnalysisTestTrait;
+    use InvalidCodeAnalysisTestTrait;
+    use ValidCodeAnalysisTestTrait;
 
     /**
-     * @return iterable<string,array{string,assertions?:array<string,string>,error_levels?:string[]}>
+     * @return iterable<string,array{code:string,assertions?:array<string,string>,ignored_issues?:list<string>}>
      */
     public function providerValidCodeParse(): iterable
     {
         return [
             'nestedTemplateExtends' => [
-                '<?php
+                'code' => '<?php
                     namespace Foo;
 
                     interface IBaseViewData {}
@@ -48,7 +50,7 @@ class NestedTemplateTest extends TestCase
                     class TeacherRepository extends BaseRepository {}'
             ],
             'unwrapIndirectGenericTemplated' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @template TInner
                      */
@@ -78,7 +80,7 @@ class NestedTemplateTest extends TestCase
                     }'
             ],
             'unwrapFromTemplatedClassString' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @template TInner
                      */
@@ -111,7 +113,7 @@ class NestedTemplateTest extends TestCase
                     $result = load(StringWrapper::class);'
             ],
             'unwrapNestedTemplateWithReset' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @template TValue
                      * @template TArray of non-empty-array<TValue>
@@ -126,13 +128,13 @@ class NestedTemplateTest extends TestCase
     }
 
     /**
-     * @return iterable<string,array{string,error_message:string,1?:string[],2?:bool,3?:string}>
+     * @return iterable<string,array{code:string,error_message:string,ignored_issues?:list<string>,php_version?:string}>
      */
     public function providerInvalidCodeParse(): iterable
     {
         return [
             'nestedTemplateExtendsInvalid' => [
-                '<?php
+                'code' => '<?php
                     namespace Foo;
 
                     interface IBaseViewData {}

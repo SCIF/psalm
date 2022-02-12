@@ -1,19 +1,23 @@
 <?php
+
 namespace Psalm\Tests;
+
+use Psalm\Tests\Traits\InvalidCodeAnalysisTestTrait;
+use Psalm\Tests\Traits\ValidCodeAnalysisTestTrait;
 
 class IfThisIsTest extends TestCase
 {
-    use Traits\ValidCodeAnalysisTestTrait;
-    use Traits\InvalidCodeAnalysisTestTrait;
+    use ValidCodeAnalysisTestTrait;
+    use InvalidCodeAnalysisTestTrait;
 
     /**
-     * @return iterable<string,array{string,assertions?:array<string,string>,error_levels?:string[]}>
+     * @return iterable<string,array{code:string,assertions?:array<string,string>,ignored_issues?:list<string>}>
      */
     public function providerValidCodeParse(): iterable
     {
         return [
             'worksAfterConvert' => [
-                '<?php
+                'code' => '<?php
                     interface I {
                         /**
                          * @return void
@@ -24,7 +28,7 @@ class IfThisIsTest extends TestCase
                     class F implements I
                     {
                         /**
-                         * @psalm-self-out I
+                         * @psalm-this-out I
                          * @return void
                          */
                         public function convert() {}
@@ -42,7 +46,7 @@ class IfThisIsTest extends TestCase
                 '
             ],
             'withTemplate' => [
-                '<?php
+                'code' => '<?php
                 class Frozen {}
                 class Unfrozen {}
 
@@ -90,7 +94,7 @@ class IfThisIsTest extends TestCase
                 '
             ],
             'subclass' => [
-                '<?php
+                'code' => '<?php
                 class G
                 {
                     /**
@@ -107,19 +111,193 @@ class IfThisIsTest extends TestCase
                 $f = new F();
                 $f->test();
                 '
-            ]
+            ],
+            'ifThisIsWithSelfAlias' => [
+                'code' => '<?php
+                    /**
+                     * @template T of string
+                     */
+                    final class App
+                    {
+                        /**
+                         * @psalm-if-this-is self<"idle">
+                         * @psalm-this-out self<"started">
+                         */
+                        public function start(): void
+                        {
+                            throw new RuntimeException("???");
+                        }
+                    }
+
+                    /** @var App<"idle"> */
+                    $app = new App();
+                    $app->start();
+                '
+            ],
+            'ifThisIsAndThisOutAtTheSameTime' => [
+                'code' => '<?php
+                    /**
+                     * @template T of string
+                     */
+                    final class App
+                    {
+                        /**
+                         * @psalm-if-this-is App<"idle">
+                         * @psalm-this-out App<"started">
+                         */
+                        public function start(): void
+                        {
+                            throw new RuntimeException("???");
+                        }
+                    }
+
+                    /** @var App<"idle"> */
+                    $app = new App();
+                    $app->start();
+                '
+            ],
+            'ifThisIsChangeThisTypeInsideMethod' => [
+                'code' => '<?php
+                    /**
+                     * @template T
+                     */
+                    final class Option
+                    {
+                        /**
+                         * @return T|null
+                         */
+                        public function unwrap()
+                        {
+                            throw new RuntimeException("???");
+                        }
+                    }
+
+                    /**
+                     * @template T
+                     */
+                    final class ArrayList
+                    {
+                        /** @var list<T> */
+                        private $items;
+
+                        /**
+                         * @param list<T> $items
+                         */
+                        public function __construct(array $items)
+                        {
+                            $this->items = $items;
+                        }
+
+                        /**
+                         * @psalm-if-this-is ArrayList<Option<int>>
+                         * @return ArrayList<int>
+                         */
+                        public function compact(): ArrayList
+                        {
+                            $values = [];
+
+                            foreach ($this->items as $item) {
+                                $value = $item->unwrap();
+
+                                if (null !== $value) {
+                                    $values[] = $value;
+                                }
+                            }
+
+                            return new self($values);
+                        }
+                    }
+
+                    /** @var ArrayList<Option<int>> $list */
+                    $list = new ArrayList([]);
+                    $numbers = $list->compact();
+                ',
+                'assertions' => [
+                    '$numbers' => 'ArrayList<int>'
+                ],
+            ],
+            'ifThisIsResolveTemplateParams' => [
+                'code' => '<?php
+                    /**
+                     * @template T
+                     */
+                    final class Option
+                    {
+                        /** @return T|null */
+                        public function unwrap() { throw new RuntimeException("???"); }
+                    }
+
+                    /**
+                     * @template L
+                     * @template R
+                     */
+                    final class Either
+                    {
+                        /** @return R|null */
+                        public function unwrap() { throw new RuntimeException("???"); }
+                    }
+
+                    /**
+                     * @template T
+                     */
+                    final class ArrayList
+                    {
+                        /** @var list<T> */
+                        private $items;
+
+                        /**
+                         * @param list<T> $items
+                         */
+                        public function __construct(array $items)
+                        {
+                            $this->items = $items;
+                        }
+
+                        /**
+                         * @template A
+                         * @template B
+                         * @template TOption of Option<A>
+                         * @template TEither of Either<mixed, B>
+                         *
+                         * @psalm-if-this-is ArrayList<TOption|TEither>
+                         * @return ArrayList<A|B>
+                         */
+                        public function compact(): ArrayList
+                        {
+                            $values = [];
+
+                            foreach ($this->items as $item) {
+                                $value = $item->unwrap();
+
+                                if (null !== $value) {
+                                    $values[] = $value;
+                                }
+                            }
+
+                            return new self($values);
+                        }
+                    }
+
+                    /** @var ArrayList<Either<Exception, int>|Option<int>> $list */
+                    $list = new ArrayList([]);
+                    $numbers = $list->compact();
+                ',
+                'assertions' => [
+                    '$numbers' => 'ArrayList<int>'
+                ],
+            ],
         ];
     }
 
     /**
-     * @return array<string, array{0: string, error_message: string}>
+     * @return array<string, array{code: string, error_message: string}>
      */
     public function providerInvalidCodeParse(): iterable
     {
         return [
             'failsWithWrongTemplate1' => [
-                '<?php
-                
+                'code' => '<?php
+
                 /**
                  * @template T
                  */
@@ -147,7 +325,7 @@ class IfThisIsTest extends TestCase
                 'error_message' => 'IfThisIsMismatch'
             ],
             'failsWithWrongTemplate2' => [
-                '<?php
+                'code' => '<?php
                 class Frozen {}
                 class Unfrozen {}
 
@@ -193,6 +371,32 @@ class IfThisIsTest extends TestCase
                 $g = $f->freeze();
                 $g->set("asd", 20);  // Fails
                 ',
+                'error_message' => 'IfThisIsMismatch'
+            ],
+            'failWithInvalidTemplateConstraint' => [
+                'code' => '<?php
+                    /** @template T */
+                    final class Option { }
+
+                    /**
+                     * @template T
+                     */
+                    final class ArrayList
+                    {
+                        /**
+                         * @template A
+                         * @psalm-if-this-is ArrayList<Option<A>>
+                         * @return ArrayList<A>
+                         */
+                        public function compact(): ArrayList
+                        {
+                            throw new RuntimeException("???");
+                        }
+                    }
+
+                    /** @var ArrayList<int> $list */
+                    $list = new ArrayList();
+                    $numbers = $list->compact();',
                 'error_message' => 'IfThisIsMismatch'
             ],
         ];

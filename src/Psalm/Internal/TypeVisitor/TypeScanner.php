@@ -1,4 +1,5 @@
 <?php
+
 namespace Psalm\Internal\TypeVisitor;
 
 use Psalm\Internal\Codebase\Scanner;
@@ -11,6 +12,9 @@ use Psalm\Type\TypeNode;
 
 use function strtolower;
 
+/**
+ * @internal
+ */
 class TypeScanner extends NodeVisitor
 {
     private $scanner;
@@ -32,7 +36,7 @@ class TypeScanner extends NodeVisitor
         $this->phantom_classes = $phantom_classes;
     }
 
-    protected function enterNode(TypeNode $type) : ?int
+    protected function enterNode(TypeNode $type): ?int
     {
         if ($type instanceof TNamedObject) {
             $fq_classlike_name_lc = strtolower($type->value);

@@ -22,8 +22,8 @@ phpunit)
 	;;
 
 collections)
-	git clone --depth=1 git@github.com:muglug/collections.git
-	cd collections
+	git clone --depth=1 git@github.com:psalm/endtoend-test-collections.git
+	cd endtoend-test-collections
 	composer install
 	"$PSALM" --monochrome --show-info=false
 	;;
@@ -31,18 +31,19 @@ collections)
 psl)
 	git clone git@github.com:psalm/endtoend-test-psl.git
 	cd endtoend-test-psl
-	git checkout 1.6.x
-	composer install --ignore-platform-reqs
+	git checkout 1.9.x
+	composer require --dev php-standard-library/psalm-plugin --ignore-platform-reqs
+	cd tools/phpbench && composer install --ignore-platform-reqs && cd ../..
 	"$PSALM" --monochrome --config=tools/psalm/psalm.xml
 	;;
 
 laravel)
-	git clone --depth=1 git@github.com:muglug/framework.git
-	cd framework
+	git clone --depth=1 git@github.com:psalm/endtoend-test-laravel.git
+	cd endtoend-test-laravel
 	composer install
 	"$PSALM" --monochrome
 	;;
 *)
-	echo "Usage: test-with-real-projects.sh {phpunit|collections|proxymanager|laravel|psl}"
+	echo "Usage: test-with-real-projects.sh {phpunit|collections|laravel|psl}"
 	exit 1
 esac

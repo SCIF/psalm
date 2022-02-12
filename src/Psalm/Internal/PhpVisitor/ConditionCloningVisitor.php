@@ -1,15 +1,22 @@
 <?php
+
 declare(strict_types=1);
+
 namespace Psalm\Internal\PhpVisitor;
 
 use PhpParser\Node;
+use PhpParser\Node\Expr;
 use PhpParser\NodeVisitorAbstract;
+use Psalm\Internal\Provider\NodeDataProvider;
 
+/**
+ * @internal
+ */
 class ConditionCloningVisitor extends NodeVisitorAbstract
 {
     private $type_provider;
 
-    public function __construct(\Psalm\Internal\Provider\NodeDataProvider $old_type_provider)
+    public function __construct(NodeDataProvider $old_type_provider)
     {
         $this->type_provider = $old_type_provider;
     }
@@ -19,7 +26,7 @@ class ConditionCloningVisitor extends NodeVisitorAbstract
      */
     public function enterNode(Node $node): Node
     {
-        /** @var \PhpParser\Node\Expr $node */
+        /** @var Expr $node */
         $origNode = $node;
 
         $node = clone $node;

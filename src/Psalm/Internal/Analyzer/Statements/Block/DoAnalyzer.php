@@ -1,7 +1,9 @@
 <?php
+
 namespace Psalm\Internal\Analyzer\Statements\Block;
 
 use PhpParser;
+use Psalm\CodeLocation;
 use Psalm\Context;
 use Psalm\Internal\Algebra;
 use Psalm\Internal\Algebra\FormulaGenerator;
@@ -10,7 +12,10 @@ use Psalm\Internal\Analyzer\StatementsAnalyzer;
 use Psalm\Internal\Clause;
 use Psalm\Internal\Scope\LoopScope;
 use Psalm\Type;
+use Psalm\Type\Reconciler;
+use UnexpectedValueException;
 
+use function array_diff;
 use function array_filter;
 use function array_intersect_key;
 use function array_keys;
@@ -19,6 +24,7 @@ use function array_values;
 use function in_array;
 use function preg_match;
 use function preg_quote;
+use function spl_object_id;
 
 /**
  * @internal
@@ -53,7 +59,7 @@ class DoAnalyzer
             }
         }
 
-        $cond_id = \spl_object_id($stmt->cond);
+        $cond_id = spl_object_id($stmt->cond);
 
         $while_clauses = FormulaGenerator::getFormula(
             $cond_id,
@@ -70,7 +76,7 @@ class DoAnalyzer
                 static function (Clause $c) use ($mixed_var_ids): bool {
                     $keys = array_keys($c->possibilities);
 
-                    $mixed_var_ids = \array_diff($mixed_var_ids, $keys);
+                    $mixed_var_ids = array_diff($mixed_var_ids, $keys);
 
                     foreach ($keys as $key) {
                         foreach ($mixed_var_ids as $mixed_var_id) {
@@ -104,7 +110,7 @@ class DoAnalyzer
 
         // because it's a do {} while, inner loop vars belong to the main context
         if (!$inner_loop_context) {
-            throw new \UnexpectedValueException('There should be an inner loop context');
+            throw new UnexpectedValueException('There should be an inner loop context');
         }
 
         $negated_while_clauses = Algebra::negateFormula($while_clauses);
@@ -119,7 +125,7 @@ class DoAnalyzer
             $changed_var_ids = [];
 
             $inner_loop_context->vars_in_scope =
-                Type\Reconciler::reconcileKeyedTypes(
+                Reconciler::reconcileKeyedTypes(
                     $negated_while_types,
                     [],
                     $inner_loop_context->vars_in_scope,
@@ -128,7 +134,7 @@ class DoAnalyzer
                     $statements_analyzer,
                     [],
                     true,
-                    new \Psalm\CodeLocation($statements_analyzer->getSource(), $stmt->cond)
+                    new CodeLocation($statements_analyzer->getSource(), $stmt->cond)
                 );
         }
 
@@ -172,7 +178,7 @@ class DoAnalyzer
         PhpParser\Node\Stmt\Do_ $stmt,
         Context $context,
         LoopScope $loop_scope
-    ) : void {
+    ): void {
         $do_context = clone $context;
 
         $suppressed_issues = $statements_analyzer->getSuppressedIssues();

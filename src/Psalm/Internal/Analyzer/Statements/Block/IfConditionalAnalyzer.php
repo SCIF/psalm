@@ -1,10 +1,12 @@
 <?php
+
 namespace Psalm\Internal\Analyzer\Statements\Block;
 
 use PhpParser;
 use Psalm\CodeLocation;
 use Psalm\Codebase;
 use Psalm\Context;
+use Psalm\Exception\ScopeAnalysisException;
 use Psalm\Internal\Analyzer\Statements\ExpressionAnalyzer;
 use Psalm\Internal\Analyzer\StatementsAnalyzer;
 use Psalm\Internal\Clause;
@@ -15,8 +17,8 @@ use Psalm\Issue\RedundantCondition;
 use Psalm\Issue\RedundantConditionGivenDocblockType;
 use Psalm\Issue\TypeDoesNotContainType;
 use Psalm\IssueBuffer;
-use Psalm\Type;
 use Psalm\Type\Reconciler;
+use Psalm\Type\Union;
 
 use function array_diff_key;
 use function array_filter;
@@ -26,6 +28,9 @@ use function array_merge;
 use function array_values;
 use function count;
 
+/**
+ * @internal
+ */
 class IfConditionalAnalyzer
 {
     public static function analyze(
@@ -71,11 +76,9 @@ class IfConditionalAnalyzer
                     $entry_clauses = array_values(
                         array_filter(
                             $entry_clauses,
-                            static function (Clause $c) use ($changed_var_ids): bool {
-                                return count($c->possibilities) > 1
-                                    || $c->wedge
-                                    || !isset($changed_var_ids[array_keys($c->possibilities)[0]]);
-                            }
+                            static fn(Clause $c): bool => count($c->possibilities) > 1
+                                || $c->wedge
+                                || !isset($changed_var_ids[array_keys($c->possibilities)[0]])
                         )
                     );
                 }
@@ -116,7 +119,7 @@ class IfConditionalAnalyzer
                 $externally_applied_if_cond_expr,
                 $outer_context
             ) === false) {
-                throw new \Psalm\Exception\ScopeAnalysisException();
+                throw new ScopeAnalysisException();
             }
         }
 
@@ -132,9 +135,7 @@ class IfConditionalAnalyzer
             $first_cond_referenced_var_ids
         );
 
-        if (!$was_inside_conditional) {
-            $outer_context->inside_conditional = false;
-        }
+        $outer_context->inside_conditional = $was_inside_conditional;
 
         if (!$if_context) {
             $if_context = clone $outer_context;
@@ -161,13 +162,15 @@ class IfConditionalAnalyzer
             $referenced_var_ids = $first_cond_referenced_var_ids;
             $if_conditional_context->referenced_var_ids = [];
 
+            $was_inside_conditional = $if_conditional_context->inside_conditional;
+
             $if_conditional_context->inside_conditional = true;
 
             if (ExpressionAnalyzer::analyze($statements_analyzer, $cond, $if_conditional_context) === false) {
-                throw new \Psalm\Exception\ScopeAnalysisException();
+                throw new ScopeAnalysisException();
             }
 
-            $if_conditional_context->inside_conditional = false;
+            $if_conditional_context->inside_conditional = $was_inside_conditional;
 
             /** @var array<string, bool> */
             $more_cond_referenced_var_ids = $if_conditional_context->referenced_var_ids;
@@ -199,14 +202,7 @@ class IfConditionalAnalyzer
         }
 
         $newish_var_ids = array_map(
-            /**
-             * @param Type\Union $_
-             *
-             * @return true
-             */
-            static function (Type\Union $_): bool {
-                return true;
-            },
+            static fn(Union $_): bool => true,
             array_diff_key(
                 $if_conditional_context->vars_in_scope,
                 $pre_condition_vars_in_scope,
@@ -215,14 +211,14 @@ class IfConditionalAnalyzer
             )
         );
 
-        self::handleParadoxicalCondition($statements_analyzer, $cond);
+        self::handleParadoxicalCondition($statements_analyzer, $cond, true);
 
         // get all the var ids that were referenced in the conditional, but not assigned in it
         $cond_referenced_var_ids = array_diff_key($cond_referenced_var_ids, $assigned_in_conditional_var_ids);
 
         $cond_referenced_var_ids = array_merge($newish_var_ids, $cond_referenced_var_ids);
 
-        return new \Psalm\Internal\Scope\IfConditionalScope(
+        return new IfConditionalScope(
             $if_context,
             $post_if_context,
             $cond_referenced_var_ids,
@@ -321,58 +317,53 @@ class IfConditionalAnalyzer
 
     public static function handleParadoxicalCondition(
         StatementsAnalyzer  $statements_analyzer,
-        PhpParser\Node\Expr $stmt
+        PhpParser\Node\Expr $stmt,
+        bool $emit_redundant_with_assignation = false
     ): void {
         $type = $statements_analyzer->node_data->getType($stmt);
 
         if ($type !== null) {
             if ($type->isAlwaysFalsy()) {
                 if ($type->from_docblock) {
-                    if (IssueBuffer::accepts(
+                    IssueBuffer::maybeAdd(
                         new DocblockTypeContradiction(
                             'Operand of type ' . $type->getId() . ' is always false',
                             new CodeLocation($statements_analyzer, $stmt),
                             'false falsy'
                         ),
                         $statements_analyzer->getSuppressedIssues()
-                    )) {
-                        // fall through
-                    }
+                    );
                 } else {
-                    if (IssueBuffer::accepts(
+                    IssueBuffer::maybeAdd(
                         new TypeDoesNotContainType(
                             'Operand of type ' . $type->getId() . ' is always false',
                             new CodeLocation($statements_analyzer, $stmt),
                             'false falsy'
                         ),
                         $statements_analyzer->getSuppressedIssues()
-                    )) {
-                        // fall through
-                    }
+                    );
                 }
-            } elseif ($type->isAlwaysTruthy() && !$stmt instanceof PhpParser\Node\Expr\Assign) {
+            } elseif ($type->isAlwaysTruthy() &&
+                (!$stmt instanceof PhpParser\Node\Expr\Assign || $emit_redundant_with_assignation)
+            ) {
                 if ($type->from_docblock) {
-                    if (IssueBuffer::accepts(
+                    IssueBuffer::maybeAdd(
                         new RedundantConditionGivenDocblockType(
                             'Operand of type ' . $type->getId() . ' is always true',
                             new CodeLocation($statements_analyzer, $stmt),
                             'true falsy'
                         ),
                         $statements_analyzer->getSuppressedIssues()
-                    )) {
-                        // fall through
-                    }
+                    );
                 } else {
-                    if (IssueBuffer::accepts(
+                    IssueBuffer::maybeAdd(
                         new RedundantCondition(
                             'Operand of type ' . $type->getId() . ' is always true',
                             new CodeLocation($statements_analyzer, $stmt),
                             'true falsy'
                         ),
                         $statements_analyzer->getSuppressedIssues()
-                    )) {
-                        // fall through
-                    }
+                    );
                 }
             }
         }

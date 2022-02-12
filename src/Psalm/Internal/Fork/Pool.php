@@ -1,11 +1,18 @@
 <?php
+
 namespace Psalm\Internal\Fork;
+
+use Closure;
+use Exception;
+use Psalm\Config;
+use Throwable;
 
 use function array_fill_keys;
 use function array_keys;
 use function array_map;
 use function array_pop;
 use function array_values;
+use function assert;
 use function base64_decode;
 use function base64_encode;
 use function count;
@@ -19,6 +26,8 @@ use function fread;
 use function fwrite;
 use function get_class;
 use function gettype;
+use function igbinary_serialize;
+use function igbinary_unserialize;
 use function in_array;
 use function ini_get;
 use function pcntl_fork;
@@ -42,8 +51,10 @@ use function usleep;
 use function version_compare;
 
 use const PHP_EOL;
+use const PHP_OS;
 use const PHP_VERSION;
 use const SIGALRM;
+use const SIGTERM;
 use const STREAM_IPPROTO_IP;
 use const STREAM_PF_UNIX;
 use const STREAM_SOCK_STREAM;
@@ -56,11 +67,16 @@ use const STREAM_SOCK_STREAM;
  *
  * Fork off to n-processes and divide up tasks between
  * each process.
+ *
+ * @internal
  */
 class Pool
 {
     private const EXIT_SUCCESS = 0;
     private const EXIT_FAILURE = 1;
+
+    /** @var Config */
+    private $config;
 
     /** @var int[] */
     private $child_pid_list = [];
@@ -71,7 +87,7 @@ class Pool
     /** @var bool */
     private $did_have_error = false;
 
-    /** @var ?\Closure(mixed): void */
+    /** @var ?Closure(mixed): void */
     private $task_done_closure;
 
     public const MAC_PCRE_MESSAGE = 'Mac users: pcre.jit is set to 1 in your PHP config.' . PHP_EOL
@@ -81,32 +97,35 @@ class Pool
         . 'Relevant info: https://bugs.php.net/bug.php?id=77260';
 
     /**
+     * @param Config $config
      * @param array<int, array<int, mixed>> $process_task_data_iterator
      * An array of task data items to be divided up among the
      * workers. The size of this is the number of forked processes.
-     * @param \Closure $startup_closure
+     * @param Closure $startup_closure
      * A closure to execute upon starting a child
-     * @param \Closure(int, mixed):mixed $task_closure
+     * @param Closure(int, mixed):mixed $task_closure
      * A method to execute on each task data.
      * This closure must return an array (to be gathered).
-     * @param \Closure():mixed $shutdown_closure
+     * @param Closure():mixed $shutdown_closure
      * A closure to execute upon shutting down a child
-     * @param ?\Closure(mixed $data):void $task_done_closure
+     * @param Closure(mixed $data):void $task_done_closure
      * A closure to execute when a task is done
      *
      * @psalm-suppress MixedAssignment
      */
     public function __construct(
+        Config $config,
         array $process_task_data_iterator,
-        \Closure $startup_closure,
-        \Closure $task_closure,
-        \Closure $shutdown_closure,
-        ?\Closure $task_done_closure = null
+        Closure $startup_closure,
+        Closure $task_closure,
+        Closure $shutdown_closure,
+        ?Closure $task_done_closure = null
     ) {
         $pool_size = count($process_task_data_iterator);
         $this->task_done_closure = $task_done_closure;
+        $this->config = $config;
 
-        \assert(
+        assert(
             $pool_size > 1,
             'The pool size must be >= 2 to use the fork pool.'
         );
@@ -126,7 +145,7 @@ class Pool
         }
 
         if (ini_get('pcre.jit') === '1'
-            && \PHP_OS === 'Darwin'
+            && PHP_OS === 'Darwin'
             && version_compare(PHP_VERSION, '7.3.0') >= 0
             && version_compare(PHP_VERSION, '7.4.0') < 0
         ) {
@@ -194,7 +213,12 @@ class Pool
                 $task_result = $task_closure($i, $task_data);
 
                 $task_done_message = new ForkTaskDoneMessage($task_result);
-                $serialized_message = $task_done_buffer . base64_encode(serialize($task_done_message)) . "\n";
+                if ($this->config->use_igbinary) {
+                    $encoded_message = base64_encode(igbinary_serialize($task_done_message));
+                } else {
+                    $encoded_message = base64_encode(serialize($task_done_message));
+                }
+                $serialized_message = $task_done_buffer . $encoded_message . "\n";
 
                 if (strlen($serialized_message) > 200) {
                     $bytes_written = @fwrite($write_stream, $serialized_message);
@@ -215,7 +239,7 @@ class Pool
 
             // Serialize this child's produced results and send them to the parent.
             $process_done_message = new ForkProcessDoneMessage($results ?: []);
-        } catch (\Throwable $t) {
+        } catch (Throwable $t) {
             // This can happen when developing Psalm from source without running `composer update`,
             // or because of rare bugs in Psalm.
             $process_done_message = new ForkProcessErrorMessage(
@@ -226,7 +250,12 @@ class Pool
             );
         }
 
-        $serialized_message = $task_done_buffer . base64_encode(serialize($process_done_message)) . "\n";
+        if ($this->config->use_igbinary) {
+            $encoded_message = base64_encode(igbinary_serialize($process_done_message));
+        } else {
+            $encoded_message = base64_encode(serialize($process_done_message));
+        }
+        $serialized_message = $task_done_buffer . $encoded_message . "\n";
 
         $bytes_to_write = strlen($serialized_message);
         $bytes_written = 0;
@@ -237,7 +266,7 @@ class Pool
 
             if ($bytes_written < $bytes_to_write) {
                 // wait a bit
-                usleep(500000);
+                usleep(500_000);
             }
         }
 
@@ -339,7 +368,7 @@ class Pool
 
             // For each stream that was ready, read the content.
             foreach ($needs_read as $file) {
-                $buffer = fread($file, 1024);
+                $buffer = fread($file, 1_024);
                 if ($buffer !== false) {
                     $content[(int)$file] .= $buffer;
                 }
@@ -349,7 +378,11 @@ class Pool
                     $content[(int)$file] = array_pop($serialized_messages);
 
                     foreach ($serialized_messages as $serialized_message) {
-                        $message = unserialize(base64_decode($serialized_message, true));
+                        if ($this->config->use_igbinary) {
+                            $message = igbinary_unserialize(base64_decode($serialized_message, true));
+                        } else {
+                            $message = unserialize(base64_decode($serialized_message, true));
+                        }
 
                         if ($message instanceof ForkProcessDoneMessage) {
                             $terminationMessages[] = $message->data;
@@ -361,12 +394,14 @@ class Pool
                             // Kill all children
                             foreach ($this->child_pid_list as $child_pid) {
                                 /**
-                                 * @psalm-suppress UndefinedConstant - does not exist on windows
+                                 * SIGTERM does not exist on windows
+                                 * @psalm-suppress UnusedPsalmSuppress
+                                 * @psalm-suppress UndefinedConstant
                                  * @psalm-suppress MixedArgument
                                  */
-                                posix_kill($child_pid, \SIGTERM);
+                                posix_kill($child_pid, SIGTERM);
                             }
-                            throw new \Exception($message->message);
+                            throw new Exception($message->message);
                         } else {
                             error_log('Child should return ForkMessage - response type=' . gettype($message));
                             $this->did_have_error = true;
@@ -387,7 +422,7 @@ class Pool
             }
         }
 
-        return array_values($terminationMessages);
+        return $terminationMessages;
     }
 
     /**
@@ -401,7 +436,7 @@ class Pool
         try {
             // Read all the streams from child processes into an array.
             $content = $this->readResultsFromChildren();
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             // If children were killed because one of them threw an exception we don't care about return codes.
             $ignore_return_code = true;
             // PHP guarantees finally is run even after throwing
@@ -415,7 +450,9 @@ class Pool
 
                 if ($process_lookup) {
                     /**
-                     * @psalm-suppress UndefinedConstant - does not exist on windows
+                     * SIGALRM does not exist on windows
+                     * @psalm-suppress UnusedPsalmSuppress
+                     * @psalm-suppress UndefinedConstant
                      * @psalm-suppress MixedArgument
                      */
                     posix_kill($child_pid, SIGALRM);
@@ -431,7 +468,9 @@ class Pool
                     $term_sig = pcntl_wtermsig($status);
 
                     /**
-                     * @psalm-suppress UndefinedConstant - does not exist on windows
+                     * SIGALRM does not exist on windows
+                     * @psalm-suppress UnusedPsalmSuppress
+                     * @psalm-suppress UndefinedConstant
                      */
                     if ($term_sig !== SIGALRM) {
                         $this->did_have_error = true;

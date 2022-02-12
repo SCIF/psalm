@@ -1,5 +1,7 @@
 <?php
-declare(strict_types = 1);
+
+declare(strict_types=1);
+
 namespace Psalm\Internal\LanguageServer;
 
 use Amp\ByteStream\ResourceOutputStream;
@@ -11,7 +13,7 @@ use Amp\Promise;
 class ProtocolStreamWriter implements ProtocolWriter
 {
     /**
-     * @var \Amp\ByteStream\ResourceOutputStream
+     * @var ResourceOutputStream
      */
     private $output;
 

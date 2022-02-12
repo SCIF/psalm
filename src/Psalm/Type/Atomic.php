@@ -1,14 +1,16 @@
 <?php
+
 namespace Psalm\Type;
 
 use Psalm\Codebase;
+use Psalm\Exception\TypeParseTreeException;
 use Psalm\Internal\Analyzer\StatementsAnalyzer;
 use Psalm\Internal\Type\TemplateResult;
 use Psalm\Internal\Type\TypeAlias;
+use Psalm\Internal\Type\TypeAlias\LinkableTypeAlias;
 use Psalm\Type;
 use Psalm\Type\Atomic\TArray;
 use Psalm\Type\Atomic\TArrayKey;
-use Psalm\Type\Atomic\TAssertionFalsy;
 use Psalm\Type\Atomic\TBool;
 use Psalm\Type\Atomic\TCallable;
 use Psalm\Type\Atomic\TCallableArray;
@@ -18,28 +20,44 @@ use Psalm\Type\Atomic\TCallableObject;
 use Psalm\Type\Atomic\TCallableString;
 use Psalm\Type\Atomic\TClassConstant;
 use Psalm\Type\Atomic\TClassString;
-use Psalm\Type\Atomic\TEmpty;
+use Psalm\Type\Atomic\TClassStringMap;
+use Psalm\Type\Atomic\TClosedResource;
+use Psalm\Type\Atomic\TClosure;
+use Psalm\Type\Atomic\TDependentGetClass;
+use Psalm\Type\Atomic\TEmptyMixed;
+use Psalm\Type\Atomic\TEmptyNumeric;
 use Psalm\Type\Atomic\TEmptyScalar;
 use Psalm\Type\Atomic\TFalse;
 use Psalm\Type\Atomic\TFloat;
-use Psalm\Type\Atomic\THtmlEscapedString;
+use Psalm\Type\Atomic\TGenericObject;
 use Psalm\Type\Atomic\TInt;
+use Psalm\Type\Atomic\TIntRange;
 use Psalm\Type\Atomic\TIterable;
 use Psalm\Type\Atomic\TKeyedArray;
 use Psalm\Type\Atomic\TList;
 use Psalm\Type\Atomic\TLiteralClassString;
+use Psalm\Type\Atomic\TLiteralFloat;
+use Psalm\Type\Atomic\TLiteralInt;
 use Psalm\Type\Atomic\TLiteralString;
+use Psalm\Type\Atomic\TLowercaseString;
 use Psalm\Type\Atomic\TMixed;
 use Psalm\Type\Atomic\TNamedObject;
 use Psalm\Type\Atomic\TNever;
 use Psalm\Type\Atomic\TNonEmptyArray;
 use Psalm\Type\Atomic\TNonEmptyList;
+use Psalm\Type\Atomic\TNonEmptyLowercaseString;
 use Psalm\Type\Atomic\TNonEmptyMixed;
+use Psalm\Type\Atomic\TNonEmptyNonspecificLiteralString;
 use Psalm\Type\Atomic\TNonEmptyScalar;
+use Psalm\Type\Atomic\TNonEmptyString;
+use Psalm\Type\Atomic\TNonFalsyString;
+use Psalm\Type\Atomic\TNonspecificLiteralInt;
+use Psalm\Type\Atomic\TNonspecificLiteralString;
 use Psalm\Type\Atomic\TNull;
 use Psalm\Type\Atomic\TNumeric;
 use Psalm\Type\Atomic\TNumericString;
 use Psalm\Type\Atomic\TObject;
+use Psalm\Type\Atomic\TObjectWithProperties;
 use Psalm\Type\Atomic\TPositiveInt;
 use Psalm\Type\Atomic\TResource;
 use Psalm\Type\Atomic\TScalar;
@@ -91,15 +109,15 @@ abstract class Atomic implements TypeNode
     public $text;
 
     /**
-     * @param  array{int,int}|null   $php_version
-     * @param  array<string, array<string, Union>> $template_type_map
-     * @param  array<string, TypeAlias> $type_aliases
+     * @param int $analysis_php_version_id contains php version when the type comes from signature
+     * @param array<string, array<string, Union>> $template_type_map
+     * @param array<string, TypeAlias> $type_aliases
      */
     public static function create(
         string $value,
-        ?array $php_version = null,
-        array $template_type_map = [],
-        array $type_aliases = []
+        ?int   $analysis_php_version_id = null,
+        array  $template_type_map = [],
+        array  $type_aliases = []
     ): Atomic {
         switch ($value) {
             case 'int':
@@ -115,10 +133,7 @@ abstract class Atomic implements TypeNode
                 return new TBool();
 
             case 'void':
-                if ($php_version === null
-                    || ($php_version[0] > 7)
-                    || ($php_version[0] === 7 && $php_version[1] >= 1)
-                ) {
+                if ($analysis_php_version_id === null || $analysis_php_version_id >= 7_01_00) {
                     return new TVoid();
                 }
 
@@ -128,20 +143,14 @@ abstract class Atomic implements TypeNode
                 return new TArrayKey();
 
             case 'iterable':
-                if ($php_version === null
-                    || ($php_version[0] > 7)
-                    || ($php_version[0] === 7 && $php_version[1] >= 1)
-                ) {
+                if ($analysis_php_version_id === null || $analysis_php_version_id >= 7_01_00) {
                     return new TIterable();
                 }
 
                 break;
 
             case 'never':
-                if ($php_version === null
-                    || ($php_version[0] > 8)
-                    || ($php_version[0] === 8 && $php_version[1] >= 1)
-                ) {
+                if ($analysis_php_version_id === null || $analysis_php_version_id >= 8_01_00) {
                     return new TNever();
                 }
 
@@ -153,10 +162,7 @@ abstract class Atomic implements TypeNode
                 return new TNever();
 
             case 'object':
-                if ($php_version === null
-                    || ($php_version[0] > 7)
-                    || ($php_version[0] === 7 && $php_version[1] >= 2)
-                ) {
+                if ($analysis_php_version_id === null || $analysis_php_version_id >= 7_02_00) {
                     return new TObject();
                 }
 
@@ -178,7 +184,7 @@ abstract class Atomic implements TypeNode
                 return new TNonEmptyArray([new Union([new TArrayKey]), new Union([new TMixed])]);
 
             case 'callable-array':
-                return new Type\Atomic\TCallableArray([new Union([new TArrayKey]), new Union([new TMixed])]);
+                return new TCallableArray([new Union([new TArrayKey]), new Union([new TMixed])]);
 
             case 'list':
                 return new TList(Type::getMixed());
@@ -187,55 +193,52 @@ abstract class Atomic implements TypeNode
                 return new TNonEmptyList(Type::getMixed());
 
             case 'non-empty-string':
-                return new Type\Atomic\TNonEmptyString();
+                return new TNonEmptyString();
 
             case 'non-falsy-string':
-                return new Type\Atomic\TNonFalsyString();
+                return new TNonFalsyString();
 
             case 'lowercase-string':
-                return new Type\Atomic\TLowercaseString();
+                return new TLowercaseString();
 
             case 'non-empty-lowercase-string':
-                return new Type\Atomic\TNonEmptyLowercaseString();
+                return new TNonEmptyLowercaseString();
 
             case 'resource':
-                return $php_version !== null ? new TNamedObject($value) : new TResource();
+                return $analysis_php_version_id !== null ? new TNamedObject($value) : new TResource();
 
             case 'resource (closed)':
             case 'closed-resource':
-                return new Type\Atomic\TClosedResource();
+                return new TClosedResource();
 
             case 'positive-int':
                 return new TPositiveInt();
 
             case 'numeric':
-                return $php_version !== null ? new TNamedObject($value) : new TNumeric();
+                return $analysis_php_version_id !== null ? new TNamedObject($value) : new TNumeric();
 
             case 'true':
-                return $php_version !== null ? new TNamedObject($value) : new TTrue();
+                return $analysis_php_version_id !== null ? new TNamedObject($value) : new TTrue();
 
             case 'false':
-                if ($php_version === null || $php_version[0] >= 8) {
+                if ($analysis_php_version_id === null || $analysis_php_version_id >= 8_00_00) {
                     return new TFalse();
                 }
 
                 return new TNamedObject($value);
 
-            case 'empty':
-                return $php_version !== null ? new TNamedObject($value) : new TEmpty();
-
             case 'scalar':
-                return $php_version !== null ? new TNamedObject($value) : new TScalar();
+                return $analysis_php_version_id !== null ? new TNamedObject($value) : new TScalar();
 
             case 'null':
-                if ($php_version === null || $php_version[0] >= 8) {
+                if ($analysis_php_version_id === null || $analysis_php_version_id >= 8_00_00) {
                     return new TNull();
                 }
 
                 return new TNamedObject($value);
 
             case 'mixed':
-                if ($php_version === null || $php_version[0] >= 8) {
+                if ($analysis_php_version_id === null || $analysis_php_version_id >= 8_00_00) {
                     return new TMixed();
                 }
 
@@ -245,7 +248,7 @@ abstract class Atomic implements TypeNode
                 return new TCallableObject();
 
             case 'stringable-object':
-                return new Type\Atomic\TObjectWithProperties([], ['__tostring' => 'string']);
+                return new TObjectWithProperties([], ['__tostring' => 'string']);
 
             case 'class-string':
             case 'interface-string':
@@ -260,20 +263,14 @@ abstract class Atomic implements TypeNode
             case 'numeric-string':
                 return new TNumericString();
 
-            case 'html-escaped-string':
-                return new THtmlEscapedString();
-
             case 'literal-string':
-                return new Type\Atomic\TNonspecificLiteralString();
+                return new TNonspecificLiteralString();
 
             case 'non-empty-literal-string':
-                return new Type\Atomic\TNonEmptyNonspecificLiteralString();
+                return new TNonEmptyNonspecificLiteralString();
 
             case 'literal-int':
-                return new Type\Atomic\TNonspecificLiteralInt();
-
-            case 'false-y':
-                return new TAssertionFalsy();
+                return new TNonspecificLiteralInt();
 
             case '$this':
                 return new TNamedObject('static');
@@ -289,11 +286,11 @@ abstract class Atomic implements TypeNode
         }
 
         if (strpos($value, '-') && strpos($value, 'OCI-') !== 0) {
-            throw new \Psalm\Exception\TypeParseTreeException('Unrecognized type ' . $value);
+            throw new TypeParseTreeException('Unrecognized type ' . $value);
         }
 
         if (is_numeric($value[0])) {
-            throw new \Psalm\Exception\TypeParseTreeException('First character of type cannot be numeric');
+            throw new TypeParseTreeException('First character of type cannot be numeric');
         }
 
         if (isset($template_type_map[$value])) {
@@ -309,17 +306,17 @@ abstract class Atomic implements TypeNode
         if (isset($type_aliases[$value])) {
             $type_alias = $type_aliases[$value];
 
-            if ($type_alias instanceof TypeAlias\LinkableTypeAlias) {
+            if ($type_alias instanceof LinkableTypeAlias) {
                 return new TTypeAlias($type_alias->declaring_fq_classlike_name, $type_alias->alias_name);
             }
 
-            throw new \Psalm\Exception\TypeParseTreeException('Invalid type alias ' . $value . ' provided');
+            throw new TypeParseTreeException('Invalid type alias ' . $value . ' provided');
         }
 
         return new TNamedObject($value);
     }
 
-    abstract public function getKey(bool $include_extra = true) : string;
+    abstract public function getKey(bool $include_extra = true): string;
 
     public function isNumericType(): bool
     {
@@ -327,7 +324,7 @@ abstract class Atomic implements TypeNode
             || $this instanceof TFloat
             || $this instanceof TNumericString
             || $this instanceof TNumeric
-            || ($this instanceof TLiteralString && \is_numeric($this->value));
+            || ($this instanceof TLiteralString && is_numeric($this->value));
     }
 
     public function isObjectType(): bool
@@ -345,9 +342,7 @@ abstract class Atomic implements TypeNode
                 && ($this->as->hasNamedObjectType()
                     || array_filter(
                         $this->extra_types ?: [],
-                        static function ($extra_type) {
-                            return $extra_type->isNamedObjectType();
-                        }
+                        static fn($extra_type): bool => $extra_type->isNamedObjectType()
                     )
                 )
             );
@@ -360,7 +355,8 @@ abstract class Atomic implements TypeNode
             || $this instanceof TCallableString
             || $this instanceof TCallableArray
             || $this instanceof TCallableList
-            || $this instanceof TCallableKeyedArray;
+            || $this instanceof TCallableKeyedArray
+            || $this instanceof TClosure;
     }
 
     public function isIterable(Codebase $codebase): bool
@@ -397,9 +393,7 @@ abstract class Atomic implements TypeNode
                     $this->extra_types
                     && array_filter(
                         $this->extra_types,
-                        static function (Atomic $a) use ($codebase) : bool {
-                            return $a->hasTraversableInterface($codebase);
-                        }
+                        static fn(Atomic $a): bool => $a->hasTraversableInterface($codebase)
                     )
                 )
             );
@@ -422,9 +416,7 @@ abstract class Atomic implements TypeNode
                     $this->extra_types
                     && array_filter(
                         $this->extra_types,
-                        static function (Atomic $a) use ($codebase) : bool {
-                            return $a->hasCountableInterface($codebase);
-                        }
+                        static fn(Atomic $a): bool => $a->hasCountableInterface($codebase)
                     )
                 )
             );
@@ -435,7 +427,7 @@ abstract class Atomic implements TypeNode
         return $this instanceof TArray
             || $this instanceof TKeyedArray
             || $this instanceof TList
-            || $this instanceof Atomic\TClassStringMap
+            || $this instanceof TClassStringMap
             || $this->hasArrayAccessInterface($codebase)
             || ($this instanceof TNamedObject && $this->value === 'SimpleXMLElement');
     }
@@ -463,20 +455,18 @@ abstract class Atomic implements TypeNode
                     $this->extra_types
                     && array_filter(
                         $this->extra_types,
-                        static function (Atomic $a) use ($codebase) : bool {
-                            return $a->hasArrayAccessInterface($codebase);
-                        }
+                        static fn(Atomic $a): bool => $a->hasArrayAccessInterface($codebase)
                     )
                 )
             );
     }
 
-    public function getChildNodes() : array
+    public function getChildNodes(): array
     {
         return [];
     }
 
-    public function replaceClassLike(string $old, string $new) : void
+    public function replaceClassLike(string $old, string $new): void
     {
         if ($this instanceof TNamedObject) {
             if (strtolower($this->value) === $old) {
@@ -517,23 +507,23 @@ abstract class Atomic implements TypeNode
             }
         }
 
-        if ($this instanceof Type\Atomic\TArray
-            || $this instanceof Type\Atomic\TGenericObject
-            || $this instanceof Type\Atomic\TIterable
+        if ($this instanceof TArray
+            || $this instanceof TGenericObject
+            || $this instanceof TIterable
         ) {
             foreach ($this->type_params as $type_param) {
                 $type_param->replaceClassLike($old, $new);
             }
         }
 
-        if ($this instanceof Type\Atomic\TKeyedArray) {
+        if ($this instanceof TKeyedArray) {
             foreach ($this->properties as $property_type) {
                 $property_type->replaceClassLike($old, $new);
             }
         }
 
-        if ($this instanceof Type\Atomic\TClosure
-            || $this instanceof Type\Atomic\TCallable
+        if ($this instanceof TClosure
+            || $this instanceof TCallable
         ) {
             if ($this->params) {
                 foreach ($this->params as $param) {
@@ -559,7 +549,7 @@ abstract class Atomic implements TypeNode
         if ($this instanceof TNamedObject
             || $this instanceof TTemplateParam
             || $this instanceof TIterable
-            || $this instanceof Type\Atomic\TObjectWithProperties
+            || $this instanceof TObjectWithProperties
         ) {
             if ($this->extra_types) {
                 foreach ($this->extra_types as &$type) {
@@ -578,7 +568,7 @@ abstract class Atomic implements TypeNode
         return $this->__toString();
     }
 
-    public function getAssertionString(bool $exact = false): string
+    public function getAssertionString(): string
     {
         return $this->getId();
     }
@@ -602,36 +592,184 @@ abstract class Atomic implements TypeNode
         ?string $namespace,
         array $aliased_classes,
         ?string $this_class,
-        int $php_major_version,
-        int $php_minor_version
+        int $analysis_php_version_id
     ): ?string;
 
-    abstract public function canBeFullyExpressedInPhp(int $php_major_version, int $php_minor_version): bool;
+    abstract public function canBeFullyExpressedInPhp(int $analysis_php_version_id): bool;
 
     public function replaceTemplateTypesWithStandins(
         TemplateResult $template_result,
-        ?Codebase $codebase = null,
+        Codebase $codebase,
         ?StatementsAnalyzer $statements_analyzer = null,
-        Type\Atomic $input_type = null,
+        Atomic $input_type = null,
         ?int $input_arg_offset = null,
         ?string $calling_class = null,
         ?string $calling_function = null,
         bool $replace = true,
         bool $add_lower_bound = false,
         int $depth = 0
-    ) : self {
+    ): self {
         return $this;
     }
 
     public function replaceTemplateTypesWithArgTypes(
         TemplateResult $template_result,
         ?Codebase $codebase
-    ) : void {
+    ): void {
         // do nothing
     }
 
     public function equals(Atomic $other_type, bool $ensure_source_equality): bool
     {
         return get_class($other_type) === get_class($this);
+    }
+
+    public function isTruthy(): bool
+    {
+        if ($this instanceof TTrue) {
+            return true;
+        }
+
+        if ($this instanceof TLiteralInt && $this->value !== 0) {
+            return true;
+        }
+
+        if ($this instanceof TLiteralFloat && $this->value !== 0.0) {
+            return true;
+        }
+
+        if ($this instanceof TLiteralString &&
+            ($this->value !== '' && $this->value !== '0')
+        ) {
+            return true;
+        }
+
+        if ($this instanceof TNonFalsyString) {
+            return true;
+        }
+
+        if ($this instanceof TNonEmptyArray) {
+            return true;
+        }
+
+        if ($this instanceof TNonEmptyScalar) {
+            return true;
+        }
+
+        if ($this instanceof TNonEmptyList) {
+            return true;
+        }
+
+        if ($this instanceof TNonEmptyMixed) {
+            return true;
+        }
+
+        if ($this instanceof TObject) {
+            return true;
+        }
+
+        if ($this instanceof TNamedObject
+            && $this->value !== 'SimpleXMLElement'
+            && $this->value !== 'SimpleXMLIterator') {
+            return true;
+        }
+
+        if ($this instanceof TIntRange && !$this->contains(0)) {
+            return true;
+        }
+
+        if ($this instanceof TPositiveInt) {
+            return true;
+        }
+
+        if ($this instanceof TLiteralClassString) {
+            return true;
+        }
+
+        if ($this instanceof TClassString) {
+            return true;
+        }
+
+        if ($this instanceof TDependentGetClass) {
+            return true;
+        }
+
+        if ($this instanceof TTraitString) {
+            return true;
+        }
+
+        if ($this instanceof TResource) {
+            return true;
+        }
+
+        if ($this instanceof TKeyedArray) {
+            foreach ($this->properties as $property) {
+                if ($property->possibly_undefined === false) {
+                    return true;
+                }
+            }
+        }
+
+        if ($this instanceof TTemplateParam && $this->as->isAlwaysTruthy()) {
+            return true;
+        }
+
+        //we can't be sure the type is always truthy
+        return false;
+    }
+
+    public function isFalsy(): bool
+    {
+        if ($this instanceof TFalse) {
+            return true;
+        }
+
+        if ($this instanceof TLiteralInt && $this->value === 0) {
+            return true;
+        }
+
+        if ($this instanceof TLiteralFloat && $this->value === 0.0) {
+            return true;
+        }
+
+        if ($this instanceof TLiteralString &&
+            ($this->value === '' || $this->value === '0')
+        ) {
+            return true;
+        }
+
+        if ($this instanceof TNull) {
+            return true;
+        }
+
+        if ($this instanceof TEmptyMixed) {
+            return true;
+        }
+
+        if ($this instanceof TEmptyNumeric) {
+            return true;
+        }
+
+        if ($this instanceof TEmptyScalar) {
+            return true;
+        }
+
+        if ($this instanceof TTemplateParam && $this->as->isAlwaysFalsy()) {
+            return true;
+        }
+
+        if ($this instanceof TIntRange &&
+            $this->min_bound === 0 &&
+            $this->max_bound === 0
+        ) {
+            return true;
+        }
+
+        if ($this instanceof TArray && $this->isEmptyArray()) {
+            return true;
+        }
+
+        //we can't be sure the type is always falsy
+        return false;
     }
 }

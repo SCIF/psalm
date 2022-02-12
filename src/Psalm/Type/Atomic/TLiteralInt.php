@@ -1,4 +1,5 @@
 <?php
+
 namespace Psalm\Type\Atomic;
 
 /**
@@ -24,7 +25,7 @@ class TLiteralInt extends TInt
         return (string) $this->value;
     }
 
-    public function getAssertionString(bool $exact = false): string
+    public function getAssertionString(): string
     {
         return 'int(' . $this->value . ')';
     }

@@ -1,7 +1,11 @@
 <?php
+
 namespace Psalm\Config;
 
+use JsonException;
+use Psalm\Config;
 use Psalm\Exception\ConfigCreationException;
+use Psalm\Internal\Analyzer\IssueData;
 use Psalm\Internal\Composer;
 
 use function array_filter;
@@ -10,6 +14,7 @@ use function array_merge;
 use function array_shift;
 use function array_sum;
 use function array_unique;
+use function array_values;
 use function count;
 use function explode;
 use function file_exists;
@@ -28,6 +33,7 @@ use function strpos;
 
 use const DIRECTORY_SEPARATOR;
 use const GLOB_NOSORT;
+use const JSON_THROW_ON_ERROR;
 
 class Creator
 {
@@ -48,12 +54,15 @@ class Creator
 </psalm>
 ';
 
+    /**
+     * @return non-empty-string
+     */
     public static function getContents(
         string $current_dir,
         ?string $suggested_dir,
         int $level,
         string $vendor_dir
-    ) : string {
+    ): string {
         $paths = self::getPaths($current_dir, $suggested_dir);
 
         $template = str_replace(
@@ -76,6 +85,7 @@ class Creator
             );
         }
 
+        /** @var non-empty-string */
         return str_replace(
             'errorLevel="1"',
             'errorLevel="' . $level . '"',
@@ -87,16 +97,16 @@ class Creator
         string $current_dir,
         ?string $suggested_dir,
         string $vendor_dir
-    ) : \Psalm\Config {
+    ): Config {
         $config_contents = self::getContents($current_dir, $suggested_dir, 1, $vendor_dir);
 
-        return \Psalm\Config::loadFromXML($current_dir, $config_contents);
+        return Config::loadFromXML($current_dir, $config_contents);
     }
 
     /**
-     * @param  array<\Psalm\Internal\Analyzer\IssueData>  $issues
+     * @param  array<IssueData>  $issues
      */
-    public static function getLevel(array $issues, int $counted_types) : int
+    public static function getLevel(array $issues, int $counted_types): int
     {
         if ($counted_types === 0) {
             $counted_types = 1;
@@ -130,9 +140,7 @@ class Creator
             // remove any issues where < 0.1% of expressions are affected
             $filtered_issues = array_filter(
                 $issues,
-                static function ($amount): bool {
-                    return $amount > 0.1;
-                }
+                static fn($amount): bool => $amount > 0.1
             );
 
             if (array_sum($filtered_issues) > 0.5) {
@@ -180,8 +188,19 @@ class Creator
                     'Problem during config autodiscovery - could not find composer.json during initialization.'
                 );
             }
-
-            if (!$composer_json = json_decode(file_get_contents($composer_json_location), true)) {
+            try {
+                $composer_json = json_decode(
+                    file_get_contents($composer_json_location),
+                    true,
+                    512,
+                    JSON_THROW_ON_ERROR
+                );
+            } catch (JsonException $e) {
+                throw new ConfigCreationException(
+                    'Invalid composer.json at ' . $composer_json_location . ': ' . $e->getMessage()
+                );
+            }
+            if (!$composer_json) {
                 throw new ConfigCreationException('Invalid composer.json at ' . $composer_json_location);
             }
 
@@ -205,9 +224,8 @@ class Creator
      * @return list<string>
      * @psalm-suppress MixedAssignment
      * @psalm-suppress MixedArgument
-     * @psalm-suppress PossiblyUndefinedArrayOffset
      */
-    private static function getPsr4Or0Paths(string $current_dir, array $composer_json) : array
+    private static function getPsr4Or0Paths(string $current_dir, array $composer_json): array
     {
         $psr_paths = array_merge(
             $composer_json['autoload']['psr-4'] ?? [],
@@ -253,7 +271,7 @@ class Creator
     /**
      * @return list<string>
      */
-    private static function guessPhpFileDirs(string $current_dir) : array
+    private static function guessPhpFileDirs(string $current_dir): array
     {
         $nodes = [];
 
@@ -284,6 +302,6 @@ class Creator
             }
         }
 
-        return \array_values(\array_unique($nodes));
+        return array_values(array_unique($nodes));
     }
 }

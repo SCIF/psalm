@@ -1,19 +1,24 @@
 <?php
+
 namespace Psalm\Tests\TypeReconciliation;
 
-class IssetTest extends \Psalm\Tests\TestCase
+use Psalm\Tests\TestCase;
+use Psalm\Tests\Traits\InvalidCodeAnalysisTestTrait;
+use Psalm\Tests\Traits\ValidCodeAnalysisTestTrait;
+
+class IssetTest extends TestCase
 {
-    use \Psalm\Tests\Traits\ValidCodeAnalysisTestTrait;
-    use \Psalm\Tests\Traits\InvalidCodeAnalysisTestTrait;
+    use ValidCodeAnalysisTestTrait;
+    use InvalidCodeAnalysisTestTrait;
 
     /**
-     * @return iterable<string,array{string,assertions?:array<string,string>,error_levels?:string[]}>
+     * @return iterable<string,array{code:string,assertions?:array<string,string>,ignored_issues?:list<string>}>
      */
     public function providerValidCodeParse(): iterable
     {
         return [
             'issetWithSimpleAssignment' => [
-                '<?php
+                'code' => '<?php
                     $array = [];
 
                     if (isset($array[$a = 5])) {
@@ -22,10 +27,10 @@ class IssetTest extends \Psalm\Tests\TestCase
 
                     print $a;',
                 'assertions' => [],
-                'error_levels' => ['EmptyArrayAccess'],
+                'ignored_issues' => ['EmptyArrayAccess'],
             ],
             'issetWithMultipleAssignments' => [
-                '<?php
+                'code' => '<?php
                     if (rand(0, 4) > 2) {
                         $arr = [5 => [3 => "hello"]];
                     }
@@ -37,26 +42,26 @@ class IssetTest extends \Psalm\Tests\TestCase
                     echo $a;
                     echo $b;',
                 'assertions' => [],
-                'error_levels' => ['MixedArrayAccess'],
+                'ignored_issues' => ['MixedArrayAccess'],
             ],
             'isset' => [
-                '<?php
+                'code' => '<?php
                     $a = isset($b) ? $b : null;',
                 'assertions' => [
                     '$a' => 'mixed|null',
                 ],
-                'error_levels' => ['MixedAssignment'],
+                'ignored_issues' => ['MixedAssignment'],
             ],
             'nullCoalesce' => [
-                '<?php
+                'code' => '<?php
                     $a = $b ?? null;',
                 'assertions' => [
                     '$a' => 'mixed|null',
                 ],
-                'error_levels' => ['MixedAssignment'],
+                'ignored_issues' => ['MixedAssignment'],
             ],
             'nullCoalesceWithGoodVariable' => [
-                '<?php
+                'code' => '<?php
                     $b = rand(0, 10) > 5 ? "hello" : null;
                     $a = $b ?? null;',
                 'assertions' => [
@@ -64,7 +69,7 @@ class IssetTest extends \Psalm\Tests\TestCase
                 ],
             ],
             'issetKeyedOffset' => [
-                '<?php
+                'code' => '<?php
                     function getArray() : array {
                         return [];
                     }
@@ -77,10 +82,10 @@ class IssetTest extends \Psalm\Tests\TestCase
                 'assertions' => [
                     '$foo[\'a\']' => 'mixed|string',
                 ],
-                'error_levels' => [],
+                'ignored_issues' => [],
             ],
             'issetKeyedOffsetORFalse' => [
-                '<?php
+                'code' => '<?php
                     /** @return void */
                     function takesString(string $str) {}
 
@@ -90,10 +95,10 @@ class IssetTest extends \Psalm\Tests\TestCase
                         takesString($bar["foo"]);
                     }',
                 'assertions' => [],
-                'error_levels' => ['PossiblyInvalidArrayAccess'],
+                'ignored_issues' => ['PossiblyInvalidArrayAccess'],
             ],
             'nullCoalesceKeyedOffset' => [
-                '<?php
+                'code' => '<?php
                     function getArray() : array {
                         return [];
                     }
@@ -104,10 +109,10 @@ class IssetTest extends \Psalm\Tests\TestCase
                 'assertions' => [
                     '$foo[\'a\']' => 'mixed|string',
                 ],
-                'error_levels' => ['MixedAssignment'],
+                'ignored_issues' => ['MixedAssignment'],
             ],
             'noRedundantConditionOnMixed' => [
-                '<?php
+                'code' => '<?php
                     function testarray(array $data): void {
                         foreach ($data as $item) {
                             if (isset($item["a"]) && isset($item["b"]["c"])) {
@@ -116,10 +121,10 @@ class IssetTest extends \Psalm\Tests\TestCase
                         }
                     }',
                 'assertions' => [],
-                'error_levels' => ['MixedAssignment', 'MixedArrayAccess'],
+                'ignored_issues' => ['MixedAssignment', 'MixedArrayAccess'],
             ],
             'testUnset' => [
-                '<?php
+                'code' => '<?php
                     $foo = ["a", "b", "c"];
                     foreach ($foo as $bar) {}
                     unset($foo, $bar);
@@ -131,7 +136,7 @@ class IssetTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'issetTKeyedArray' => [
-                '<?php
+                'code' => '<?php
                     $arr = [
                         "profile" => [
                             "foo" => "bar",
@@ -147,7 +152,7 @@ class IssetTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'issetPropertyAffirmsObject' => [
-                '<?php
+                'code' => '<?php
                     class A {
                         /** @var ?int */
                         public $id;
@@ -162,7 +167,7 @@ class IssetTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'issetVariableKeysWithoutChange' => [
-                '<?php
+                'code' => '<?php
                     $arr = [[1, 2, 3], null, [1, 2, 3], null];
                     $b = rand(0, 2);
                     $c = rand(0, 2);
@@ -171,7 +176,7 @@ class IssetTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'issetNonNullArrayKey' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param  array<int, int> $arr
                      */
@@ -184,7 +189,7 @@ class IssetTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'issetArrayOffsetConditionalCreationWithInt' => [
-                '<?php
+                'code' => '<?php
                     /** @param array<int, string> $arr */
                     function foo(array $arr) : string {
                         if (!isset($arr[0])) {
@@ -195,7 +200,7 @@ class IssetTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'issetArrayOffsetConditionalCreationWithVariable' => [
-                '<?php
+                'code' => '<?php
                     /** @param array<int, string> $arr */
                     function foo(array $arr) : string {
                         $b = 5;
@@ -208,11 +213,11 @@ class IssetTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'noExceptionOnBracketString' => [
-                '<?php
+                'code' => '<?php
                     if (isset($foo["bar[]"])) {}',
             ],
             'issetArrayOffsetAndProperty' => [
-                '<?php
+                'code' => '<?php
                     class A {
                         /** @var ?B */
                         public $b;
@@ -230,7 +235,7 @@ class IssetTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'allowUnknownAdditionToInt' => [
-                '<?php
+                'code' => '<?php
                     $arr = [1, 1, 1, 1, 2, 5, 3, 2];
                     $cumulative = [];
 
@@ -243,7 +248,7 @@ class IssetTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'allowUnknownArrayMergeToInt' => [
-                '<?php
+                'code' => '<?php
                     $arr = [1, 1, 1, 1, 2, 5, 3, 2];
                     $cumulative = [];
 
@@ -264,7 +269,7 @@ class IssetTest extends \Psalm\Tests\TestCase
                     function takesInt(int $i) : void {}',
             ],
             'returnArrayWithDefinedKeys' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param array{bar?: int, foo: int|string} $arr
                      * @return array{bar: int, foo: string}|null
@@ -282,7 +287,7 @@ class IssetTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'arrayAccessAfterOneIsset' => [
-                '<?php
+                'code' => '<?php
                     $arr = [];
 
                     foreach ([1, 2, 3] as $foo) {
@@ -294,7 +299,7 @@ class IssetTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'arrayAccessAfterTwoIssets' => [
-                '<?php
+                'code' => '<?php
                     $arr = [];
 
                     foreach ([1, 2, 3] as $foo) {
@@ -310,7 +315,7 @@ class IssetTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'issetAdditionalVar' => [
-                '<?php
+                'code' => '<?php
                     class Example {
                         const FOO = "foo";
                         /**
@@ -330,7 +335,7 @@ class IssetTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'noRedundantConditionAfterIsset' => [
-                '<?php
+                'code' => '<?php
                     /** @param array<string, array<int, string>> $arr */
                     function foo(array $arr, string $k) : void {
                         if (!isset($arr[$k])) {
@@ -341,20 +346,20 @@ class IssetTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'mixedArrayIsset' => [
-                '<?php
+                'code' => '<?php
                     $a = isset($_GET["a"]) ? $_GET["a"] : "";
                     if ($a) {}',
                 'assertions' => [],
-                'error_levels' => ['MixedAssignment', 'MixedArrayAccess'],
+                'ignored_issues' => ['MixedAssignment', 'MixedArrayAccess'],
             ],
             'mixedArrayIssetGetStringVar' => [
-                '<?php
+                'code' => '<?php
                     if (isset($_GET["b"]) && is_string($_GET["b"])) {
                         echo $_GET["b"];
                     }',
             ],
             'regularArrayAccessInLoopAfterIsset' => [
-                '<?php
+                'code' => '<?php
                     $arr = [];
                     while (rand(0, 1)) {
                         if (!isset($arr["a"]["b"])) {
@@ -364,7 +369,7 @@ class IssetTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'conditionalArrayAccessInLoopAfterIssetWithAltAssignment' => [
-                '<?php
+                'code' => '<?php
                     $arr = [];
                     while (rand(0, 1)) {
                         if (rand(0, 1)) {
@@ -378,7 +383,7 @@ class IssetTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'issetVarInLoopBeforeAssignment' => [
-                '<?php
+                'code' => '<?php
                     function foo() : void {
                         while (rand(0, 1)) {
                             if (!isset($foo)) {
@@ -388,17 +393,17 @@ class IssetTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'issetOnArrayAccess' => [
-                '<?php
+                'code' => '<?php
                     function foo(ArrayAccess $arr) : void {
                         $a = isset($arr["a"]) ? $arr["a"] : 4;
                         takesInt($a);
                     }
                     function takesInt(int $i) : void {}',
                 'assertions' => [],
-                'error_levels' => ['MixedAssignment', 'MixedArgument'],
+                'ignored_issues' => ['MixedAssignment', 'MixedArgument'],
             ],
             'noParadoxOnMultipleNotIssets' => [
-                '<?php
+                'code' => '<?php
                     /** @var array */
                     $array = [];
                     function sameString(string $string): string {
@@ -414,7 +419,7 @@ class IssetTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'notIssetOneOrOtherSimple' => [
-                '<?php
+                'code' => '<?php
                     $foo = [
                         "one" => rand(0,1) ? new DateTime : null,
                         "two" => rand(0,1) ? new DateTime : null,
@@ -427,10 +432,10 @@ class IssetTest extends \Psalm\Tests\TestCase
 
                     echo $foo["one"]->format("Y");',
                 'assertions' => [],
-                'error_levels' => ['PossiblyNullReference'],
+                'ignored_issues' => ['PossiblyNullReference'],
             ],
             'notIssetOneOrOtherWithoutAssert' => [
-                '<?php
+                'code' => '<?php
                     $foo = [
                         "one" => rand(0,1) ? new DateTime : null,
                         "two" => rand(0,1) ? new DateTime : null,
@@ -441,10 +446,10 @@ class IssetTest extends \Psalm\Tests\TestCase
 
                     echo $foo["one"]->format("Y");',
                 'assertions' => [],
-                'error_levels' => ['PossiblyNullReference'],
+                'ignored_issues' => ['PossiblyNullReference'],
             ],
             'notIssetOneOrOtherWithAssert' => [
-                '<?php
+                'code' => '<?php
                     $foo = [
                         "one" => rand(0,1) ? new DateTime : null,
                         "two" => rand(0,1) ? new DateTime : null,
@@ -455,10 +460,10 @@ class IssetTest extends \Psalm\Tests\TestCase
 
                     echo $foo["one"]->format("Y");',
                 'assertions' => [],
-                'error_levels' => ['PossiblyNullReference'],
+                'ignored_issues' => ['PossiblyNullReference'],
             ],
             'assertArrayAfterIssetStringOffset' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param string|array $a
                      */
@@ -471,7 +476,7 @@ class IssetTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'assertMoreComplicatedArrayAfterIssetStringOffset' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param string|int $val
                      * @param string|array $text
@@ -486,10 +491,10 @@ class IssetTest extends \Psalm\Tests\TestCase
                         return $radio;
                     }',
                 'assertions' => [],
-                'error_levels' => ['MixedAssignment'],
+                'ignored_issues' => ['MixedAssignment'],
             ],
             'assertAfterIsset' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param mixed $arr
                      */
@@ -501,10 +506,10 @@ class IssetTest extends \Psalm\Tests\TestCase
                         if (isset($arr["a"]) && isset($arr["b"])) {}
                     }',
                 'assertions' => [],
-                'error_levels' => ['MixedAssignment'],
+                'ignored_issues' => ['MixedAssignment'],
             ],
             'noCrashAfterIsset' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param string[] $columns
                      * @param mixed[]  $options
@@ -519,18 +524,18 @@ class IssetTest extends \Psalm\Tests\TestCase
                         }
                     }',
                 'assertions' => [],
-                'error_levels' => ['MixedAssignment', 'MixedArrayOffset', 'InvalidArrayOffset'],
+                'ignored_issues' => ['MixedAssignment', 'MixedArrayOffset', 'InvalidArrayOffset'],
             ],
             'sessionNullCoalesce' => [
-                '<?php
+                'code' => '<?php
                     $a = $_SESSION ?? [];',
             ],
             'sessionIssetNull' => [
-                '<?php
+                'code' => '<?php
                     $a = isset($_SESSION) ? $_SESSION : [];',
             ],
             'issetSeparateNegated' => [
-                '<?php
+                'code' => '<?php
                     function foo(?string $a, ?string $b): string {
                         if (!isset($a) || !isset($b)) {
                             return "";
@@ -539,7 +544,7 @@ class IssetTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'issetMultipleNegated' => [
-                '<?php
+                'code' => '<?php
                     function foo(?string $a, ?string $b): string {
                         if (!isset($a, $b)) {
                             return "";
@@ -548,7 +553,7 @@ class IssetTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'issetMultipleNegatedWithExtraClause' => [
-                '<?php
+                'code' => '<?php
                     function foo(?string $a, ?string $b): string {
                         if (!(isset($a, $b) && rand(0, 1))) {
                             return "";
@@ -557,7 +562,7 @@ class IssetTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'issetMultipleNotNegated' => [
-                '<?php
+                'code' => '<?php
                     function foo(?string $a, ?string $b): string {
                         if (isset($a, $b)) {
                             return $a . $b;
@@ -567,7 +572,7 @@ class IssetTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'issetNotIssetTest' => [
-                '<?php
+                'code' => '<?php
                     class B {
                         /** @var string */
                         public $c = "hello";
@@ -586,7 +591,7 @@ class IssetTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'issetOnNestedObjectlikeOneLevel' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param array{a:array} $array
                      * @return array{a:array{b:mixed}}
@@ -600,7 +605,7 @@ class IssetTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'issetOnStringArrayShouldInformArrayness' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param string[] $a
                      * @return array{b: string}
@@ -615,7 +620,7 @@ class IssetTest extends \Psalm\Tests\TestCase
             ],
 
             'issetOnArrayTwice' => [
-                '<?php
+                'code' => '<?php
                     function foo(array $options): void {
                         if (!isset($options["a"])) {
                             $options["a"] = "hello";
@@ -629,21 +634,21 @@ class IssetTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'listDestructuringErrorSuppress' => [
-                '<?php
+                'code' => '<?php
                     function foo(string $s) : void {
                         @list(, $port) = explode(":", $s);
                         echo isset($port) ? "cool" : "uncool";
                     }',
             ],
             'listDestructuringErrorSuppressWithFirstString' => [
-                '<?php
+                'code' => '<?php
                     function foo(string $s) : string {
                         @list($port, $starboard) = explode(":", $s);
                         return $port;
                     }',
             ],
             'accessAfterArrayExistsVariable' => [
-                '<?php
+                'code' => '<?php
                     abstract class P {
                         const MAP = [
                             A::class => 1,
@@ -665,7 +670,7 @@ class IssetTest extends \Psalm\Tests\TestCase
                     class C extends P {}'
             ],
             'accessAfterArrayExistsStaticClass' => [
-                '<?php
+                'code' => '<?php
                     abstract class P {
                         const MAP = [
                             A::class => 1,
@@ -686,7 +691,7 @@ class IssetTest extends \Psalm\Tests\TestCase
                     class C extends P {}'
             ],
             'issetCreateTKeyedArrayWithType' => [
-                '<?php
+                'code' => '<?php
                     function foo(array $options): void {
                         if (isset($options["a"])) {
                             $options["b"] = "hello";
@@ -696,7 +701,7 @@ class IssetTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'issetOnThing' => [
-                '<?php
+                'code' => '<?php
                     function foo() : void {
                         $p = [false, false];
                         $i = rand(0, 1);
@@ -710,7 +715,7 @@ class IssetTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'issetOnNullableObjectWithNullCoalesce' => [
-                '<?php
+                'code' => '<?php
                     class A {
                         public bool $s = true;
                     }
@@ -722,7 +727,7 @@ class IssetTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'issetOnNullableObjectWithIsset' => [
-                '<?php
+                'code' => '<?php
                     class A {
                         public bool $s = true;
                     }
@@ -734,7 +739,7 @@ class IssetTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'issetOnMethodCallInsideFunctionCall' => [
-                '<?php
+                'code' => '<?php
                     class C {
                         public function foo() : ?string {
                             return null;
@@ -746,7 +751,7 @@ class IssetTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'issetOnMethodCallInsideMethodCall' => [
-                '<?php
+                'code' => '<?php
                     class C {
                         public function foo() : ?string {
                             return null;
@@ -758,7 +763,7 @@ class IssetTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'methodCallAfterIsset' => [
-                '<?php
+                'code' => '<?php
                     class B {
                         public function bar() : void {}
                     }
@@ -785,7 +790,7 @@ class IssetTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'issetOnArrayOfArraysReturningStringInElse' => [
-                '<?php
+                'code' => '<?php
                     function foo(int $i) : string {
                         /** @var array<int, array<string, string>> */
                         $tokens = [];
@@ -798,7 +803,7 @@ class IssetTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'issetOnArrayOfObjectsAssertingOnIssetValue' => [
-                '<?php
+                'code' => '<?php
                     class A {
                         public ?string $name = null;
                     }
@@ -811,7 +816,7 @@ class IssetTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'issetOnArrayOfObjectsAssertingOnNotIssetValue' => [
-                '<?php
+                'code' => '<?php
                     class A {
                         public ?string $name = null;
                     }
@@ -836,7 +841,7 @@ class IssetTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'issetOnArrayOfMixed' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @psalm-suppress MixedArrayAccess
                      * @psalm-suppress MixedArgument
@@ -851,7 +856,7 @@ class IssetTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'issetOnArrayOfArrays' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @psalm-suppress MixedArgument
                      */
@@ -865,7 +870,7 @@ class IssetTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'issetOnArrayOfArrayOfStrings' => [
-                '<?php
+                'code' => '<?php
                     function foo(int $i) : void {
                         /** @var array<int, array<string, string>> */
                         $tokens = [];
@@ -876,7 +881,7 @@ class IssetTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'noMixedMethodCallAfterIsset' => [
-                '<?php
+                'code' => '<?php
                     $data = file_get_contents("php://input");
                     /** @psalm-suppress MixedAssignment */
                     $payload = json_decode($data, true);
@@ -891,7 +896,7 @@ class IssetTest extends \Psalm\Tests\TestCase
                     echo $payload["b"];'
             ],
             'implicitIssetWithStringKeyOnArrayDoesntChangeArrayType' => [
-                '<?php
+                'code' => '<?php
                     class A {}
 
                     function run1(array $arguments): void {
@@ -904,7 +909,7 @@ class IssetTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'issetOnClassConstantOffset' => [
-                '<?php
+                'code' => '<?php
 
                     final class StudyJwtPayload {
                         public const STUDY_ID = "studid";
@@ -932,7 +937,7 @@ class IssetTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'noCrashAfterTwoIsset' => [
-                '<?php
+                'code' => '<?php
                     /** @psalm-suppress MixedArrayOffset */
                     function foo(array $a, array $b) : void {
                         if (! isset($b["id"], $a[$b["id"]])) {
@@ -941,7 +946,7 @@ class IssetTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'assertOnPossiblyDefined' => [
-                '<?php
+                'code' => '<?php
                     function crashes(): void {
                         if (rand(0,1)) {
                             $dt = new \DateTime;
@@ -954,7 +959,7 @@ class IssetTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'issetOnNullableMixed' => [
-                '<?php
+                'code' => '<?php
                     function processParam(mixed $param) : void {
                         if (rand(0, 1)) {
                             $param = null;
@@ -967,26 +972,26 @@ class IssetTest extends \Psalm\Tests\TestCase
                             echo $param["name"];
                         }
                     }',
-                [],
-                [],
-                '8.0'
+                'assertions' => [],
+                'ignored_issues' => [],
+                'php_version' => '8.0'
             ],
             'assertComplex' => [
-                '<?php
+                'code' => '<?php
                     function returnsInt(?int $a, ?int $b): int {
                         assert($a !== null || $b !== null);
                         return isset($a) ? $a : $b;
                     }'
             ],
             'assertComplexWithNullCoalesce' => [
-                '<?php
+                'code' => '<?php
                     function returnsInt(?int $a, ?int $b): int {
                         assert($a !== null || $b !== null);
                         return $a ?? $b;
                     }'
             ],
             'nullCoalesceSimpleArrayOffset' => [
-                '<?php
+                'code' => '<?php
                     function a(array $arr) : void {
                         /** @psalm-suppress MixedArgument */
                         echo isset($arr["a"]["b"]) ? $arr["a"]["b"] : 0;
@@ -998,7 +1003,7 @@ class IssetTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'coalescePreserveContext' => [
-                '<?php
+                'code' => '<?php
                     function foo(array $test) : void {
                         /** @psalm-suppress MixedArgument */
                         echo $test[0] ?? ( $test[0] = 1 );
@@ -1010,19 +1015,19 @@ class IssetTest extends \Psalm\Tests\TestCase
     }
 
     /**
-     * @return iterable<string,array{string,error_message:string,1?:string[],2?:bool,3?:string}>
+     * @return iterable<string,array{code:string,error_message:string,ignored_issues?:list<string>,php_version?:string}>
      */
     public function providerInvalidCodeParse(): iterable
     {
         return [
             'complainAboutBadCallInIsset' => [
-                '<?php
+                'code' => '<?php
                     class A {}
                     $a = isset(A::foo()[0]);',
                 'error_message' => 'UndefinedMethod',
             ],
             'issetVariableKeysWithChange' => [
-                '<?php
+                'code' => '<?php
                     $arr = [[1, 2, 3], null, [1, 2, 3], null];
                     $b = 2;
                     $c = 0;
@@ -1033,7 +1038,7 @@ class IssetTest extends \Psalm\Tests\TestCase
                 'error_message' => 'NullArrayAccess',
             ],
             'issetAdditionalVarWithSealedTKeyedArray' => [
-                '<?php
+                'code' => '<?php
                     class Example {
                         const FOO = "foo";
                         public function test() : bool {
@@ -1049,7 +1054,7 @@ class IssetTest extends \Psalm\Tests\TestCase
                 'error_message' => 'InvalidArrayOffset',
             ],
             'listDestructuringErrorSuppress' => [
-                '<?php
+                'code' => '<?php
                     function foo(string $s) : string {
                         @list($port) = explode(":", $s, -1);
                         return $port;
@@ -1057,7 +1062,7 @@ class IssetTest extends \Psalm\Tests\TestCase
                 'error_message' => 'NullableReturnStatement',
             ],
             'undefinedVarInNullCoalesce' => [
-                '<?php
+                'code' => '<?php
                     function bar(): void {
                         $do_baz = $config["do_it"] ?? false;
                         if ($do_baz) {
@@ -1067,7 +1072,7 @@ class IssetTest extends \Psalm\Tests\TestCase
                 'error_message' => 'UndefinedVariable'
             ],
             'issetNullVar' => [
-                '<?php
+                'code' => '<?php
                     function four(?string $s) : void {
                         if ($s === null) {
                             if (isset($s)) {}
@@ -1076,7 +1081,7 @@ class IssetTest extends \Psalm\Tests\TestCase
                 'error_message' => 'TypeDoesNotContainType',
             ],
             'stringIsAlwaysSet' => [
-                '<?php
+                'code' => '<?php
                     function foo(string $s) : string {
                         if (!isset($s)) {
                             return "foo";
@@ -1086,7 +1091,7 @@ class IssetTest extends \Psalm\Tests\TestCase
                 'error_message' => 'TypeDoesNotContainNull'
             ],
             'issetOnArrayOfArraysReturningString' => [
-                '<?php
+                'code' => '<?php
                     function foo(int $i) : ?string {
                         /** @var array<array> */
                         $tokens = [];
@@ -1100,7 +1105,7 @@ class IssetTest extends \Psalm\Tests\TestCase
                 'error_message' => 'PossiblyUndefinedArrayOffset',
             ],
             'accessAfterIssetCheckOnFalsableArray' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @return array{b?: string}|false
                      */
@@ -1117,7 +1122,7 @@ class IssetTest extends \Psalm\Tests\TestCase
                 'error_message' => 'PossiblyInvalidArrayAccess',
             ],
             'issetOnStaticProperty' => [
-                '<?php
+                'code' => '<?php
                     class Singleton {
                         private static self $instance;
                         public function getInstance(): self {
@@ -1131,7 +1136,7 @@ class IssetTest extends \Psalm\Tests\TestCase
                 'error_message' => 'RedundantPropertyInitializationCheck',
             ],
             'negatedIssetOnStaticProperty' => [
-                '<?php
+                'code' => '<?php
                     class Singleton {
                         private static self $instance;
                         public function getInstance(): self {

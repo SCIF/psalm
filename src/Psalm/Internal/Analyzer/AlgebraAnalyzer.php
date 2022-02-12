@@ -1,18 +1,21 @@
 <?php
+
 namespace Psalm\Internal\Analyzer;
 
 use PhpParser;
 use Psalm\CodeLocation;
+use Psalm\Exception\ComplicatedExpressionException;
 use Psalm\Internal\Algebra;
 use Psalm\Internal\Clause;
 use Psalm\Issue\ParadoxicalCondition;
 use Psalm\Issue\RedundantCondition;
 use Psalm\IssueBuffer;
+use Psalm\Storage\Assertion\InArray;
+use Psalm\Storage\Assertion\NotInArray;
 
 use function array_intersect_key;
-use function array_unique;
 use function count;
-use function preg_match;
+use function implode;
 
 /**
  * @internal
@@ -40,7 +43,7 @@ class AlgebraAnalyzer
     ): void {
         try {
             $negated_formula2 = Algebra::negateFormula($formula_2);
-        } catch (\Psalm\Exception\ComplicatedExpressionException $e) {
+        } catch (ComplicatedExpressionException $e) {
             return;
         }
 
@@ -61,34 +64,14 @@ class AlgebraAnalyzer
                 && (isset($formula_1_hashes[$hash]) || isset($formula_2_hashes[$hash]))
                 && !array_intersect_key($new_assigned_var_ids, $formula_2_clause->possibilities)
             ) {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new RedundantCondition(
                         $formula_2_clause . ' has already been asserted',
                         new CodeLocation($statements_analyzer, $stmt),
                         null
                     ),
                     $statements_analyzer->getSuppressedIssues()
-                )) {
-                    // fall through
-                }
-            }
-
-            foreach ($formula_2_clause->possibilities as $key => $values) {
-                if (!$formula_2_clause->generated
-                    && count($values) > 1
-                    && !isset($new_assigned_var_ids[$key])
-                    && count(array_unique($values)) < count($values)
-                ) {
-                    if (IssueBuffer::accepts(
-                        new ParadoxicalCondition(
-                            'Found a redundant condition when evaluating assertion (' . $formula_2_clause . ')',
-                            new CodeLocation($statements_analyzer, $stmt)
-                        ),
-                        $statements_analyzer->getSuppressedIssues()
-                    )) {
-                        // fall through
-                    }
-                }
+                );
             }
 
             $formula_2_hashes[$hash] = true;
@@ -96,26 +79,6 @@ class AlgebraAnalyzer
 
         // remove impossible types
         foreach ($negated_formula2 as $negated_clause_2) {
-            if (count($negated_formula2) === 1) {
-                foreach ($negated_clause_2->possibilities as $key => $values) {
-                    if (count($values) > 1
-                        && !isset($new_assigned_var_ids[$key])
-                        && count(array_unique($values)) < count($values)
-                    ) {
-                        if (IssueBuffer::accepts(
-                            new RedundantCondition(
-                                'Found a redundant condition when evaluating ' . $key,
-                                new CodeLocation($statements_analyzer, $stmt),
-                                null
-                            ),
-                            $statements_analyzer->getSuppressedIssues()
-                        )) {
-                            // fall through
-                        }
-                    }
-                }
-            }
-
             if (!$negated_clause_2->reconcilable || $negated_clause_2->wedge) {
                 continue;
             }
@@ -138,7 +101,7 @@ class AlgebraAnalyzer
                         break;
                     }
                     foreach ($keyed_possibilities as $possibility) {
-                        if (preg_match('@^!?in-array-@', $possibility)) {
+                        if ($possibility instanceof InArray || $possibility instanceof NotInArray) {
                             $negated_clause_2_contains_1_possibilities = false;
                             break;
                         }
@@ -150,7 +113,7 @@ class AlgebraAnalyzer
 
                     if (!$mini_formula_2[0]->wedge) {
                         if (count($mini_formula_2) > 1) {
-                            $paradox_message = 'Condition ((' . \implode(') && (', $mini_formula_2) . '))'
+                            $paradox_message = 'Condition ((' . implode(') && (', $mini_formula_2) . '))'
                                 . ' contradicts a previously-established condition (' . $clause_1 . ')';
                         } else {
                             $paradox_message = 'Condition (' . $mini_formula_2[0] . ')'
@@ -161,15 +124,13 @@ class AlgebraAnalyzer
                             . ' contradicts a previously-established condition (' . $clause_1 . ')';
                     }
 
-                    if (IssueBuffer::accepts(
+                    IssueBuffer::maybeAdd(
                         new ParadoxicalCondition(
                             $paradox_message,
                             new CodeLocation($statements_analyzer, $stmt)
                         ),
                         $statements_analyzer->getSuppressedIssues()
-                    )) {
-                        // fall through
-                    }
+                    );
 
                     return;
                 }

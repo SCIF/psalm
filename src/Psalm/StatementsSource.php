@@ -1,5 +1,8 @@
 <?php
+
 namespace Psalm;
+
+use Psalm\Type\Union;
 
 interface StatementsSource extends FileSource
 {
@@ -22,7 +25,7 @@ interface StatementsSource extends FileSource
     public function getParentFQCLN(): ?string;
 
     /**
-     * @return array<string, array<string, Type\Union>>|null
+     * @return array<string, array<string, Union>>|null
      */
     public function getTemplateTypeMap(): ?array;
 
@@ -38,7 +41,7 @@ interface StatementsSource extends FileSource
 
     public function getSource(): StatementsSource;
 
-    public function getCodebase() : Codebase;
+    public function getCodebase(): Codebase;
 
     /**
      * Get a list of suppressed issues
@@ -57,5 +60,5 @@ interface StatementsSource extends FileSource
      */
     public function removeSuppressedIssues(array $new_issues): void;
 
-    public function getNodeTypeProvider() : NodeTypeProvider;
+    public function getNodeTypeProvider(): NodeTypeProvider;
 }

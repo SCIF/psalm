@@ -1,17 +1,26 @@
 <?php
+
 namespace Psalm\Internal\Codebase;
 
 use Psalm\Codebase;
 use Psalm\Config;
 use Psalm\Internal\Analyzer\IssueData;
+use Psalm\Internal\Analyzer\ProjectAnalyzer;
 use Psalm\Internal\ErrorHandler;
+use Psalm\Internal\Fork\Pool;
 use Psalm\Internal\Provider\ClassLikeStorageProvider;
 use Psalm\Internal\Provider\FileProvider;
 use Psalm\Internal\Provider\FileReferenceProvider;
 use Psalm\Internal\Provider\FileStorageProvider;
 use Psalm\Internal\Scanner\FileScanner;
+use Psalm\IssueBuffer;
 use Psalm\Progress\Progress;
+use Psalm\Storage\ClassLikeStorage;
+use Psalm\Storage\FileStorage;
+use Psalm\Type;
 use ReflectionClass;
+use Throwable;
+use UnexpectedValueException;
 
 use function array_filter;
 use function array_merge;
@@ -61,8 +70,8 @@ use const PHP_EOL;
  *     diff_map:array<string, array<int, array{int, int, int, int}>>,
  *     deletion_ranges:array<string, array<int, array{int, int}>>,
  *     errors:array<string, bool>,
- *     classlike_storage:array<string, \Psalm\Storage\ClassLikeStorage>,
- *     file_storage:array<lowercase-string, \Psalm\Storage\FileStorage>,
+ *     classlike_storage:array<string, ClassLikeStorage>,
+ *     file_storage:array<lowercase-string, FileStorage>,
  *     new_file_content_hashes: array<string, string>,
  *     taint_data: ?TaintFlowGraph
  * }
@@ -228,7 +237,7 @@ class Scanner
     public function getClassLikeFilePath(string $fq_classlike_name_lc): string
     {
         if (!isset($this->classlike_files[$fq_classlike_name_lc])) {
-            throw new \UnexpectedValueException('Could not find file for ' . $fq_classlike_name_lc);
+            throw new UnexpectedValueException('Could not find file for ' . $fq_classlike_name_lc);
         }
 
         return $this->classlike_files[$fq_classlike_name_lc];
@@ -275,7 +284,7 @@ class Scanner
                 $public_mapped_properties = PropertyMap::getPropertyMap()[$fq_classlike_name_lc];
 
                 foreach ($public_mapped_properties as $public_mapped_property) {
-                    $property_type = \Psalm\Type::parseString($public_mapped_property);
+                    $property_type = Type::parseString($public_mapped_property);
                     $property_type->queueClassLikesForScanning(
                         $this->codebase,
                         null,
@@ -342,12 +351,13 @@ class Scanner
 
             // Run scanning one file at a time, splitting the set of
             // files up among a given number of child processes.
-            $pool = new \Psalm\Internal\Fork\Pool(
+            $pool = new Pool(
+                $this->config,
                 $process_file_paths,
-                function () {
+                function (): void {
                     $this->progress->debug('Initialising forked process for scanning' . PHP_EOL);
 
-                    $project_analyzer = \Psalm\Internal\Analyzer\ProjectAnalyzer::getInstance();
+                    $project_analyzer = ProjectAnalyzer::getInstance();
                     $codebase = $project_analyzer->getCodebase();
                     $statements_provider = $codebase->statements_provider;
 
@@ -366,14 +376,14 @@ class Scanner
                 function () {
                     $this->progress->debug('Collecting data from forked scanner process' . PHP_EOL);
 
-                    $project_analyzer = \Psalm\Internal\Analyzer\ProjectAnalyzer::getInstance();
+                    $project_analyzer = ProjectAnalyzer::getInstance();
                     $codebase = $project_analyzer->getCodebase();
                     $statements_provider = $codebase->statements_provider;
 
                     return [
                         'classlikes_data' => $codebase->classlikes->getThreadData(),
                         'scanner_data' => $codebase->scanner->getThreadData(),
-                        'issues' => \Psalm\IssueBuffer::getIssuesData(),
+                        'issues' => IssueBuffer::getIssuesData(),
                         'changed_members' => $statements_provider->getChangedMembers(),
                         'unchanged_signature_members' => $statements_provider->getUnchangedSignatureMembers(),
                         'diff_map' => $statements_provider->getDiffMap(),
@@ -396,7 +406,7 @@ class Scanner
             $forked_pool_data = $pool->wait();
 
             foreach ($forked_pool_data as $pool_data) {
-                \Psalm\IssueBuffer::addIssues($pool_data['issues']);
+                IssueBuffer::addIssues($pool_data['issues']);
 
                 $this->codebase->statements_provider->addChangedMembers(
                     $pool_data['changed_members']
@@ -498,7 +508,7 @@ class Scanner
                     $this->progress->debug('Using reflection to get metadata for ' . $fq_classlike_name . "\n");
 
                     /** @psalm-suppress ArgumentTypeCoercion */
-                    $reflected_class = new \ReflectionClass($fq_classlike_name);
+                    $reflected_class = new ReflectionClass($fq_classlike_name);
                     $this->reflection->registerClass($reflected_class);
                     $this->reflected_classlikes_lc[$fq_classlike_name_lc] = true;
                 } elseif ($this->fileExistsForClassLike($classlikes, $fq_classlike_name)) {
@@ -543,7 +553,7 @@ class Scanner
         if (isset($this->scanned_files[$file_path])
             && (!$will_analyze || $this->scanned_files[$file_path])
         ) {
-            throw new \UnexpectedValueException('Should not be rescanning ' . $file_path);
+            throw new UnexpectedValueException('Should not be rescanning ' . $file_path);
         }
 
         if (!$this->file_provider->fileExists($file_path) && $this->config->mustBeIgnored($file_path)) {
@@ -692,7 +702,7 @@ class Scanner
 
                     /** @psalm-suppress ArgumentTypeCoercion */
                     return new ReflectionClass($fq_class_name);
-                } catch (\Throwable $e) {
+                } catch (Throwable $e) {
                     // do not cache any results here (as case-sensitive filenames can screw things up)
 
                     return null;

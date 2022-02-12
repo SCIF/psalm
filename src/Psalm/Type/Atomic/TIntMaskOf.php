@@ -1,5 +1,8 @@
 <?php
+
 namespace Psalm\Type\Atomic;
+
+use Psalm\Type\Atomic;
 
 /**
  * Represents the type that is the result of a bitmask combination of its parameters.
@@ -14,7 +17,7 @@ class TIntMaskOf extends TInt
     /**
      * @param TClassConstant|TKeyOfClassConstant|TValueOfClassConstant $value
      */
-    public function __construct(\Psalm\Type\Atomic $value)
+    public function __construct(Atomic $value)
     {
         $this->value = $value;
     }
@@ -47,7 +50,7 @@ class TIntMaskOf extends TInt
             . '>';
     }
 
-    public function canBeFullyExpressedInPhp(int $php_major_version, int $php_minor_version): bool
+    public function canBeFullyExpressedInPhp(int $analysis_php_version_id): bool
     {
         return false;
     }

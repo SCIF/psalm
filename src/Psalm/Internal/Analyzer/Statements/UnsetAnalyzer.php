@@ -1,4 +1,5 @@
 <?php
+
 namespace Psalm\Internal\Analyzer\Statements;
 
 use PhpParser;
@@ -6,7 +7,21 @@ use Psalm\Context;
 use Psalm\Internal\Analyzer\Statements\Expression\ExpressionIdentifier;
 use Psalm\Internal\Analyzer\StatementsAnalyzer;
 use Psalm\Type;
+use Psalm\Type\Atomic\TArray;
+use Psalm\Type\Atomic\TArrayKey;
+use Psalm\Type\Atomic\TKeyedArray;
+use Psalm\Type\Atomic\TList;
+use Psalm\Type\Atomic\TMixed;
+use Psalm\Type\Atomic\TNever;
+use Psalm\Type\Atomic\TNonEmptyArray;
+use Psalm\Type\Atomic\TNonEmptyMixed;
+use Psalm\Type\Union;
 
+use function count;
+
+/**
+ * @internal
+ */
 class UnsetAnalyzer
 {
     public static function analyze(
@@ -45,11 +60,16 @@ class UnsetAnalyzer
                     $root_type = clone $context->vars_in_scope[$root_var_id];
 
                     foreach ($root_type->getAtomicTypes() as $atomic_root_type) {
-                        if ($atomic_root_type instanceof Type\Atomic\TKeyedArray) {
+                        if ($atomic_root_type instanceof TKeyedArray) {
                             if ($var->dim instanceof PhpParser\Node\Scalar\String_
                                 || $var->dim instanceof PhpParser\Node\Scalar\LNumber
                             ) {
                                 if (isset($atomic_root_type->properties[$var->dim->value])) {
+                                    if ($atomic_root_type->is_list
+                                        && $var->dim->value !== count($atomic_root_type->properties)-1
+                                    ) {
+                                        $atomic_root_type->is_list = false;
+                                    }
                                     unset($atomic_root_type->properties[$var->dim->value]);
                                     $root_type->bustCache(); //remove id cache
                                 }
@@ -57,18 +77,18 @@ class UnsetAnalyzer
                                 if (!$atomic_root_type->properties) {
                                     if ($atomic_root_type->previous_value_type) {
                                         $root_type->addType(
-                                            new Type\Atomic\TArray([
+                                            new TArray([
                                                 $atomic_root_type->previous_key_type
                                                     ? clone $atomic_root_type->previous_key_type
-                                                    : new Type\Union([new Type\Atomic\TArrayKey]),
+                                                    : new Union([new TArrayKey]),
                                                 clone $atomic_root_type->previous_value_type,
                                             ])
                                         );
                                     } else {
                                         $root_type->addType(
-                                            new Type\Atomic\TArray([
-                                                new Type\Union([new Type\Atomic\TEmpty]),
-                                                new Type\Union([new Type\Atomic\TEmpty]),
+                                            new TArray([
+                                                new Union([new TNever]),
+                                                new Union([new TNever]),
                                             ])
                                         );
                                     }
@@ -87,17 +107,17 @@ class UnsetAnalyzer
 
                                 $atomic_root_type->is_list = false;
                             }
-                        } elseif ($atomic_root_type instanceof Type\Atomic\TNonEmptyArray) {
+                        } elseif ($atomic_root_type instanceof TNonEmptyArray) {
                             $root_type->addType(
-                                new Type\Atomic\TArray($atomic_root_type->type_params)
+                                new TArray($atomic_root_type->type_params)
                             );
-                        } elseif ($atomic_root_type instanceof Type\Atomic\TNonEmptyMixed) {
+                        } elseif ($atomic_root_type instanceof TNonEmptyMixed) {
                             $root_type->addType(
-                                new Type\Atomic\TMixed()
+                                new TMixed()
                             );
-                        } elseif ($atomic_root_type instanceof Type\Atomic\TList) {
+                        } elseif ($atomic_root_type instanceof TList) {
                             $root_type->addType(
-                                new Type\Atomic\TArray([
+                                new TArray([
                                     Type::getInt(),
                                     $atomic_root_type->type_param
                                 ])

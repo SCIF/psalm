@@ -1,24 +1,34 @@
 <?php
+
 namespace Psalm\Internal\Provider\ReturnTypeProvider;
 
+use Psalm\Internal\Analyzer\StatementsAnalyzer;
 use Psalm\Plugin\EventHandler\Event\FunctionReturnTypeProviderEvent;
+use Psalm\Plugin\EventHandler\FunctionReturnTypeProviderInterface;
 use Psalm\Type;
+use Psalm\Type\Atomic\TArray;
+use Psalm\Type\Atomic\TKeyedArray;
+use Psalm\Type\Atomic\TList;
+use Psalm\Type\Union;
 
-class ArrayReverseReturnTypeProvider implements \Psalm\Plugin\EventHandler\FunctionReturnTypeProviderInterface
+/**
+ * @internal
+ */
+class ArrayReverseReturnTypeProvider implements FunctionReturnTypeProviderInterface
 {
     /**
      * @return array<lowercase-string>
      */
-    public static function getFunctionIds() : array
+    public static function getFunctionIds(): array
     {
         return ['array_reverse'];
     }
 
-    public static function getFunctionReturnType(FunctionReturnTypeProviderEvent $event) : Type\Union
+    public static function getFunctionReturnType(FunctionReturnTypeProviderEvent $event): Union
     {
         $statements_source = $event->getStatementsSource();
         $call_args = $event->getCallArgs();
-        if (!$statements_source instanceof \Psalm\Internal\Analyzer\StatementsAnalyzer) {
+        if (!$statements_source instanceof StatementsAnalyzer) {
             return Type::getMixed();
         }
 
@@ -28,9 +38,9 @@ class ArrayReverseReturnTypeProvider implements \Psalm\Plugin\EventHandler\Funct
             && ($first_arg_type = $statements_source->node_data->getType($first_arg))
             && $first_arg_type->hasType('array')
             && ($array_atomic_type = $first_arg_type->getAtomicTypes()['array'])
-            && ($array_atomic_type instanceof Type\Atomic\TArray
-                || $array_atomic_type instanceof Type\Atomic\TKeyedArray
-                || $array_atomic_type instanceof Type\Atomic\TList)
+            && ($array_atomic_type instanceof TArray
+                || $array_atomic_type instanceof TKeyedArray
+                || $array_atomic_type instanceof TList)
         ? $array_atomic_type
         : null;
 
@@ -38,11 +48,11 @@ class ArrayReverseReturnTypeProvider implements \Psalm\Plugin\EventHandler\Funct
             return Type::getArray();
         }
 
-        if ($first_arg_array instanceof Type\Atomic\TArray) {
-            return new Type\Union([clone $first_arg_array]);
+        if ($first_arg_array instanceof TArray) {
+            return new Union([clone $first_arg_array]);
         }
 
-        if ($first_arg_array instanceof Type\Atomic\TList) {
+        if ($first_arg_array instanceof TList) {
             $second_arg = $call_args[1]->value ?? null;
 
             if (!$second_arg
@@ -50,12 +60,12 @@ class ArrayReverseReturnTypeProvider implements \Psalm\Plugin\EventHandler\Funct
                     && $second_arg_type->isFalse()
                 )
             ) {
-                return new Type\Union([clone $first_arg_array]);
+                return new Union([clone $first_arg_array]);
             }
 
-            return new Type\Union([new Type\Atomic\TArray([Type::getInt(), clone $first_arg_array->type_param])]);
+            return new Union([new TArray([Type::getInt(), clone $first_arg_array->type_param])]);
         }
 
-        return new Type\Union([$first_arg_array->getGenericArrayType()]);
+        return new Union([$first_arg_array->getGenericArrayType()]);
     }
 }

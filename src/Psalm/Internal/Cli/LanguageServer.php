@@ -7,7 +7,16 @@ use Psalm\Internal\Analyzer\ProjectAnalyzer;
 use Psalm\Internal\CliUtils;
 use Psalm\Internal\Composer;
 use Psalm\Internal\ErrorHandler;
+use Psalm\Internal\Fork\PsalmRestarter;
 use Psalm\Internal\IncludeCollector;
+use Psalm\Internal\Provider\ClassLikeStorageCacheProvider;
+use Psalm\Internal\Provider\FileProvider;
+use Psalm\Internal\Provider\FileReferenceCacheProvider;
+use Psalm\Internal\Provider\FileStorageCacheProvider;
+use Psalm\Internal\Provider\ParserCacheProvider;
+use Psalm\Internal\Provider\ProjectCacheProvider;
+use Psalm\Internal\Provider\Providers;
+use Psalm\Report;
 
 use function array_key_exists;
 use function array_map;
@@ -43,6 +52,9 @@ require_once __DIR__ . '/../CliUtils.php';
 require_once __DIR__ . '/../Composer.php';
 require_once __DIR__ . '/../IncludeCollector.php';
 
+/**
+ * @internal
+ */
 final class LanguageServer
 {
     /** @param array<int,string> $argv */
@@ -68,7 +80,7 @@ final class LanguageServer
             'tcp:',
             'tcp-server',
             'disable-on-change::',
-            'enable-autocomplete',
+            'enable-autocomplete::',
             'use-extended-diagnostic-codes',
             'verbose'
         ];
@@ -109,7 +121,7 @@ final class LanguageServer
         if (!array_key_exists('use-ini-defaults', $options)) {
             ini_set('display_errors', '1');
             ini_set('display_startup_errors', '1');
-            ini_set('memory_limit', (string) (8 * 1024 * 1024 * 1024));
+            ini_set('memory_limit', (string) (8 * 1_024 * 1_024 * 1_024));
         }
 
         if (array_key_exists('help', $options)) {
@@ -131,51 +143,51 @@ final class LanguageServer
 
         if (array_key_exists('h', $options)) {
             echo <<<HELP
-Usage:
-    psalm-language-server [options]
+            Usage:
+                psalm-language-server [options]
 
-Options:
-    -h, --help
-        Display this help message
+            Options:
+                -h, --help
+                    Display this help message
 
-    -v, --version
-        Display the Psalm version
+                -v, --version
+                    Display the Psalm version
 
-    -c, --config=psalm.xml
-        Path to a psalm.xml configuration file. Run psalm --init to create one.
+                -c, --config=psalm.xml
+                    Path to a psalm.xml configuration file. Run psalm --init to create one.
 
-    -r, --root
-        If running Psalm globally you'll need to specify a project root. Defaults to cwd
+                -r, --root
+                    If running Psalm globally you'll need to specify a project root. Defaults to cwd
 
-    --find-dead-code
-        Look for dead code
+                --find-dead-code
+                    Look for dead code
 
-    --clear-cache
-        Clears all cache files that the language server uses for this specific project
+                --clear-cache
+                    Clears all cache files that the language server uses for this specific project
 
-    --use-ini-defaults
-        Use PHP-provided ini defaults for memory and error display
+                --use-ini-defaults
+                    Use PHP-provided ini defaults for memory and error display
 
-    --tcp=url
-        Use TCP mode (by default Psalm uses STDIO)
+                --tcp=url
+                    Use TCP mode (by default Psalm uses STDIO)
 
-    --tcp-server
-        Use TCP in server mode (default is client)
+                --tcp-server
+                    Use TCP in server mode (default is client)
 
-    --disable-on-change[=line-number-threshold]
-        If added, the language server will not respond to onChange events.
-        You can also specify a line count over which Psalm will not run on-change events.
+                --disable-on-change[=line-number-threshold]
+                    If added, the language server will not respond to onChange events.
+                    You can also specify a line count over which Psalm will not run on-change events.
 
-    --enable-autocomplete[=BOOL]
-        Enables or disables autocomplete on methods and properties. Default is true.
+                --enable-autocomplete[=BOOL]
+                    Enables or disables autocomplete on methods and properties. Default is true.
 
-    --use-extended-diagnostic-codes
-        Enables sending help uri links with the code in diagnostic messages.
+                --use-extended-diagnostic-codes
+                    Enables sending help uri links with the code in diagnostic messages.
 
-    --verbose
-        Will send log messages to the client with information.
+                --verbose
+                    Will send log messages to the client with information.
 
-HELP;
+            HELP;
 
             exit;
         }
@@ -210,9 +222,10 @@ HELP;
         $include_collector = new IncludeCollector();
 
         $first_autoloader = $include_collector->runAndCollect(
-            static function () use ($current_dir, $options, $vendor_dir): ?\Composer\Autoload\ClassLoader {
-                return CliUtils::requireAutoloaders($current_dir, isset($options['r']), $vendor_dir);
-            }
+            // we ignore the FQN because of a hack in scoper.inc that needs full path
+            // phpcs:ignore SlevomatCodingStandard.Namespaces.ReferenceUsedNamesOnly.ReferenceViaFullyQualifiedName
+            static fn(): ?\Composer\Autoload\ClassLoader =>
+                CliUtils::requireAutoloaders($current_dir, isset($options['r']), $vendor_dir)
         );
 
         if (array_key_exists('v', $options)) {
@@ -220,7 +233,7 @@ HELP;
             exit;
         }
 
-        $ini_handler = new \Psalm\Internal\Fork\PsalmRestarter('PSALM');
+        $ini_handler = new PsalmRestarter('PSALM');
 
         $ini_handler->disableExtension('grpc');
 
@@ -243,7 +256,7 @@ HELP;
         $config = CliUtils::initializeConfig(
             $path_to_config,
             $current_dir,
-            \Psalm\Report::TYPE_CONSOLE,
+            Report::TYPE_CONSOLE,
             $first_autoloader
         );
         $config->setIncludeCollector($include_collector);
@@ -265,13 +278,13 @@ HELP;
             exit;
         }
 
-        $providers = new \Psalm\Internal\Provider\Providers(
-            new \Psalm\Internal\Provider\FileProvider,
-            new \Psalm\Internal\Provider\ParserCacheProvider($config),
-            new \Psalm\Internal\Provider\FileStorageCacheProvider($config),
-            new \Psalm\Internal\Provider\ClassLikeStorageCacheProvider($config),
-            new \Psalm\Internal\Provider\FileReferenceCacheProvider($config),
-            new \Psalm\Internal\Provider\ProjectCacheProvider(Composer::getLockFilePath($current_dir))
+        $providers = new Providers(
+            new FileProvider,
+            new ParserCacheProvider($config),
+            new FileStorageCacheProvider($config),
+            new ClassLikeStorageCacheProvider($config),
+            new FileReferenceCacheProvider($config),
+            new ProjectCacheProvider(Composer::getLockFilePath($current_dir))
         );
 
         $project_analyzer = new ProjectAnalyzer(

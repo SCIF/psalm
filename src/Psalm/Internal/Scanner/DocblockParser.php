@@ -19,6 +19,8 @@ use const PREG_OFFSET_CAPTURE;
 
 /**
  * This class will parse Docblocks in order to extract known tags from them
+ *
+ * @internal
  */
 class DocblockParser
 {
@@ -26,7 +28,7 @@ class DocblockParser
      * $offsetStart is the absolute position of the docblock in the file. It'll be used to add to the position of some
      * special tags (like `psalm-suppress`) for future uses
      */
-    public static function parse(string $docblock, int $offsetStart) : ParsedDocblock
+    public static function parse(string $docblock, int $offsetStart): ParsedDocblock
     {
         // Strip off comments.
         $docblock = trim($docblock);
@@ -101,8 +103,10 @@ class DocblockParser
                 unset($lines[$k]);
             } else {
                 // Strip the leading *, if present.
-                $lines[$k] = str_replace("\t", ' ', $line);
-                $lines[$k] = preg_replace('/^ *\*/', '', $line);
+                $text = $lines[$k];
+                $text = str_replace("\t", ' ', $text);
+                $text = preg_replace('/^ *\*/', '', $text);
+                $lines[$k] = $text;
             }
 
             $line_offset += $original_line_length + 1;
@@ -141,7 +145,7 @@ class DocblockParser
         return $parsed;
     }
 
-    private static function resolveTags(ParsedDocblock $docblock) : void
+    private static function resolveTags(ParsedDocblock $docblock): void
     {
         if (isset($docblock->tags['template'])
             || isset($docblock->tags['psalm-template'])

@@ -1,23 +1,29 @@
 <?php
+
 namespace Psalm\Internal\Provider;
 
 use Psalm\Config;
+use Psalm\Internal\Codebase\Analyzer;
+use UnexpectedValueException;
 
 use function file_exists;
 use function file_get_contents;
 use function file_put_contents;
 use function is_array;
 use function is_readable;
+use function mkdir;
 use function serialize;
 use function unserialize;
 
 use const DIRECTORY_SEPARATOR;
 
 /**
- * @psalm-import-type  FileMapType from \Psalm\Internal\Codebase\Analyzer
+ * @psalm-import-type FileMapType from Analyzer
  *
  * Used to determine which files reference other files, necessary for using the --diff
  * option from the command line.
+ *
+ * @internal
  */
 class FileReferenceCacheProvider
 {
@@ -52,7 +58,7 @@ class FileReferenceCacheProvider
         $this->config = $config;
     }
 
-    public function hasConfigChanged() : bool
+    public function hasConfigChanged(): bool
     {
         $new_hash = $this->config->computeHash();
         $has_changed = $new_hash !== $this->getConfigHashCache();
@@ -80,7 +86,7 @@ class FileReferenceCacheProvider
         $reference_cache = unserialize((string) file_get_contents($reference_cache_location));
 
         if (!is_array($reference_cache)) {
-            throw new \UnexpectedValueException('The reference cache must be an array');
+            throw new UnexpectedValueException('The reference cache must be an array');
         }
 
         return $reference_cache;
@@ -106,7 +112,7 @@ class FileReferenceCacheProvider
         $reference_cache = unserialize((string) file_get_contents($reference_cache_location));
 
         if (!is_array($reference_cache)) {
-            throw new \UnexpectedValueException('The reference cache must be an array');
+            throw new UnexpectedValueException('The reference cache must be an array');
         }
 
         return $reference_cache;
@@ -132,7 +138,7 @@ class FileReferenceCacheProvider
         $reference_cache = unserialize((string) file_get_contents($reference_cache_location));
 
         if (!is_array($reference_cache)) {
-            throw new \UnexpectedValueException('The reference cache must be an array');
+            throw new UnexpectedValueException('The reference cache must be an array');
         }
 
         return $reference_cache;
@@ -158,7 +164,7 @@ class FileReferenceCacheProvider
         $reference_cache = unserialize((string) file_get_contents($cache_location));
 
         if (!is_array($reference_cache)) {
-            throw new \UnexpectedValueException('The reference cache must be an array');
+            throw new UnexpectedValueException('The reference cache must be an array');
         }
 
         return $reference_cache;
@@ -184,7 +190,7 @@ class FileReferenceCacheProvider
         $class_member_reference_cache = unserialize((string) file_get_contents($class_member_cache_location));
 
         if (!is_array($class_member_reference_cache)) {
-            throw new \UnexpectedValueException('The reference cache must be an array');
+            throw new UnexpectedValueException('The reference cache must be an array');
         }
 
         return $class_member_reference_cache;
@@ -211,7 +217,7 @@ class FileReferenceCacheProvider
         $method_dependencies_cache = unserialize((string) file_get_contents($method_dependencies_cache_location));
 
         if (!is_array($method_dependencies_cache)) {
-            throw new \UnexpectedValueException('The reference cache must be an array');
+            throw new UnexpectedValueException('The reference cache must be an array');
         }
 
         return $method_dependencies_cache;
@@ -237,7 +243,7 @@ class FileReferenceCacheProvider
         $class_member_reference_cache = unserialize((string) file_get_contents($class_member_cache_location));
 
         if (!is_array($class_member_reference_cache)) {
-            throw new \UnexpectedValueException('The reference cache must be an array');
+            throw new UnexpectedValueException('The reference cache must be an array');
         }
 
         return $class_member_reference_cache;
@@ -263,7 +269,7 @@ class FileReferenceCacheProvider
         $class_member_reference_cache = unserialize((string) file_get_contents($class_member_cache_location));
 
         if (!is_array($class_member_reference_cache)) {
-            throw new \UnexpectedValueException('The reference cache must be an array');
+            throw new UnexpectedValueException('The reference cache must be an array');
         }
 
         return $class_member_reference_cache;
@@ -289,7 +295,7 @@ class FileReferenceCacheProvider
         $class_member_reference_cache = unserialize((string) file_get_contents($class_member_cache_location));
 
         if (!is_array($class_member_reference_cache)) {
-            throw new \UnexpectedValueException('The reference cache must be an array');
+            throw new UnexpectedValueException('The reference cache must be an array');
         }
 
         return $class_member_reference_cache;
@@ -315,7 +321,7 @@ class FileReferenceCacheProvider
         $file_class_member_reference_cache = unserialize((string) file_get_contents($file_class_member_cache_location));
 
         if (!is_array($file_class_member_reference_cache)) {
-            throw new \UnexpectedValueException('The reference cache must be an array');
+            throw new UnexpectedValueException('The reference cache must be an array');
         }
 
         return $file_class_member_reference_cache;
@@ -343,7 +349,7 @@ class FileReferenceCacheProvider
         $file_class_member_reference_cache = unserialize((string) file_get_contents($file_class_member_cache_location));
 
         if (!is_array($file_class_member_reference_cache)) {
-            throw new \UnexpectedValueException('The reference cache must be an array');
+            throw new UnexpectedValueException('The reference cache must be an array');
         }
 
         return $file_class_member_reference_cache;
@@ -371,7 +377,7 @@ class FileReferenceCacheProvider
         $file_class_member_reference_cache = unserialize((string) file_get_contents($file_class_member_cache_location));
 
         if (!is_array($file_class_member_reference_cache)) {
-            throw new \UnexpectedValueException('The reference cache must be an array');
+            throw new UnexpectedValueException('The reference cache must be an array');
         }
 
         return $file_class_member_reference_cache;
@@ -398,7 +404,7 @@ class FileReferenceCacheProvider
         $file_class_member_reference_cache = unserialize((string) file_get_contents($file_class_member_cache_location));
 
         if (!is_array($file_class_member_reference_cache)) {
-            throw new \UnexpectedValueException('The reference cache must be an array');
+            throw new UnexpectedValueException('The reference cache must be an array');
         }
 
         return $file_class_member_reference_cache;
@@ -424,7 +430,7 @@ class FileReferenceCacheProvider
         $cache = unserialize((string) file_get_contents($cache_location));
 
         if (!is_array($cache)) {
-            throw new \UnexpectedValueException('The reference cache must be an array');
+            throw new UnexpectedValueException('The reference cache must be an array');
         }
 
         return $cache;
@@ -450,7 +456,7 @@ class FileReferenceCacheProvider
         $cache = unserialize((string) file_get_contents($cache_location));
 
         if (!is_array($cache)) {
-            throw new \UnexpectedValueException('The method param use cache must be an array');
+            throw new UnexpectedValueException('The method param use cache must be an array');
         }
 
         return $cache;
@@ -476,7 +482,7 @@ class FileReferenceCacheProvider
         $issues_cache = unserialize((string) file_get_contents($issues_cache_location));
 
         if (!is_array($issues_cache)) {
-            throw new \UnexpectedValueException('The reference cache must be an array');
+            throw new UnexpectedValueException('The reference cache must be an array');
         }
 
         return $issues_cache;
@@ -830,7 +836,7 @@ class FileReferenceCacheProvider
 
         if ($cache_directory) {
             if (!file_exists($cache_directory)) {
-                \mkdir($cache_directory, 0777, true);
+                mkdir($cache_directory, 0777, true);
             }
 
             $config_hash_cache_location = $cache_directory . DIRECTORY_SEPARATOR . self::CONFIG_HASH_CACHE_NAME;

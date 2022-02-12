@@ -1,10 +1,20 @@
 <?php
-declare(strict_types = 1);
+
+declare(strict_types=1);
+
 namespace Psalm\Internal\LanguageServer;
 
-use AdvancedJsonRpc;
+use AdvancedJsonRpc\Dispatcher;
+use AdvancedJsonRpc\Error;
+use AdvancedJsonRpc\ErrorCode;
+use AdvancedJsonRpc\ErrorResponse;
+use AdvancedJsonRpc\Request;
+use AdvancedJsonRpc\Response;
+use AdvancedJsonRpc\SuccessResponse;
 use Amp\Promise;
 use Amp\Success;
+use Generator;
+use InvalidArgumentException;
 use LanguageServerProtocol\ClientCapabilities;
 use LanguageServerProtocol\CompletionOptions;
 use LanguageServerProtocol\Diagnostic;
@@ -17,10 +27,12 @@ use LanguageServerProtocol\ServerCapabilities;
 use LanguageServerProtocol\SignatureHelpOptions;
 use LanguageServerProtocol\TextDocumentSyncKind;
 use LanguageServerProtocol\TextDocumentSyncOptions;
+use Psalm\Config;
 use Psalm\Internal\Analyzer\IssueData;
 use Psalm\Internal\Analyzer\ProjectAnalyzer;
-use Psalm\Internal\LanguageServer\Server\TextDocument;
-use Psalm\Internal\LanguageServer\Server\Workspace;
+use Psalm\Internal\LanguageServer\Server\TextDocument as ServerTextDocument;
+use Psalm\Internal\LanguageServer\Server\Workspace as ServerWorkspace;
+use Psalm\IssueBuffer;
 use Throwable;
 
 use function Amp\asyncCoroutine;
@@ -35,6 +47,7 @@ use function implode;
 use function max;
 use function parse_url;
 use function rawurlencode;
+use function realpath;
 use function str_replace;
 use function strpos;
 use function substr;
@@ -44,19 +57,19 @@ use function urldecode;
 /**
  * @internal
  */
-class LanguageServer extends AdvancedJsonRpc\Dispatcher
+class LanguageServer extends Dispatcher
 {
     /**
      * Handles textDocument/* method calls
      *
-     * @var ?Server\TextDocument
+     * @var ?ServerTextDocument
      */
     public $textDocument;
 
     /**
      * Handles workspace/* method calls
      *
-     * @var ?Server\Workspace
+     * @var ?ServerWorkspace
      */
     public $workspace;
 
@@ -90,6 +103,11 @@ class LanguageServer extends AdvancedJsonRpc\Dispatcher
      */
     protected $onchange_paths_to_analyze = [];
 
+    /**
+     * @var array<string, list<IssueData>>
+     */
+    protected $current_issues = [];
+
     public function __construct(
         ProtocolReader $reader,
         ProtocolWriter $writer,
@@ -112,15 +130,15 @@ class LanguageServer extends AdvancedJsonRpc\Dispatcher
             'message',
             asyncCoroutine(
                 /**
-                 * @return \Generator<int, \Amp\Promise, mixed, void>
+                 * @return Generator<int, Promise, mixed, void>
                  */
-                static function (Message $msg): \Generator {
+                static function (Message $msg): Generator {
                     if (!$msg->body) {
                         return;
                     }
 
                     // Ignore responses, this is the handler for requests and notifications
-                    if (AdvancedJsonRpc\Response::isResponse($msg->body)) {
+                    if (Response::isResponse($msg->body)) {
                         return;
                     }
 
@@ -135,19 +153,18 @@ class LanguageServer extends AdvancedJsonRpc\Dispatcher
                         // Invoke the method handler to get a result
                         /**
                          * @var Promise
-                         * @psalm-suppress UndefinedDocblockClass
                          */
                         $dispatched = $this->dispatch($msg->body);
                         /** @psalm-suppress MixedAssignment */
                         $result = yield $dispatched;
-                    } catch (AdvancedJsonRpc\Error $e) {
+                    } catch (Error $e) {
                         // If a ResponseError is thrown, send it back in the Response
                         $error = $e;
                     } catch (Throwable $e) {
                         // If an unexpected error occurred, send back an INTERNAL_ERROR error response
-                        $error = new AdvancedJsonRpc\Error(
+                        $error = new Error(
                             (string) $e,
-                            AdvancedJsonRpc\ErrorCode::INTERNAL_ERROR,
+                            ErrorCode::INTERNAL_ERROR,
                             null,
                             $e
                         );
@@ -158,11 +175,11 @@ class LanguageServer extends AdvancedJsonRpc\Dispatcher
                      * @psalm-suppress UndefinedPropertyFetch
                      * @psalm-suppress MixedArgument
                      */
-                    if (AdvancedJsonRpc\Request::isRequest($msg->body)) {
+                    if (Request::isRequest($msg->body)) {
                         if ($error !== null) {
-                            $responseBody = new AdvancedJsonRpc\ErrorResponse($msg->body->id, $error);
+                            $responseBody = new ErrorResponse($msg->body->id, $error);
                         } else {
-                            $responseBody = new AdvancedJsonRpc\SuccessResponse($msg->body->id, $result);
+                            $responseBody = new SuccessResponse($msg->body->id, $result);
                         }
                         yield $this->protocolWriter->write(new Message($responseBody));
                     }
@@ -199,8 +216,8 @@ class LanguageServer extends AdvancedJsonRpc\Dispatcher
         ?int $processId = null
     ): Promise {
         return call(
-            /** @return \Generator<int, true, mixed, InitializeResult> */
-            static function () {
+            /** @return Generator<int, true, mixed, InitializeResult> */
+            static function (): Generator {
                 $this->verboseLog("Initializing...");
                 $this->clientStatus('initializing');
 
@@ -223,18 +240,18 @@ class LanguageServer extends AdvancedJsonRpc\Dispatcher
                 $codebase->config->visitStubFiles($codebase);
 
                 if ($this->textDocument === null) {
-                    $this->textDocument = new TextDocument(
+                    $this->textDocument = new ServerTextDocument(
                         $this,
                         $codebase,
-                        $this->project_analyzer->onchange_line_limit
+                        $this->project_analyzer
                     );
                 }
 
                 if ($this->workspace === null) {
-                    $this->workspace = new Workspace(
+                    $this->workspace = new ServerWorkspace(
                         $this,
                         $codebase,
-                        $this->project_analyzer->onchange_line_limit
+                        $this->project_analyzer
                     );
                 }
 
@@ -267,6 +284,8 @@ class LanguageServer extends AdvancedJsonRpc\Dispatcher
                 // Support "Hover"
                 $serverCapabilities->hoverProvider = true;
                 // Support "Completion"
+                $serverCapabilities->codeActionProvider = true;
+                // Support "Code Actions"
 
                 if ($this->project_analyzer->provide_completion) {
                     $serverCapabilities->completionProvider = new CompletionOptions();
@@ -350,7 +369,8 @@ class LanguageServer extends AdvancedJsonRpc\Dispatcher
      */
     public function emitIssues(array $uris): void
     {
-        $data = \Psalm\IssueBuffer::clear();
+        $data = IssueBuffer::clear();
+        $this->current_issues = $data;
 
         foreach ($uris as $file_path => $uri) {
             $diagnostics = array_map(
@@ -369,10 +389,10 @@ class LanguageServer extends AdvancedJsonRpc\Dispatcher
                         new Position($end_line - 1, $end_column - 1)
                     );
                     switch ($severity) {
-                        case \Psalm\Config::REPORT_INFO:
+                        case Config::REPORT_INFO:
                             $diagnostic_severity = DiagnosticSeverity::WARNING;
                             break;
-                        case \Psalm\Config::REPORT_ERROR:
+                        case Config::REPORT_ERROR:
                         default:
                             $diagnostic_severity = DiagnosticSeverity::ERROR;
                             break;
@@ -463,7 +483,7 @@ class LanguageServer extends AdvancedJsonRpc\Dispatcher
                     '[Psalm ' .PSALM_VERSION. ' - PHP Language Server] ' . $message,
                     $type
                 );
-            } catch (\Throwable $err) {
+            } catch (Throwable $err) {
                 // do nothing
             }
         }
@@ -487,7 +507,7 @@ class LanguageServer extends AdvancedJsonRpc\Dispatcher
                 3,
                 'telemetry/event'
             );
-        } catch (\Throwable $err) {
+        } catch (Throwable $err) {
             // do nothing
         }
         new Success(null);
@@ -527,7 +547,7 @@ class LanguageServer extends AdvancedJsonRpc\Dispatcher
             || $fragments['scheme'] !== 'file'
             || !isset($fragments['path'])
         ) {
-            throw new \InvalidArgumentException("Not a valid file URI: $uri");
+            throw new InvalidArgumentException("Not a valid file URI: $uri");
         }
 
         $filepath = urldecode($fragments['path']);
@@ -539,11 +559,21 @@ class LanguageServer extends AdvancedJsonRpc\Dispatcher
             $filepath = str_replace('/', '\\', $filepath);
         }
 
-        $realpath = \realpath($filepath);
+        $realpath = realpath($filepath);
         if ($realpath !== false) {
             return $realpath;
         }
 
         return $filepath;
+    }
+
+    /**
+     * Get the value of current_issues
+     *
+     * @return array<string, list<IssueData>>
+     */
+    public function getCurrentIssues(): array
+    {
+        return $this->current_issues;
     }
 }

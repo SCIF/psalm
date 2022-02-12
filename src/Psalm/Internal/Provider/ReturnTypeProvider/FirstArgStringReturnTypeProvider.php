@@ -1,26 +1,34 @@
 <?php
+
 namespace Psalm\Internal\Provider\ReturnTypeProvider;
 
+use Psalm\Internal\Analyzer\StatementsAnalyzer;
 use Psalm\Plugin\EventHandler\Event\FunctionReturnTypeProviderEvent;
+use Psalm\Plugin\EventHandler\FunctionReturnTypeProviderInterface;
 use Psalm\Type;
+use Psalm\Type\Atomic\TNull;
+use Psalm\Type\Union;
 
-class FirstArgStringReturnTypeProvider implements \Psalm\Plugin\EventHandler\FunctionReturnTypeProviderInterface
+/**
+ * @internal
+ */
+class FirstArgStringReturnTypeProvider implements FunctionReturnTypeProviderInterface
 {
     /**
      * @return array<lowercase-string>
      */
-    public static function getFunctionIds() : array
+    public static function getFunctionIds(): array
     {
         return [
             'crypt',
         ];
     }
 
-    public static function getFunctionReturnType(FunctionReturnTypeProviderEvent $event): ?Type\Union
+    public static function getFunctionReturnType(FunctionReturnTypeProviderEvent $event): ?Union
     {
         $statements_source = $event->getStatementsSource();
         $call_args = $event->getCallArgs();
-        if (!$statements_source instanceof \Psalm\Internal\Analyzer\StatementsAnalyzer
+        if (!$statements_source instanceof StatementsAnalyzer
             || !$call_args
         ) {
             return Type::getMixed();
@@ -34,7 +42,7 @@ class FirstArgStringReturnTypeProvider implements \Psalm\Plugin\EventHandler\Fun
             return $return_type;
         }
 
-        $return_type->addType(new Type\Atomic\TNull);
+        $return_type->addType(new TNull);
         $return_type->ignore_nullable_issues = true;
 
         return $return_type;

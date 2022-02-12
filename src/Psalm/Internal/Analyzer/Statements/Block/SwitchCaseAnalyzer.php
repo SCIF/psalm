@@ -1,16 +1,20 @@
 <?php
+
 namespace Psalm\Internal\Analyzer\Statements\Block;
 
 use PhpParser;
 use Psalm\CodeLocation;
 use Psalm\Codebase;
 use Psalm\Context;
+use Psalm\Exception\ComplicatedExpressionException;
 use Psalm\Internal\Algebra;
 use Psalm\Internal\Algebra\FormulaGenerator;
 use Psalm\Internal\Analyzer\AlgebraAnalyzer;
 use Psalm\Internal\Analyzer\ScopeAnalyzer;
 use Psalm\Internal\Analyzer\Statements\ExpressionAnalyzer;
 use Psalm\Internal\Analyzer\StatementsAnalyzer;
+use Psalm\Internal\PhpVisitor\ConditionCloningVisitor;
+use Psalm\Internal\PhpVisitor\TypeMappingVisitor;
 use Psalm\Internal\Scope\CaseScope;
 use Psalm\Internal\Scope\SwitchScope;
 use Psalm\Issue\ContinueOutsideLoop;
@@ -31,6 +35,9 @@ use Psalm\Node\Stmt\VirtualIf;
 use Psalm\Node\VirtualArg;
 use Psalm\Node\VirtualName;
 use Psalm\Type;
+use Psalm\Type\Atomic\TDependentGetClass;
+use Psalm\Type\Atomic\TDependentGetDebugType;
+use Psalm\Type\Atomic\TDependentGetType;
 use Psalm\Type\Reconciler;
 
 use function array_diff_key;
@@ -39,6 +46,7 @@ use function array_merge;
 use function count;
 use function in_array;
 use function is_string;
+use function spl_object_id;
 use function strpos;
 use function substr;
 
@@ -106,15 +114,13 @@ class SwitchCaseAnalyzer
                 return false;
             }
 
-            if (!$was_inside_conditional) {
-                $case_context->inside_conditional = false;
-            }
+            $case_context->inside_conditional = $was_inside_conditional;
 
             $statements_analyzer->node_data = clone $statements_analyzer->node_data;
 
             $traverser = new PhpParser\NodeTraverser;
             $traverser->addVisitor(
-                new \Psalm\Internal\PhpVisitor\ConditionCloningVisitor(
+                new ConditionCloningVisitor(
                     $statements_analyzer->node_data
                 )
             );
@@ -138,7 +144,7 @@ class SwitchCaseAnalyzer
                 $type_statements = [];
 
                 foreach ($switch_var_type->getAtomicTypes() as $type) {
-                    if ($type instanceof Type\Atomic\TDependentGetClass) {
+                    if ($type instanceof TDependentGetClass) {
                         $type_statements[] = new VirtualFuncCall(
                             new VirtualName(['get_class']),
                             [
@@ -154,7 +160,7 @@ class SwitchCaseAnalyzer
                             ],
                             $stmt->cond->getAttributes()
                         );
-                    } elseif ($type instanceof Type\Atomic\TDependentGetType) {
+                    } elseif ($type instanceof TDependentGetType) {
                         $type_statements[] = new VirtualFuncCall(
                             new VirtualName(['gettype']),
                             [
@@ -170,7 +176,7 @@ class SwitchCaseAnalyzer
                             ],
                             $stmt->cond->getAttributes()
                         );
-                    } elseif ($type instanceof Type\Atomic\TDependentGetDebugType) {
+                    } elseif ($type instanceof TDependentGetDebugType) {
                         $type_statements[] = new VirtualFuncCall(
                             new VirtualName(['get_debug_type']),
                             [
@@ -314,11 +320,17 @@ class SwitchCaseAnalyzer
             );
 
             if ($new_case_equality_expr) {
+                $was_inside_conditional = $case_context->inside_conditional;
+
+                $case_context->inside_conditional = true;
+
                 ExpressionAnalyzer::analyze(
                     $statements_analyzer,
                     $new_case_equality_expr->getArgs()[1]->value,
                     $case_context
                 );
+
+                $case_context->inside_conditional = $was_inside_conditional;
 
                 $case_equality_expr = $new_case_equality_expr;
             }
@@ -332,7 +344,7 @@ class SwitchCaseAnalyzer
         $case_clauses = [];
 
         if ($case_equality_expr) {
-            $case_equality_expr_id = \spl_object_id($case_equality_expr);
+            $case_equality_expr_id = spl_object_id($case_equality_expr);
             $case_clauses = FormulaGenerator::getFormula(
                 $case_equality_expr_id,
                 $case_equality_expr_id,
@@ -429,8 +441,8 @@ class SwitchCaseAnalyzer
         if ($case_clauses && $case_equality_expr) {
             try {
                 $negated_case_clauses = Algebra::negateFormula($case_clauses);
-            } catch (\Psalm\Exception\ComplicatedExpressionException $e) {
-                $case_equality_expr_id = \spl_object_id($case_equality_expr);
+            } catch (ComplicatedExpressionException $e) {
+                $case_equality_expr_id = spl_object_id($case_equality_expr);
 
                 try {
                     $negated_case_clauses = FormulaGenerator::getFormula(
@@ -443,7 +455,7 @@ class SwitchCaseAnalyzer
                         false,
                         false
                     );
-                } catch (\Psalm\Exception\ComplicatedExpressionException $e) {
+                } catch (ComplicatedExpressionException $e) {
                     $negated_case_clauses = [];
                 }
             }
@@ -464,7 +476,7 @@ class SwitchCaseAnalyzer
 
         $traverser = new PhpParser\NodeTraverser;
         $traverser->addVisitor(
-            new \Psalm\Internal\PhpVisitor\TypeMappingVisitor(
+            new TypeMappingVisitor(
                 $statements_analyzer->node_data,
                 $old_node_data
             )
@@ -579,7 +591,7 @@ class SwitchCaseAnalyzer
         if (!$case->cond
             && $switch_var_id
             && isset($case_context->vars_in_scope[$switch_var_id])
-            && $case_context->vars_in_scope[$switch_var_id]->isEmpty()
+            && $case_context->vars_in_scope[$switch_var_id]->isNever()
         ) {
             if (IssueBuffer::accepts(
                 new ParadoxicalCondition(
@@ -671,7 +683,7 @@ class SwitchCaseAnalyzer
     private static function simplifyCaseEqualityExpression(
         PhpParser\Node\Expr $case_equality_expr,
         PhpParser\Node\Expr\Variable $var
-    ) : ?PhpParser\Node\Expr\FuncCall {
+    ): ?PhpParser\Node\Expr\FuncCall {
         if ($case_equality_expr instanceof PhpParser\Node\Expr\BinaryOp\BooleanOr) {
             $nested_or_options = self::getOptionsFromNestedOr($case_equality_expr, $var);
 
@@ -715,7 +727,7 @@ class SwitchCaseAnalyzer
         PhpParser\Node\Expr $case_equality_expr,
         PhpParser\Node\Expr\Variable $var,
         array $in_array_values = []
-    ) : ?array {
+    ): ?array {
         if ($case_equality_expr instanceof PhpParser\Node\Expr\BinaryOp\Identical
             && $case_equality_expr->left instanceof PhpParser\Node\Expr\Variable
             && $case_equality_expr->left->name === $var->name

@@ -1,9 +1,15 @@
 <?php
+
 namespace Psalm\Storage;
 
+use Psalm\Aliases;
 use Psalm\CodeLocation;
 use Psalm\Internal\MethodIdentifier;
-use Psalm\Type;
+use Psalm\Internal\Type\TypeAlias\ClassTypeAlias;
+use Psalm\Issue\CodeIssue;
+use Psalm\Type\Atomic\TNamedObject;
+use Psalm\Type\Atomic\TTemplateParam;
+use Psalm\Type\Union;
 
 class ClassLikeStorage
 {
@@ -17,7 +23,7 @@ class ClassLikeStorage
     /**
      * Aliases to help Psalm understand constant refs
      *
-     * @var ?\Psalm\Aliases
+     * @var ?Aliases
      */
     public $aliases;
 
@@ -42,12 +48,12 @@ class ClassLikeStorage
     public $internal = '';
 
     /**
-     * @var Type\Atomic\TTemplateParam[]
+     * @var TTemplateParam[]
      */
     public $templatedMixins = [];
 
     /**
-     * @var list<Type\Atomic\TNamedObject>
+     * @var list<TNamedObject>
      */
     public $namedMixins = [];
 
@@ -270,12 +276,12 @@ class ClassLikeStorage
     public $properties = [];
 
     /**
-     * @var array<string, Type\Union>
+     * @var array<string, Union>
      */
     public $pseudo_property_set_types = [];
 
     /**
-     * @var array<string, Type\Union>
+     * @var array<string, Union>
      */
     public $pseudo_property_get_types = [];
 
@@ -308,7 +314,7 @@ class ClassLikeStorage
      * (i.e. the same as the class name). This allows operations with the same-named template defined
      * across multiple classes to not run into trouble.
      *
-     * @var array<string, non-empty-array<string, Type\Union>>|null
+     * @var array<string, non-empty-array<string, Union>>|null
      */
     public $template_types;
 
@@ -324,7 +330,7 @@ class ClassLikeStorage
      *
      * @internal
      *
-     * @var array<string, non-empty-array<int, Type\Union>>|null
+     * @var array<string, non-empty-array<int, Union>>|null
      */
     public $template_extended_offsets;
 
@@ -340,7 +346,7 @@ class ClassLikeStorage
      *     ]
      * ]
      *
-     * @var array<string, array<string, Type\Union>>|null
+     * @var array<string, array<string, Union>>|null
      */
     public $template_extended_params;
 
@@ -355,7 +361,7 @@ class ClassLikeStorage
     public $template_type_implements_count;
 
     /**
-     * @var ?Type\Union
+     * @var ?Union
      */
     public $yield;
 
@@ -392,12 +398,12 @@ class ClassLikeStorage
     public $has_visitor_issues = false;
 
     /**
-     * @var list<\Psalm\Issue\CodeIssue>
+     * @var list<CodeIssue>
      */
     public $docblock_issues = [];
 
     /**
-     * @var array<string, \Psalm\Internal\Type\TypeAlias\ClassTypeAlias>
+     * @var array<string, ClassTypeAlias>
      */
     public $type_aliases = [];
 

@@ -1,10 +1,15 @@
 <?php
+
 namespace Psalm\Internal\Provider\ReturnTypeProvider;
 
 use PhpParser;
 use Psalm\Context;
 use Psalm\Internal\Analyzer\Statements\Expression\AssertionFinder;
+use Psalm\Internal\Analyzer\Statements\Expression\Call\FunctionCallAnalyzer;
+use Psalm\Internal\Analyzer\Statements\Expression\Call\MethodCallAnalyzer;
+use Psalm\Internal\Analyzer\Statements\Expression\Call\StaticCallAnalyzer;
 use Psalm\Internal\Analyzer\Statements\Expression\CallAnalyzer;
+use Psalm\Internal\Analyzer\StatementsAnalyzer;
 use Psalm\Internal\Type\ArrayType;
 use Psalm\Node\Expr\VirtualArrayDimFetch;
 use Psalm\Node\Expr\VirtualFuncCall;
@@ -15,30 +20,50 @@ use Psalm\Node\Name\VirtualFullyQualified;
 use Psalm\Node\VirtualArg;
 use Psalm\Node\VirtualIdentifier;
 use Psalm\Plugin\EventHandler\Event\FunctionReturnTypeProviderEvent;
+use Psalm\Plugin\EventHandler\FunctionReturnTypeProviderInterface;
+use Psalm\Storage\Assertion;
 use Psalm\Type;
+use Psalm\Type\Atomic\TArray;
+use Psalm\Type\Atomic\TKeyedArray;
+use Psalm\Type\Atomic\TList;
+use Psalm\Type\Atomic\TNamedObject;
+use Psalm\Type\Atomic\TNonEmptyArray;
+use Psalm\Type\Atomic\TNonEmptyList;
+use Psalm\Type\Atomic\TTemplateParam;
+use Psalm\Type\Atomic\TTemplateParamClass;
+use Psalm\Type\Union;
+use UnexpectedValueException;
 
 use function array_map;
+use function array_shift;
+use function array_slice;
 use function count;
 use function explode;
 use function in_array;
+use function mt_rand;
+use function reset;
 use function strpos;
+use function substr;
 
-class ArrayMapReturnTypeProvider implements \Psalm\Plugin\EventHandler\FunctionReturnTypeProviderInterface
+/**
+ * @internal
+ */
+class ArrayMapReturnTypeProvider implements FunctionReturnTypeProviderInterface
 {
     /**
      * @return array<lowercase-string>
      */
-    public static function getFunctionIds() : array
+    public static function getFunctionIds(): array
     {
         return ['array_map'];
     }
 
-    public static function getFunctionReturnType(FunctionReturnTypeProviderEvent $event) : Type\Union
+    public static function getFunctionReturnType(FunctionReturnTypeProviderEvent $event): Union
     {
         $statements_source = $event->getStatementsSource();
         $call_args = $event->getCallArgs();
         $context = $event->getContext();
-        if (!$statements_source instanceof \Psalm\Internal\Analyzer\StatementsAnalyzer) {
+        if (!$statements_source instanceof StatementsAnalyzer) {
             return Type::getMixed();
         }
 
@@ -49,7 +74,7 @@ class ArrayMapReturnTypeProvider implements \Psalm\Plugin\EventHandler\FunctionR
             : null;
 
         if ($function_call_type && $function_call_type->isNull()) {
-            \array_shift($call_args);
+            array_shift($call_args);
 
             $array_arg_types = [];
 
@@ -65,7 +90,7 @@ class ArrayMapReturnTypeProvider implements \Psalm\Plugin\EventHandler\FunctionR
             }
 
             if ($array_arg_types) {
-                return new Type\Union([new Type\Atomic\TKeyedArray($array_arg_types)]);
+                return new Union([new TKeyedArray($array_arg_types)]);
             }
 
             return Type::getArray();
@@ -101,7 +126,7 @@ class ArrayMapReturnTypeProvider implements \Psalm\Plugin\EventHandler\FunctionR
 
             if ($function_call_type->hasCallableType()) {
                 $closure_types = $function_call_type->getClosureTypes() ?: $function_call_type->getCallableTypes();
-                $closure_atomic_type = \reset($closure_types);
+                $closure_atomic_type = reset($closure_types);
 
                 $closure_return_type = $closure_atomic_type->return_type ?: Type::getMixed();
 
@@ -125,7 +150,7 @@ class ArrayMapReturnTypeProvider implements \Psalm\Plugin\EventHandler\FunctionR
                         $mapping_function_ids,
                         $context,
                         $function_call_arg,
-                        \array_slice($call_args, 1)
+                        array_slice($call_args, 1)
                     );
                 }
 
@@ -140,15 +165,9 @@ class ArrayMapReturnTypeProvider implements \Psalm\Plugin\EventHandler\FunctionR
                     $fake_method_call = null;
 
                     foreach ($variable_type->getAtomicTypes() as $variable_atomic_type) {
-                        if ($variable_atomic_type instanceof Type\Atomic\TTemplateParam
-                            || $variable_atomic_type instanceof Type\Atomic\TTemplateParamClass
+                        if ($variable_atomic_type instanceof TTemplateParam
+                            || $variable_atomic_type instanceof TTemplateParamClass
                         ) {
-                            $fake_method_call = new VirtualStaticCall(
-                                $function_call_arg->value->items[0]->value,
-                                $function_call_arg->value->items[1]->value->value,
-                                []
-                            );
-                        } elseif ($variable_atomic_type instanceof Type\Atomic\TTemplateParamClass) {
                             $fake_method_call = new VirtualStaticCall(
                                 $function_call_arg->value->items[0]->value,
                                 $function_call_arg->value->items[1]->value->value,
@@ -173,15 +192,10 @@ class ArrayMapReturnTypeProvider implements \Psalm\Plugin\EventHandler\FunctionR
         }
 
         if ($mapping_return_type && $generic_key_type) {
-            if ($array_arg_atomic_type instanceof Type\Atomic\TKeyedArray && count($call_args) === 2) {
-                $atomic_type = new Type\Atomic\TKeyedArray(
+            if ($array_arg_atomic_type instanceof TKeyedArray && count($call_args) === 2) {
+                $atomic_type = new TKeyedArray(
                     array_map(
-                        /**
-                        * @return Type\Union
-                        */
-                        static function (Type\Union $_) use ($mapping_return_type): Type\Union {
-                            return clone $mapping_return_type;
-                        },
+                        static fn(Union $_): Union => clone $mapping_return_type,
                         $array_arg_atomic_type->properties
                     )
                 );
@@ -190,38 +204,38 @@ class ArrayMapReturnTypeProvider implements \Psalm\Plugin\EventHandler\FunctionR
                 $atomic_type->previous_key_type = $array_arg_atomic_type->previous_key_type;
                 $atomic_type->previous_value_type = $mapping_return_type;
 
-                return new Type\Union([$atomic_type]);
+                return new Union([$atomic_type]);
             }
 
-            if ($array_arg_atomic_type instanceof Type\Atomic\TList
+            if ($array_arg_atomic_type instanceof TList
                 || count($call_args) !== 2
             ) {
-                if ($array_arg_atomic_type instanceof Type\Atomic\TNonEmptyList) {
-                    return new Type\Union([
-                        new Type\Atomic\TNonEmptyList(
+                if ($array_arg_atomic_type instanceof TNonEmptyList) {
+                    return new Union([
+                        new TNonEmptyList(
                             $mapping_return_type
                         ),
                     ]);
                 }
 
-                return new Type\Union([
-                    new Type\Atomic\TList(
+                return new Union([
+                    new TList(
                         $mapping_return_type
                     ),
                 ]);
             }
 
-            if ($array_arg_atomic_type instanceof Type\Atomic\TNonEmptyArray) {
-                return new Type\Union([
-                    new Type\Atomic\TNonEmptyArray([
+            if ($array_arg_atomic_type instanceof TNonEmptyArray) {
+                return new Union([
+                    new TNonEmptyArray([
                         $generic_key_type,
                         $mapping_return_type,
                     ]),
                 ]);
             }
 
-            return new Type\Union([
-                new Type\Atomic\TArray([
+            return new Union([
+                new TArray([
                     $generic_key_type,
                     $mapping_return_type,
                 ])
@@ -229,8 +243,8 @@ class ArrayMapReturnTypeProvider implements \Psalm\Plugin\EventHandler\FunctionR
         }
 
         return count($call_args) === 2 && !($array_arg_type->is_list ?? false)
-            ? new Type\Union([
-                new Type\Atomic\TArray([
+            ? new Union([
+                new TArray([
                     $array_arg_type->key ?? Type::getArrayKey(),
                     Type::getMixed(),
                 ])
@@ -239,14 +253,14 @@ class ArrayMapReturnTypeProvider implements \Psalm\Plugin\EventHandler\FunctionR
     }
 
     /**
-     * @param-out array<string, array<array<int, string>>>|null $assertions
+     * @param array<string, array<array<int, Assertion>>>|null $assertions
      */
     private static function executeFakeCall(
-        \Psalm\Internal\Analyzer\StatementsAnalyzer $statements_analyzer,
+        StatementsAnalyzer $statements_analyzer,
         PhpParser\Node\Expr $fake_call,
         Context $context,
         ?array &$assertions = null
-    ) : ?Type\Union {
+    ): ?Union {
         $old_data_provider = $statements_analyzer->node_data;
 
         $statements_analyzer->node_data = clone $statements_analyzer->node_data;
@@ -266,25 +280,25 @@ class ArrayMapReturnTypeProvider implements \Psalm\Plugin\EventHandler\FunctionR
         $context->inside_call = true;
 
         if ($fake_call instanceof PhpParser\Node\Expr\StaticCall) {
-            \Psalm\Internal\Analyzer\Statements\Expression\Call\StaticCallAnalyzer::analyze(
+            StaticCallAnalyzer::analyze(
                 $statements_analyzer,
                 $fake_call,
                 $context
             );
         } elseif ($fake_call instanceof PhpParser\Node\Expr\MethodCall) {
-            \Psalm\Internal\Analyzer\Statements\Expression\Call\MethodCallAnalyzer::analyze(
+            MethodCallAnalyzer::analyze(
                 $statements_analyzer,
                 $fake_call,
                 $context
             );
         } elseif ($fake_call instanceof PhpParser\Node\Expr\FuncCall) {
-            \Psalm\Internal\Analyzer\Statements\Expression\Call\FunctionCallAnalyzer::analyze(
+            FunctionCallAnalyzer::analyze(
                 $statements_analyzer,
                 $fake_call,
                 $context
             );
         } else {
-            throw new \UnexpectedValueException('UnrecognizedCall');
+            throw new UnexpectedValueException('UnrecognizedCall');
         }
 
         $codebase = $statements_analyzer->getCodebase();
@@ -320,22 +334,32 @@ class ArrayMapReturnTypeProvider implements \Psalm\Plugin\EventHandler\FunctionR
     /**
      * @param non-empty-array<int, string> $mapping_function_ids
      * @param list<PhpParser\Node\Arg> $array_args
-     * @param-out array<string, array<array<int, string>>>|null $assertions
+     * @param int|null $fake_var_discriminator Set the fake variable id to a known value with the discriminator
+     *                                         as a substring, and don't clear it from the context.
+     * @param array<string, array<array<int, Assertion>>>|null $assertions
      */
     public static function getReturnTypeFromMappingIds(
-        \Psalm\Internal\Analyzer\StatementsAnalyzer $statements_source,
+        StatementsAnalyzer $statements_source,
         array $mapping_function_ids,
         Context $context,
         PhpParser\Node\Arg $function_call_arg,
         array $array_args,
-        ?array &$assertions = null
-    ) : Type\Union {
+        ?array &$assertions = null,
+        ?int $fake_var_discriminator = null
+    ): Union {
         $mapping_return_type = null;
 
         $codebase = $statements_source->getCodebase();
 
+        $clean_context = false;
+
         foreach ($mapping_function_ids as $mapping_function_id) {
             $mapping_function_id_parts = explode('&', $mapping_function_id);
+
+            if ($fake_var_discriminator === null) {
+                $fake_var_discriminator = mt_rand();
+                $clean_context = true;
+            }
 
             foreach ($mapping_function_id_parts as $mapping_function_id_part) {
                 $fake_args = [];
@@ -345,7 +369,7 @@ class ArrayMapReturnTypeProvider implements \Psalm\Plugin\EventHandler\FunctionR
                         new VirtualArrayDimFetch(
                             $array_arg->value,
                             new VirtualVariable(
-                                '__fake_offset_var__',
+                                "__fake_{$fake_var_discriminator}_offset_var__",
                                 $array_arg->value->getAttributes()
                             ),
                             $array_arg->value->getAttributes()
@@ -360,7 +384,7 @@ class ArrayMapReturnTypeProvider implements \Psalm\Plugin\EventHandler\FunctionR
                     $is_instance = false;
 
                     if ($mapping_function_id_part[0] === '$') {
-                        $mapping_function_id_part = \substr($mapping_function_id_part, 1);
+                        $mapping_function_id_part = substr($mapping_function_id_part, 1);
                         $is_instance = true;
                     }
 
@@ -370,7 +394,7 @@ class ArrayMapReturnTypeProvider implements \Psalm\Plugin\EventHandler\FunctionR
                     if ($is_instance) {
                         $fake_method_call = new VirtualMethodCall(
                             new VirtualVariable(
-                                '__fake_method_call_var__',
+                                "__fake_{$fake_var_discriminator}_method_call_var__",
                                 $function_call_arg->getAttributes()
                             ),
                             new VirtualIdentifier(
@@ -387,8 +411,8 @@ class ArrayMapReturnTypeProvider implements \Psalm\Plugin\EventHandler\FunctionR
 
                         if ($callable_type) {
                             foreach ($callable_type->getAtomicTypes() as $atomic_type) {
-                                if ($atomic_type instanceof Type\Atomic\TKeyedArray
-                                    && \count($atomic_type->properties) === 2
+                                if ($atomic_type instanceof TKeyedArray
+                                    && count($atomic_type->properties) === 2
                                     && isset($atomic_type->properties[0])
                                 ) {
                                     $lhs_instance_type = clone $atomic_type->properties[0];
@@ -396,21 +420,9 @@ class ArrayMapReturnTypeProvider implements \Psalm\Plugin\EventHandler\FunctionR
                             }
                         }
 
-                        $context->vars_in_scope['$__fake_offset_var__'] = Type::getMixed();
-                        $context->vars_in_scope['$__fake_method_call_var__'] = $lhs_instance_type
-                            ?: new Type\Union([
-                                new Type\Atomic\TNamedObject($callable_fq_class_name)
-                            ]);
-
-                        $fake_method_return_type = self::executeFakeCall(
-                            $statements_source,
-                            $fake_method_call,
-                            $context,
-                            $assertions
-                        );
-
-                        unset($context->vars_in_scope['$__fake_offset_var__']);
-                        unset($context->vars_in_scope['$__method_call_var__']);
+                        $context->vars_in_scope["\$__fake_{$fake_var_discriminator}_offset_var__"] = Type::getMixed();
+                        $context->vars_in_scope["\$__fake_{$fake_var_discriminator}_method_call_var__"] =
+                            $lhs_instance_type ?: new Union([new TNamedObject($callable_fq_class_name)]);
                     } else {
                         $fake_method_call = new VirtualStaticCall(
                             new VirtualFullyQualified(
@@ -425,17 +437,15 @@ class ArrayMapReturnTypeProvider implements \Psalm\Plugin\EventHandler\FunctionR
                             $function_call_arg->getAttributes()
                         );
 
-                        $context->vars_in_scope['$__fake_offset_var__'] = Type::getMixed();
-
-                        $fake_method_return_type = self::executeFakeCall(
-                            $statements_source,
-                            $fake_method_call,
-                            $context,
-                            $assertions
-                        );
-
-                        unset($context->vars_in_scope['$__fake_offset_var__']);
+                        $context->vars_in_scope["\$__fake_{$fake_var_discriminator}_offset_var__"] = Type::getMixed();
                     }
+
+                    $fake_method_return_type = self::executeFakeCall(
+                        $statements_source,
+                        $fake_method_call,
+                        $context,
+                        $assertions
+                    );
 
                     $function_id_return_type = $fake_method_return_type ?? Type::getMixed();
                 } else {
@@ -448,7 +458,7 @@ class ArrayMapReturnTypeProvider implements \Psalm\Plugin\EventHandler\FunctionR
                         $function_call_arg->getAttributes()
                     );
 
-                    $context->vars_in_scope['$__fake_offset_var__'] = Type::getMixed();
+                    $context->vars_in_scope["\$__fake_{$fake_var_discriminator}_offset_var__"] = Type::getMixed();
 
                     $fake_function_return_type = self::executeFakeCall(
                         $statements_source,
@@ -457,11 +467,15 @@ class ArrayMapReturnTypeProvider implements \Psalm\Plugin\EventHandler\FunctionR
                         $assertions
                     );
 
-                    unset($context->vars_in_scope['$__fake_offset_var__']);
-
                     $function_id_return_type = $fake_function_return_type ?? Type::getMixed();
                 }
             }
+
+            if ($clean_context) {
+                self::cleanContext($context, $fake_var_discriminator);
+            }
+
+            $fake_var_discriminator = null;
 
             $mapping_return_type = Type::combineUnionTypes(
                 $function_id_return_type,
@@ -471,5 +485,14 @@ class ArrayMapReturnTypeProvider implements \Psalm\Plugin\EventHandler\FunctionR
         }
 
         return $mapping_return_type;
+    }
+
+    public static function cleanContext(Context $context, int $fake_var_discriminator): void
+    {
+        foreach ($context->vars_in_scope as $var_in_scope => $_) {
+            if (strpos($var_in_scope, "__fake_{$fake_var_discriminator}_") !== false) {
+                unset($context->vars_in_scope[$var_in_scope]);
+            }
+        }
     }
 }

@@ -1,10 +1,12 @@
 <?php
+
 namespace Psalm\Internal\Analyzer;
 
 use Psalm\Aliases;
 use Psalm\Codebase;
+use Psalm\NodeTypeProvider;
 use Psalm\StatementsSource;
-use Psalm\Type;
+use Psalm\Type\Union;
 
 /**
  * @internal
@@ -144,7 +146,7 @@ abstract class SourceAnalyzer implements StatementsSource
     /**
      * @psalm-mutation-free
      */
-    public function getCodebase() : Codebase
+    public function getCodebase(): Codebase
     {
         return $this->source->getCodebase();
     }
@@ -152,7 +154,7 @@ abstract class SourceAnalyzer implements StatementsSource
     /**
      * @psalm-mutation-free
      */
-    public function getProjectAnalyzer() : ProjectAnalyzer
+    public function getProjectAnalyzer(): ProjectAnalyzer
     {
         return $this->source->getProjectAnalyzer();
     }
@@ -160,20 +162,20 @@ abstract class SourceAnalyzer implements StatementsSource
     /**
      * @psalm-mutation-free
      */
-    public function getFileAnalyzer() : FileAnalyzer
+    public function getFileAnalyzer(): FileAnalyzer
     {
         return $this->source->getFileAnalyzer();
     }
 
     /**
-     * @return array<string, array<string, Type\Union>>|null
+     * @return array<string, array<string, Union>>|null
      */
     public function getTemplateTypeMap(): ?array
     {
         return $this->source->getTemplateTypeMap();
     }
 
-    public function getNodeTypeProvider() : \Psalm\NodeTypeProvider
+    public function getNodeTypeProvider(): NodeTypeProvider
     {
         return $this->source->getNodeTypeProvider();
     }

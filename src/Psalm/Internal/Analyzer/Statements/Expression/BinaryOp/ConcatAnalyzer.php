@@ -1,13 +1,18 @@
 <?php
+
 namespace Psalm\Internal\Analyzer\Statements\Expression\BinaryOp;
 
 use PhpParser;
 use Psalm\CodeLocation;
 use Psalm\Config;
 use Psalm\Context;
+use Psalm\Internal\Analyzer\FunctionLikeAnalyzer;
 use Psalm\Internal\Analyzer\StatementsAnalyzer;
+use Psalm\Internal\Analyzer\TraitAnalyzer;
 use Psalm\Internal\Codebase\VariableUseGraph;
+use Psalm\Internal\MethodIdentifier;
 use Psalm\Internal\Type\Comparator\AtomicTypeComparator;
+use Psalm\Internal\Type\Comparator\TypeComparisonResult;
 use Psalm\Internal\Type\Comparator\UnionTypeComparator;
 use Psalm\Issue\FalseOperand;
 use Psalm\Issue\ImplicitToStringCast;
@@ -20,9 +25,21 @@ use Psalm\Issue\PossiblyInvalidOperand;
 use Psalm\Issue\PossiblyNullOperand;
 use Psalm\IssueBuffer;
 use Psalm\Type;
+use Psalm\Type\Atomic\TFalse;
+use Psalm\Type\Atomic\TFloat;
+use Psalm\Type\Atomic\TInt;
 use Psalm\Type\Atomic\TLiteralInt;
 use Psalm\Type\Atomic\TLiteralString;
+use Psalm\Type\Atomic\TLowercaseString;
 use Psalm\Type\Atomic\TNamedObject;
+use Psalm\Type\Atomic\TNonEmptyNonspecificLiteralString;
+use Psalm\Type\Atomic\TNonEmptyString;
+use Psalm\Type\Atomic\TNonspecificLiteralString;
+use Psalm\Type\Atomic\TNull;
+use Psalm\Type\Atomic\TString;
+use Psalm\Type\Atomic\TTemplateParam;
+use Psalm\Type\Union;
+use UnexpectedValueException;
 
 use function array_merge;
 use function assert;
@@ -36,14 +53,14 @@ use function strlen;
 class ConcatAnalyzer
 {
     /**
-     * @param Type\Union|null $result_type
+     * @param Union|null $result_type
      */
     public static function analyze(
         StatementsAnalyzer $statements_analyzer,
         PhpParser\Node\Expr $left,
         PhpParser\Node\Expr $right,
         Context $context,
-        Type\Union &$result_type = null
+        Union &$result_type = null
     ): void {
         $codebase = $statements_analyzer->getCodebase();
 
@@ -59,8 +76,8 @@ class ConcatAnalyzer
                     && !$context->collect_mutations
                     && $statements_analyzer->getFilePath() === $statements_analyzer->getRootFilePath()
                     && (!(($parent_source = $statements_analyzer->getSource())
-                            instanceof \Psalm\Internal\Analyzer\FunctionLikeAnalyzer)
-                        || !$parent_source->getSource() instanceof \Psalm\Internal\Analyzer\TraitAnalyzer)
+                            instanceof FunctionLikeAnalyzer)
+                        || !$parent_source->getSource() instanceof TraitAnalyzer)
                 ) {
                     $codebase->analyzer->incrementMixedCount($statements_analyzer->getFilePath());
                 }
@@ -85,16 +102,14 @@ class ConcatAnalyzer
                         $origin_location = null;
                     }
 
-                    if (IssueBuffer::accepts(
+                    IssueBuffer::maybeAdd(
                         new MixedOperand(
                             'Left operand cannot be mixed',
                             $arg_location,
                             $origin_location
                         ),
                         $statements_analyzer->getSuppressedIssues()
-                    )) {
-                        // fall through
-                    }
+                    );
                 } else {
                     $arg_location = new CodeLocation($statements_analyzer->getSource(), $right);
                     $origin_locations = [];
@@ -114,16 +129,14 @@ class ConcatAnalyzer
                         $origin_location = null;
                     }
 
-                    if (IssueBuffer::accepts(
+                    IssueBuffer::maybeAdd(
                         new MixedOperand(
                             'Right operand cannot be mixed',
                             $arg_location,
                             $origin_location
                         ),
                         $statements_analyzer->getSuppressedIssues()
-                    )) {
-                        // fall through
-                    }
+                    );
                 }
 
                 return;
@@ -133,8 +146,8 @@ class ConcatAnalyzer
                 && !$context->collect_mutations
                 && $statements_analyzer->getFilePath() === $statements_analyzer->getRootFilePath()
                 && (!(($parent_source = $statements_analyzer->getSource())
-                        instanceof \Psalm\Internal\Analyzer\FunctionLikeAnalyzer)
-                    || !$parent_source->getSource() instanceof \Psalm\Internal\Analyzer\TraitAnalyzer)
+                        instanceof FunctionLikeAnalyzer)
+                    || !$parent_source->getSource() instanceof TraitAnalyzer)
             ) {
                 $codebase->analyzer->incrementNonMixedCount($statements_analyzer->getFilePath());
             }
@@ -163,15 +176,15 @@ class ConcatAnalyzer
                             break 2;
                         }
 
-                        $result_type_parts[] = new Type\Atomic\TLiteralString($literal);
+                        $result_type_parts[] = new TLiteralString($literal);
                     }
                 }
 
                 if (!empty($result_type_parts)) {
                     if ($literal_concat && count($result_type_parts) < 64) {
-                        $result_type = new Type\Union($result_type_parts);
+                        $result_type = new Union($result_type_parts);
                     } else {
-                        $result_type = new Type\Union([new Type\Atomic\TNonEmptyNonspecificLiteralString]);
+                        $result_type = new Union([new TNonEmptyNonspecificLiteralString]);
                     }
 
                     return;
@@ -180,8 +193,8 @@ class ConcatAnalyzer
 
             if (!$literal_concat) {
                 $numeric_type = Type::getNumericString();
-                $numeric_type->addType(new Type\Atomic\TInt());
-                $numeric_type->addType(new Type\Atomic\TFloat());
+                $numeric_type->addType(new TInt());
+                $numeric_type->addType(new TFloat());
                 $left_is_numeric = UnionTypeComparator::isContainedBy(
                     $codebase,
                     $left_type,
@@ -190,7 +203,7 @@ class ConcatAnalyzer
 
                 if ($left_is_numeric) {
                     $right_uint = Type::getPositiveInt();
-                    $right_uint->addType(new Type\Atomic\TLiteralInt(0));
+                    $right_uint->addType(new TLiteralInt(0));
                     $right_is_uint = UnionTypeComparator::isContainedBy(
                         $codebase,
                         $right_type,
@@ -204,7 +217,7 @@ class ConcatAnalyzer
                 }
 
                 $lowercase_type = clone $numeric_type;
-                $lowercase_type->addType(new Type\Atomic\TLowercaseString());
+                $lowercase_type->addType(new TLowercaseString());
 
                 $all_lowercase = UnionTypeComparator::isContainedBy(
                     $codebase,
@@ -216,7 +229,8 @@ class ConcatAnalyzer
                     $lowercase_type
                 );
 
-                $non_empty_string = Type::getNonEmptyString();
+                $non_empty_string = clone $numeric_type;
+                $non_empty_string->addType(new TNonEmptyString());
 
                 $has_non_empty = UnionTypeComparator::isContainedBy(
                     $codebase,
@@ -232,7 +246,7 @@ class ConcatAnalyzer
 
                 if ($has_non_empty) {
                     if ($all_literals) {
-                        $result_type = new Type\Union([new Type\Atomic\TNonEmptyNonspecificLiteralString]);
+                        $result_type = new Union([new TNonEmptyNonspecificLiteralString]);
                     } elseif ($all_lowercase) {
                         $result_type = Type::getNonEmptyLowercaseString();
                     } else {
@@ -240,7 +254,7 @@ class ConcatAnalyzer
                     }
                 } else {
                     if ($all_literals) {
-                        $result_type = new Type\Union([new Type\Atomic\TNonspecificLiteralString]);
+                        $result_type = new Union([new TNonspecificLiteralString]);
                     } elseif ($all_lowercase) {
                         $result_type = Type::getLowercaseString();
                     } else {
@@ -254,7 +268,7 @@ class ConcatAnalyzer
     private static function analyzeOperand(
         StatementsAnalyzer $statements_analyzer,
         PhpParser\Node\Expr $operand,
-        Type\Union $operand_type,
+        Union $operand_type,
         string $side,
         Context $context
     ): void {
@@ -262,84 +276,74 @@ class ConcatAnalyzer
         $config = Config::getInstance();
 
         if ($operand_type->isNull()) {
-            if (IssueBuffer::accepts(
+            IssueBuffer::maybeAdd(
                 new NullOperand(
                     'Cannot concatenate with a ' . $operand_type,
                     new CodeLocation($statements_analyzer->getSource(), $operand)
                 ),
                 $statements_analyzer->getSuppressedIssues()
-            )) {
-                // fall through
-            }
+            );
 
             return;
         }
 
         if ($operand_type->isFalse()) {
-            if (IssueBuffer::accepts(
+            IssueBuffer::maybeAdd(
                 new FalseOperand(
                     'Cannot concatenate with a ' . $operand_type,
                     new CodeLocation($statements_analyzer->getSource(), $operand)
                 ),
                 $statements_analyzer->getSuppressedIssues()
-            )) {
-                // fall through
-            }
+            );
 
             return;
         }
 
         if ($operand_type->isNullable() && !$operand_type->ignore_nullable_issues) {
-            if (IssueBuffer::accepts(
+            IssueBuffer::maybeAdd(
                 new PossiblyNullOperand(
                     'Cannot concatenate with a possibly null ' . $operand_type,
                     new CodeLocation($statements_analyzer->getSource(), $operand)
                 ),
                 $statements_analyzer->getSuppressedIssues()
-            )) {
-                // fall through
-            }
+            );
         }
 
         if ($operand_type->isFalsable() && !$operand_type->ignore_falsable_issues) {
-            if (IssueBuffer::accepts(
+            IssueBuffer::maybeAdd(
                 new PossiblyFalseOperand(
                     'Cannot concatenate with a possibly false ' . $operand_type,
                     new CodeLocation($statements_analyzer->getSource(), $operand)
                 ),
                 $statements_analyzer->getSuppressedIssues()
-            )) {
-                // fall through
-            }
+            );
         }
 
         $operand_type_match = true;
         $has_valid_operand = false;
-        $comparison_result = new \Psalm\Internal\Type\Comparator\TypeComparisonResult();
+        $comparison_result = new TypeComparisonResult();
 
         foreach ($operand_type->getAtomicTypes() as $operand_type_part) {
-            if ($operand_type_part instanceof Type\Atomic\TTemplateParam && !$operand_type_part->as->isString()) {
-                if (IssueBuffer::accepts(
+            if ($operand_type_part instanceof TTemplateParam && !$operand_type_part->as->isString()) {
+                IssueBuffer::maybeAdd(
                     new MixedOperand(
                         "$side operand cannot be a non-string template param",
                         new CodeLocation($statements_analyzer->getSource(), $operand)
                     ),
                     $statements_analyzer->getSuppressedIssues()
-                )) {
-                    // fall through
-                }
+                );
 
                 return;
             }
 
-            if ($operand_type_part instanceof Type\Atomic\TNull || $operand_type_part instanceof Type\Atomic\TFalse) {
+            if ($operand_type_part instanceof TNull || $operand_type_part instanceof TFalse) {
                 continue;
             }
 
             $operand_type_part_match = AtomicTypeComparator::isContainedBy(
                 $codebase,
                 $operand_type_part,
-                new Type\Atomic\TString,
+                new TString,
                 false,
                 false,
                 $comparison_result
@@ -350,20 +354,18 @@ class ConcatAnalyzer
             $has_valid_operand = $has_valid_operand || $operand_type_part_match;
 
             if ($comparison_result->to_string_cast && $config->strict_binary_operands) {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new ImplicitToStringCast(
                         "$side side of concat op expects string, '$operand_type' provided with a __toString method",
                         new CodeLocation($statements_analyzer->getSource(), $operand)
                     ),
                     $statements_analyzer->getSuppressedIssues()
-                )) {
-                    // fall through
-                }
+                );
             }
 
             foreach ($operand_type->getAtomicTypes() as $atomic_type) {
                 if ($atomic_type instanceof TNamedObject) {
-                    $to_string_method_id = new \Psalm\Internal\MethodIdentifier(
+                    $to_string_method_id = new MethodIdentifier(
                         $atomic_type->value,
                         '__tostring'
                     );
@@ -382,23 +384,21 @@ class ConcatAnalyzer
                     )) {
                         try {
                             $storage = $codebase->methods->getStorage($to_string_method_id);
-                        } catch (\UnexpectedValueException $e) {
+                        } catch (UnexpectedValueException $e) {
                             continue;
                         }
 
                         if ($context->mutation_free && !$storage->mutation_free) {
-                            if (IssueBuffer::accepts(
+                            IssueBuffer::maybeAdd(
                                 new ImpureMethodCall(
                                     'Cannot call a possibly-mutating method '
                                         . $atomic_type->value . '::__toString from a pure context',
                                     new CodeLocation($statements_analyzer, $operand)
                                 ),
                                 $statements_analyzer->getSuppressedIssues()
-                            )) {
-                                // fall through
-                            }
+                            );
                         } elseif ($statements_analyzer->getSource()
-                                instanceof \Psalm\Internal\Analyzer\FunctionLikeAnalyzer
+                                instanceof FunctionLikeAnalyzer
                             && $statements_analyzer->getSource()->track_mutations
                         ) {
                             $statements_analyzer->getSource()->inferred_has_mutation = true;
@@ -413,25 +413,21 @@ class ConcatAnalyzer
             && (!$comparison_result->scalar_type_match_found || $config->strict_binary_operands)
         ) {
             if ($has_valid_operand) {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new PossiblyInvalidOperand(
                         'Cannot concatenate with a ' . $operand_type,
                         new CodeLocation($statements_analyzer->getSource(), $operand)
                     ),
                     $statements_analyzer->getSuppressedIssues()
-                )) {
-                    // fall through
-                }
+                );
             } else {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new InvalidOperand(
                         'Cannot concatenate with a ' . $operand_type,
                         new CodeLocation($statements_analyzer->getSource(), $operand)
                     ),
                     $statements_analyzer->getSuppressedIssues()
-                )) {
-                    // fall through
-                }
+                );
             }
         }
     }

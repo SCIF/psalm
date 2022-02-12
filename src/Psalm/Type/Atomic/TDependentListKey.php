@@ -1,5 +1,8 @@
 <?php
+
 namespace Psalm\Type\Atomic;
+
+use Psalm\Type\Atomic;
 
 /**
  * Represents a list key created from foreach ($list as $key => $value)
@@ -26,22 +29,22 @@ class TDependentListKey extends TInt implements DependentType
         return 'list-key<' . $this->var_id . '>';
     }
 
-    public function getVarId() : string
+    public function getVarId(): string
     {
         return $this->var_id;
     }
 
-    public function getAssertionString(bool $exact = false): string
+    public function getAssertionString(): string
     {
         return 'int';
     }
 
-    public function getReplacement() : \Psalm\Type\Atomic
+    public function getReplacement(): Atomic
     {
         return new TInt();
     }
 
-    public function canBeFullyExpressedInPhp(int $php_major_version, int $php_minor_version): bool
+    public function canBeFullyExpressedInPhp(int $analysis_php_version_id): bool
     {
         return false;
     }

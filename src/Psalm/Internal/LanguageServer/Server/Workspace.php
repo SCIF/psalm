@@ -1,14 +1,19 @@
 <?php
-declare(strict_types = 1);
+
+declare(strict_types=1);
+
 namespace Psalm\Internal\LanguageServer\Server;
 
 use LanguageServerProtocol\FileChangeType;
 use LanguageServerProtocol\FileEvent;
 use Psalm\Codebase;
+use Psalm\Internal\Analyzer\ProjectAnalyzer;
 use Psalm\Internal\LanguageServer\LanguageServer;
 
 /**
  * Provides method handlers for all workspace/* methods
+ *
+ * @internal
  */
 class Workspace
 {
@@ -22,17 +27,19 @@ class Workspace
      */
     protected $codebase;
 
-    /** @var ?int */
-    protected $onchange_line_limit;
+    /**
+     * @var ProjectAnalyzer
+     */
+    protected $project_analyzer;
 
     public function __construct(
         LanguageServer $server,
         Codebase $codebase,
-        ?int $onchange_line_limit
+        ProjectAnalyzer $project_analyzer
     ) {
         $this->server = $server;
         $this->codebase = $codebase;
-        $this->onchange_line_limit = $onchange_line_limit;
+        $this->project_analyzer = $project_analyzer;
     }
 
     /**
@@ -60,7 +67,7 @@ class Workspace
                 continue;
             }
 
-            if ($this->onchange_line_limit === 0) {
+            if ($this->project_analyzer->onchange_line_limit === 0) {
                 continue;
             }
 

@@ -7,6 +7,7 @@ use Psalm\Internal\Analyzer\IssueData;
 use Psalm\Internal\Json\Json;
 use Psalm\Report;
 
+use function array_map;
 use function array_values;
 use function md5;
 
@@ -25,39 +26,8 @@ class CodeClimateReport extends Report
     {
         $options = $this->pretty ? Json::PRETTY : Json::DEFAULT;
 
-        $issues_data = \array_map(
-            static function (IssueData $issue): array {
-                /**
-                 * map fields to new structure.
-                 * Expected fields:
-                 * - type
-                 * - check_name
-                 * - description*
-                 * - content
-                 * - categories[]
-                 * - severity
-                 * - fingerprint*
-                 * - location.path*
-                 * - location.lines.begin*
-                 *
-                 * Fields with * are the one used by Gitlab for Code Quality
-                 */
-                return [
-                    'type' => 'issue',
-                    'check_name' => $issue->type,
-                    'description' => $issue->message,
-                    'categories' => [$issue->type],
-                    'severity' => $this->convertSeverity($issue->severity),
-                    'fingerprint' => $this->calculateFingerprint($issue),
-                    'location' => [
-                        'path' => $issue->file_name,
-                        'lines' => [
-                            'begin' => $issue->line_from,
-                            'end' => $issue->line_to,
-                        ],
-                    ],
-                ];
-            },
+        $issues_data = array_map(
+            [$this, 'mapToNewStructure'],
             $this->issues_data
         );
 
@@ -67,7 +37,6 @@ class CodeClimateReport extends Report
     /**
      * convert our own severity to CodeClimate format
      * Values can be : info, minor, major, critical, or blocker
-     * @return string
      */
     protected function convertSeverity(string $input): string
     {
@@ -91,5 +60,38 @@ class CodeClimateReport extends Report
     protected function calculateFingerprint(IssueData $issue): string
     {
         return md5($issue->type.$issue->message.$issue->file_name.$issue->from.$issue->to);
+    }
+
+    /**
+     * map fields to new structure.
+     * Expected fields:
+     * - type
+     * - check_name
+     * - description*
+     * - content
+     * - categories[]
+     * - severity
+     * - fingerprint*
+     * - location.path*
+     * - location.lines.begin*
+     *
+     * Fields with * are the one used by Gitlab for Code Quality
+     */
+    private function mapToNewStructure(IssueData $issue): array {
+        return [
+            'type' => 'issue',
+            'check_name' => $issue->type,
+            'description' => $issue->message,
+            'categories' => [$issue->type],
+            'severity' => $this->convertSeverity($issue->severity),
+            'fingerprint' => $this->calculateFingerprint($issue),
+            'location' => [
+                'path' => $issue->file_name,
+                'lines' => [
+                    'begin' => $issue->line_from,
+                    'end' => $issue->line_to,
+                ],
+            ],
+        ];
     }
 }

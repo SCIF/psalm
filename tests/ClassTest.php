@@ -1,22 +1,21 @@
 <?php
+
 namespace Psalm\Tests;
+
+use Psalm\Tests\Traits\InvalidCodeAnalysisTestTrait;
+use Psalm\Tests\Traits\ValidCodeAnalysisTestTrait;
 
 use function class_exists;
 
 class ClassTest extends TestCase
 {
-    use Traits\InvalidCodeAnalysisTestTrait;
-    use Traits\ValidCodeAnalysisTestTrait;
+    use InvalidCodeAnalysisTestTrait;
+    use ValidCodeAnalysisTestTrait;
 
-    /**
-     * @return void
-     */
-    public function testExtendsMysqli()
+    public function testExtendsMysqli(): void
     {
         if (class_exists('mysqli') === false) {
             $this->markTestSkipped('Cannot run test, base class "mysqli" does not exist!');
-
-            return;
         }
 
         $this->addFile(
@@ -47,13 +46,13 @@ class ClassTest extends TestCase
     }
 
     /**
-     * @return iterable<string,array{string,assertions?:array<string,string>,error_levels?:string[]}>
+     * @return iterable<string,array{code:string,assertions?:array<string,string>,ignored_issues?:list<string>}>
      */
     public function providerValidCodeParse(): iterable
     {
         return [
             'overrideProtectedAccessLevelToPublic' => [
-                '<?php
+                'code' => '<?php
                     class A {
                         protected function fooFoo(): void {}
                     }
@@ -63,7 +62,7 @@ class ClassTest extends TestCase
                     }',
             ],
             'reflectedParents' => [
-                '<?php
+                'code' => '<?php
                     $e = rand(0, 10)
                       ? new RuntimeException("m")
                       : null;
@@ -73,7 +72,7 @@ class ClassTest extends TestCase
                     }',
             ],
             'namespacedAliasedClassCall' => [
-                '<?php
+                'code' => '<?php
                     namespace Aye {
                         class Foo {}
                     }
@@ -84,7 +83,7 @@ class ClassTest extends TestCase
                     }',
             ],
             'abstractExtendsAbstract' => [
-                '<?php
+                'code' => '<?php
                     abstract class A {
                         /** @return void */
                         abstract public function foo();
@@ -98,18 +97,18 @@ class ClassTest extends TestCase
                     }',
             ],
             'missingParentWithFunction' => [
-                '<?php
+                'code' => '<?php
                     class B extends C {
                         public function fooA() { }
                     }',
                 'assertions' => [],
-                'error_levels' => [
+                'ignored_issues' => [
                     'UndefinedClass',
                     'MissingReturnType',
                 ],
             ],
             'subclassWithSimplerArg' => [
-                '<?php
+                'code' => '<?php
                     class A {}
                     class B extends A {}
 
@@ -131,7 +130,7 @@ class ClassTest extends TestCase
                     }',
             ],
             'subclassOfInvalidArgumentExceptionWithSimplerArg' => [
-                '<?php
+                'code' => '<?php
                     class A extends InvalidArgumentException {
                         /**
                          * @param string $message
@@ -144,7 +143,7 @@ class ClassTest extends TestCase
                     }',
             ],
             'classStringInstantiation' => [
-                '<?php
+                'code' => '<?php
                     class Foo {}
                     class Bar {}
                     $class = mt_rand(0, 1) === 1 ? Foo::class : Bar::class;
@@ -154,7 +153,7 @@ class ClassTest extends TestCase
                 ],
             ],
             'instantiateClassAndIsA' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @psalm-consistent-constructor
                      */
@@ -177,7 +176,7 @@ class ClassTest extends TestCase
                     }',
             ],
             'returnStringAfterIsACheckWithClassConst' => [
-                '<?php
+                'code' => '<?php
                     class Foo{}
                     function bar(string $maybeBaz) : string {
                       if (!is_a($maybeBaz, Foo::class, true)) {
@@ -187,7 +186,7 @@ class ClassTest extends TestCase
                     }',
             ],
             'returnStringAfterIsACheckWithString' => [
-                '<?php
+                'code' => '<?php
                     class Foo{}
                     /** @param class-string $maybeBaz */
                     function bar(string $maybeBaz) : string {
@@ -198,7 +197,7 @@ class ClassTest extends TestCase
                     }',
             ],
             'assignAnonymousClassToArray' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param array<string, object> $array
                      */
@@ -211,7 +210,7 @@ class ClassTest extends TestCase
                     }',
             ],
             'getClassSelfClass' => [
-                '<?php
+                'code' => '<?php
                     class C {
                         public function work(object $obj): string {
                             if (get_class($obj) === self::class) {
@@ -226,7 +225,7 @@ class ClassTest extends TestCase
                     }',
             ],
             'staticClassComparison' => [
-                '<?php
+                'code' => '<?php
                     class C {
                         public function foo1(): string {
                             if (static::class === D::class) {
@@ -254,7 +253,7 @@ class ClassTest extends TestCase
                     }',
             ],
             'isAStaticClass' => [
-                '<?php
+                'code' => '<?php
                     class C {
                         public function foo1(): string {
                             if (is_a(static::class, D::class, true)) {
@@ -282,7 +281,7 @@ class ClassTest extends TestCase
                     }',
             ],
             'typedMagicCall' => [
-                '<?php
+                'code' => '<?php
                     class B {
                         public function __call(string $methodName, array $args) : string {
                             return __METHOD__;
@@ -301,7 +300,7 @@ class ClassTest extends TestCase
                 ],
             ],
             'abstractCallToInterfaceMethod' => [
-                '<?php
+                'code' => '<?php
                     interface I {
                         public function fooBar(): array;
                     }
@@ -314,45 +313,45 @@ class ClassTest extends TestCase
                     }',
             ],
             'noCrashWhenIgnoringUndefinedClass' => [
-                '<?php
+                'code' => '<?php
                     class A extends B {
                         public function foo() {
                             parent::bar();
                         }
                     }',
                 'assertions' => [],
-                'error_levels' => [
+                'ignored_issues' => [
                     'UndefinedClass',
                 ],
             ],
             'noCrashWhenIgnoringUndefinedParam' => [
-                '<?php
+                'code' => '<?php
                     function bar(iterable $_i) : void {}
                     function foo(C $c) : void {
                         bar($c);
                     }',
                 'assertions' => [],
-                'error_levels' => [
+                'ignored_issues' => [
                     'UndefinedClass',
                     'InvalidArgument',
                 ],
             ],
             'noCrashWhenIgnoringUndefinedReturnIterableArg' => [
-                '<?php
+                'code' => '<?php
                     function bar(iterable $_i) : void {}
                     function foo() : D {
                         return new D();
                     }
                     bar(foo());',
                 'assertions' => [],
-                'error_levels' => [
+                'ignored_issues' => [
                     'UndefinedClass',
                     'MixedInferredReturnType',
                     'InvalidArgument',
                 ],
             ],
             'noCrashWhenIgnoringUndefinedReturnClassArg' => [
-                '<?php
+                'code' => '<?php
                     class Exists {}
                     function bar(Exists $_i) : void {}
                     function foo() : D {
@@ -360,14 +359,14 @@ class ClassTest extends TestCase
                     }
                     bar(foo());',
                 'assertions' => [],
-                'error_levels' => [
+                'ignored_issues' => [
                     'UndefinedClass',
                     'MixedInferredReturnType',
                     'InvalidArgument',
                 ],
             ],
             'allowAbstractInstantiationOnPossibleChild' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @psalm-consistent-constructor
                      */
@@ -380,7 +379,7 @@ class ClassTest extends TestCase
                     }',
             ],
             'interfaceExistsCreatesClassString' => [
-                '<?php
+                'code' => '<?php
                     function funB(string $className) : ?ReflectionClass {
                         if (class_exists($className)) {
                             return new ReflectionClass($className);
@@ -394,13 +393,13 @@ class ClassTest extends TestCase
                     }',
             ],
             'allowClassExistsAndInterfaceExists' => [
-                '<?php
+                'code' => '<?php
                     function foo(string $s) : void {
                         if (class_exists($s) || interface_exists($s)) {}
                     }',
             ],
-            'classExistsWithFalseArg' => [
-                '<?php
+            'classExistsWithFalseArgRefinedAsString' => [
+                'code' => '<?php
                     /**
                      * @param class-string $class
                      * @return string
@@ -414,7 +413,7 @@ class ClassTest extends TestCase
                     }',
             ],
             'allowNegatingClassExistsWithoutAutloading' => [
-                '<?php
+                'code' => '<?php
                     function specifyString(string $className): void{
                         if (!class_exists($className, false)) {
                             return;
@@ -423,7 +422,7 @@ class ClassTest extends TestCase
                     }'
             ],
             'classExistsWithFalseArgInside' => [
-                '<?php
+                'code' => '<?php
                     function foo(string $s) : void {
                         if (class_exists($s, false)) {
                             /** @psalm-suppress MixedMethodCall */
@@ -432,7 +431,7 @@ class ClassTest extends TestCase
                     }',
             ],
             'classAliasOnNonexistantClass' => [
-                '<?php
+                'code' => '<?php
                     if (!class_exists(\PHPUnit\Framework\TestCase::class)) {
                         /** @psalm-suppress UndefinedClass */
                         class_alias(\PHPUnit_Framework_TestCase::class, \PHPUnit\Framework\TestCase::class);
@@ -441,11 +440,11 @@ class ClassTest extends TestCase
                     class T extends \PHPUnit\Framework\TestCase {
 
                     }',
-                [],
-                ['PropertyNotSetInConstructor'],
+                'assertions' => [],
+                'ignored_issues' => ['PropertyNotSetInConstructor'],
             ],
             'classAliasNoException' => [
-                '<?php
+                'code' => '<?php
                     class_alias("Bar\F1", "Bar\F2");
 
                     namespace Bar {
@@ -459,21 +458,21 @@ class ClassTest extends TestCase
                     }',
             ],
             'classAliasEcho' => [
-                '<?php
+                'code' => '<?php
                     class A { }
                     class_alias("A", "A_A");
 
                     echo A_A::class;'
             ],
             'classAliasTrait' => [
-                '<?php
+                'code' => '<?php
                     trait FeatureV1 {}
                     class_alias(FeatureV1::class, Feature::class);
                     class App { use Feature; }
                 '
             ],
             'classAliasParent' => [
-                '<?php
+                'code' => '<?php
                     class NewA {}
                     class_alias(NewA::class, OldA::class);
                     function action(NewA $_m): void {}
@@ -483,7 +482,7 @@ class ClassTest extends TestCase
                     action(new OldAChild());'
             ],
             'classAliasStaticProperty' => [
-                '<?php
+                'code' => '<?php
                     class A {
                         /** @var int */
                         public static $prop = 1;
@@ -492,7 +491,7 @@ class ClassTest extends TestCase
                     B::$prop = 123;'
             ],
             'resourceAndNumericSoftlyReserved' => [
-                '<?php
+                'code' => '<?php
                     namespace {
                         class Numeric {}
                     }
@@ -521,7 +520,7 @@ class ClassTest extends TestCase
                     }'
             ],
             'inheritInterfaceFromParent' => [
-                '<?php
+                'code' => '<?php
                     class A {}
                     class AChild extends A {}
 
@@ -543,7 +542,7 @@ class ClassTest extends TestCase
                     }',
             ],
             'noErrorsAfterClassExists' => [
-                '<?php
+                'code' => '<?php
                     if (class_exists(A::class)) {
                         if (method_exists(A::class, "method")) {
                             /** @psalm-suppress MixedArgument */
@@ -556,7 +555,7 @@ class ClassTest extends TestCase
                     }'
             ],
             'noCrashOnClassExists' => [
-                '<?php
+                'code' => '<?php
                     if (!class_exists(ReflectionGenerator::class)) {
                         class ReflectionGenerator {
                             private $prop;
@@ -564,20 +563,20 @@ class ClassTest extends TestCase
                     }',
             ],
             'instanceofWithPhantomClass' => [
-                '<?php
+                'code' => '<?php
                     if (class_exists(NS\UnknonwClass::class)) {
                         null instanceof NS\UnknonwClass;
                     }
                 ',
             ],
             'extendException' => [
-                '<?php
+                'code' => '<?php
                     class ME extends Exception {
                         protected $message = "hello";
                     }',
             ],
             'allowFinalReturnerForStatic' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @psalm-consistent-constructor
                      */
@@ -595,7 +594,7 @@ class ClassTest extends TestCase
                     }',
             ],
             'intersectWithStatic' => [
-                '<?php
+                'code' => '<?php
                     interface M1 {
                         /** @return M2&static */
                         function mock();
@@ -619,7 +618,7 @@ class ClassTest extends TestCase
                     }'
             ],
             'allowTraversableImplementationAlongWithIteratorAggregate' => [
-                '<?php
+                'code' => '<?php
                     final class C implements Traversable, IteratorAggregate {
                         public function getIterator() {
                             yield 1;
@@ -628,7 +627,7 @@ class ClassTest extends TestCase
                 ',
             ],
             'allowTraversableImplementationAlongWithIterator' => [
-                '<?php
+                'code' => '<?php
                     final class C implements Traversable, Iterator {
                         public function current() { return 1; }
                         public function key() { return 1; }
@@ -639,12 +638,12 @@ class ClassTest extends TestCase
                 ',
             ],
             'allowTraversableImplementationOnAbstractClass' => [
-                '<?php
+                'code' => '<?php
                     abstract class C implements Traversable {}
                 ',
             ],
             'allowIndirectTraversableImplementationOnAbstractClass' => [
-                '<?php
+                'code' => '<?php
                     interface I extends Traversable {}
                     abstract class C implements I {}
                 ',
@@ -653,52 +652,52 @@ class ClassTest extends TestCase
     }
 
     /**
-     * @return iterable<string,array{string,error_message:string,1?:string[],2?:bool,3?:string}>
+     * @return iterable<string,array{code:string,error_message:string,ignored_issues?:list<string>,php_version?:string}>
      */
     public function providerInvalidCodeParse(): iterable
     {
         return [
             'undefinedClass' => [
-                '<?php
+                'code' => '<?php
                     (new Foo());',
                 'error_message' => 'UndefinedClass',
             ],
             'wrongCaseClass' => [
-                '<?php
+                'code' => '<?php
                     class Foo {}
                     (new foo());',
                 'error_message' => 'InvalidClass',
             ],
             'wrongCaseClassWithCall' => [
-                '<?php
+                'code' => '<?php
                     class A {}
                     needsA(new A);
                     function needsA(a $x): void {}',
                 'error_message' => 'InvalidClass',
             ],
             'invalidThisFetch' => [
-                '<?php
+                'code' => '<?php
                     echo $this;',
                 'error_message' => 'InvalidScope',
             ],
             'invalidThisArgument' => [
-                '<?php
+                'code' => '<?php
                     $this = "hello";',
                 'error_message' => 'InvalidScope',
             ],
             'undefinedConstant' => [
-                '<?php
+                'code' => '<?php
                     echo HELLO;',
                 'error_message' => 'UndefinedConstant',
             ],
             'undefinedClassConstant' => [
-                '<?php
+                'code' => '<?php
                     class A {}
                     echo A::HELLO;',
                 'error_message' => 'UndefinedConstant',
             ],
             'overridePublicAccessLevelToPrivate' => [
-                '<?php
+                'code' => '<?php
                     class A {
                         public function fooFoo(): void {}
                     }
@@ -709,7 +708,7 @@ class ClassTest extends TestCase
                 'error_message' => 'OverriddenMethodAccess',
             ],
             'overridePublicAccessLevelToProtected' => [
-                '<?php
+                'code' => '<?php
                     class A {
                         public function fooFoo(): void {}
                     }
@@ -720,7 +719,7 @@ class ClassTest extends TestCase
                 'error_message' => 'OverriddenMethodAccess',
             ],
             'overrideProtectedAccessLevelToPrivate' => [
-                '<?php
+                'code' => '<?php
                     class A {
                         protected function fooFoo(): void {}
                     }
@@ -731,7 +730,7 @@ class ClassTest extends TestCase
                 'error_message' => 'OverriddenMethodAccess',
             ],
             'overridePublicPropertyAccessLevelToPrivate' => [
-                '<?php
+                'code' => '<?php
                     class A {
                         /** @var string|null */
                         public $foo;
@@ -744,7 +743,7 @@ class ClassTest extends TestCase
                 'error_message' => 'OverriddenPropertyAccess',
             ],
             'overridePublicPropertyAccessLevelToProtected' => [
-                '<?php
+                'code' => '<?php
                     class A {
                         /** @var string|null */
                         public $foo;
@@ -757,7 +756,7 @@ class ClassTest extends TestCase
                 'error_message' => 'OverriddenPropertyAccess',
             ],
             'overrideProtectedPropertyAccessLevelToPrivate' => [
-                '<?php
+                'code' => '<?php
                     class A {
                         /** @var string|null */
                         protected $foo;
@@ -770,13 +769,13 @@ class ClassTest extends TestCase
                 'error_message' => 'OverriddenPropertyAccess',
             ],
             'classRedefinition' => [
-                '<?php
+                'code' => '<?php
                     class Foo {}
                     class Foo {}',
                 'error_message' => 'DuplicateClass',
             ],
             'classRedefinitionInNamespace' => [
-                '<?php
+                'code' => '<?php
                     namespace Aye {
                         class Foo {}
                         class Foo {}
@@ -784,7 +783,7 @@ class ClassTest extends TestCase
                 'error_message' => 'DuplicateClass',
             ],
             'classRedefinitionInSeparateNamespace' => [
-                '<?php
+                'code' => '<?php
                     namespace Aye {
                         class Foo {}
                     }
@@ -794,13 +793,13 @@ class ClassTest extends TestCase
                 'error_message' => 'DuplicateClass',
             ],
             'abstractClassInstantiation' => [
-                '<?php
+                'code' => '<?php
                     abstract class A {}
                     new A();',
                 'error_message' => 'AbstractInstantiation',
             ],
             'abstractClassMethod' => [
-                '<?php
+                'code' => '<?php
                     abstract class A {
                         abstract public function foo() : void;
                     }
@@ -809,7 +808,7 @@ class ClassTest extends TestCase
                 'error_message' => 'UnimplementedAbstractMethod',
             ],
             'abstractReflectedClassMethod' => [
-                '<?php
+                'code' => '<?php
                     class DedupeIterator extends FilterIterator {
                         public function __construct(Iterator $i) {
                             parent::__construct($i);
@@ -818,12 +817,12 @@ class ClassTest extends TestCase
                 'error_message' => 'UnimplementedAbstractMethod',
             ],
             'missingParent' => [
-                '<?php
+                'code' => '<?php
                     class A extends B { }',
                 'error_message' => 'UndefinedClass',
             ],
             'lessSpecificReturnStatement' => [
-                '<?php
+                'code' => '<?php
                     class A {}
                     class B extends A {}
 
@@ -833,12 +832,12 @@ class ClassTest extends TestCase
                 'error_message' => 'LessSpecificReturnStatement',
             ],
             'circularReference' => [
-                '<?php
+                'code' => '<?php
                     class A extends A {}',
                 'error_message' => 'CircularReference',
             ],
             'preventAbstractInstantiationDefiniteClasss' => [
-                '<?php
+                'code' => '<?php
                     abstract class A {}
 
                     function foo(string $a_class) : void {
@@ -849,21 +848,21 @@ class ClassTest extends TestCase
                 'error_message' => 'AbstractInstantiation',
             ],
             'preventExtendingInterface' => [
-                '<?php
+                'code' => '<?php
                     interface Foo {}
 
                     class Bar extends Foo {}',
                 'error_message' => 'UndefinedClass',
             ],
             'preventImplementingClass' => [
-                '<?php
+                'code' => '<?php
                     class Foo {}
 
                     class Bar implements Foo {}',
                 'error_message' => 'UndefinedInterface',
             ],
             'classAliasAlreadyDefinedClass' => [
-                '<?php
+                'code' => '<?php
                     class A {}
 
                     class B {}
@@ -878,7 +877,7 @@ class ClassTest extends TestCase
                 'error_message' => 'TypeDoesNotContainType',
             ],
             'cannotOverrideFinalType' => [
-                '<?php
+                'code' => '<?php
                     class P {
                         public final function f() : void {}
                     }
@@ -889,7 +888,7 @@ class ClassTest extends TestCase
                 'error_message' => 'MethodSignatureMismatch',
             ],
             'preventFinalOverriding' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @psalm-consistent-constructor
                      */
@@ -914,13 +913,13 @@ class ClassTest extends TestCase
                 'error_message' => 'LessSpecificReturnStatement',
             ],
             'preventTraversableImplementation' => [
-                '<?php
+                'code' => '<?php
                     final class C implements Traversable {}
                 ',
                 'error_message' => 'InvalidTraversableImplementation',
             ],
             'preventIndirectTraversableImplementation' => [
-                '<?php
+                'code' => '<?php
                     interface I extends Traversable {}
                     final class C implements I {}
                 ',

@@ -1,21 +1,26 @@
 <?php
+
 namespace Psalm\Tests\TypeReconciliation;
+
+use Psalm\Tests\TestCase;
+use Psalm\Tests\Traits\InvalidCodeAnalysisTestTrait;
+use Psalm\Tests\Traits\ValidCodeAnalysisTestTrait;
 
 use const DIRECTORY_SEPARATOR;
 
-class TypeTest extends \Psalm\Tests\TestCase
+class TypeTest extends TestCase
 {
-    use \Psalm\Tests\Traits\InvalidCodeAnalysisTestTrait;
-    use \Psalm\Tests\Traits\ValidCodeAnalysisTestTrait;
+    use InvalidCodeAnalysisTestTrait;
+    use ValidCodeAnalysisTestTrait;
 
     /**
-     * @return iterable<string,array{string,assertions?:array<string,string>,error_levels?:string[]}>
+     * @return iterable<string,array{code:string,assertions?:array<string,string>,ignored_issues?:list<string>}>
      */
     public function providerValidCodeParse(): iterable
     {
         return [
             'nullableMethodWithTernaryGuard' => [
-                '<?php
+                'code' => '<?php
                     class A {
                         /** @return void */
                         public function fooFoo() {}
@@ -24,12 +29,12 @@ class TypeTest extends \Psalm\Tests\TestCase
                     class B {
                         /** @return void */
                         public function barBar(A $a = null) {
-                            $b = $a ? $a->fooFoo(): null;
+                            $b = $a ? $a->fooFoo() : null;
                         }
                     }',
             ],
             'nullableMethodWithTernaryIfNullGuard' => [
-                '<?php
+                'code' => '<?php
                     class A {
                         /** @return void */
                         public function fooFoo() {}
@@ -43,7 +48,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'nullableMethodWithTernaryEmptyGuard' => [
-                '<?php
+                'code' => '<?php
                     class A {
                         /** @return void */
                         public function fooFoo() {}
@@ -57,7 +62,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'nullableMethodWithTernaryIsNullGuard' => [
-                '<?php
+                'code' => '<?php
                     class A {
                         /** @return void */
                         public function fooFoo() {}
@@ -71,7 +76,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'nullableMethodWithIfGuard' => [
-                '<?php
+                'code' => '<?php
                     class A {
                         /** @return void */
                         public function fooFoo() {}
@@ -87,7 +92,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'nullableMethodWithTernaryGuardWithThis' => [
-                '<?php
+                'code' => '<?php
                     class A {
                         /** @return void */
                         public function fooFoo() {}
@@ -100,12 +105,12 @@ class TypeTest extends \Psalm\Tests\TestCase
                         /** @return void */
                         public function barBar(A $a = null) {
                             $this->a = $a;
-                            $b = $this->a ? $this->a->fooFoo(): null;
+                            $b = $this->a ? $this->a->fooFoo() : null;
                         }
                     }',
             ],
             'nullableMethodWithTernaryIfNullGuardWithThis' => [
-                '<?php
+                'code' => '<?php
                     class A {
                         /** @return void */
                         public function fooFoo() {}
@@ -123,7 +128,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'nullableMethodWithIfGuardWithThis' => [
-                '<?php
+                'code' => '<?php
                     class A {
                         /** @return void */
                         public function fooFoo() {}
@@ -144,7 +149,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'nullableMethodWithExceptionThrown' => [
-                '<?php
+                'code' => '<?php
                     class One {
                         /** @return void */
                         public function fooFoo() {}
@@ -162,7 +167,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'nullableMethodWithRedefinitionAndElse' => [
-                '<?php
+                'code' => '<?php
                     class One {
                         /** @var int|null */
                         public $two;
@@ -186,7 +191,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'nullableMethodWithBooleanIfGuard' => [
-                '<?php
+                'code' => '<?php
                     class One {
                         /** @return void */
                         public function fooFoo() {}
@@ -207,7 +212,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'nullableMethodWithNonNullBooleanIfGuard' => [
-                '<?php
+                'code' => '<?php
                     class One {
                         /** @return void */
                         public function fooFoo() {}
@@ -228,7 +233,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'nullableMethodWithNonNullBooleanIfGuardAndBooleanAnd' => [
-                '<?php
+                'code' => '<?php
                     class One {
                         /** @return void */
                         public function fooFoo() {}
@@ -249,7 +254,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'nullableMethodInConditionWithIfGuardBefore' => [
-                '<?php
+                'code' => '<?php
                     class One {
                         /** @var string */
                         public $a = "";
@@ -277,7 +282,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'nullableMethodWithBooleanIfGuardBefore' => [
-                '<?php
+                'code' => '<?php
                     class One {
                         /** @return void */
                         public function fooFoo() {}
@@ -300,7 +305,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'nullableMethodWithGuardedRedefinition' => [
-                '<?php
+                'code' => '<?php
                     class One {
                         /** @return void */
                         public function fooFoo() {}
@@ -318,7 +323,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'nullableMethodWithGuardedRedefinitionInElse' => [
-                '<?php
+                'code' => '<?php
                     class One {
                         /** @return void */
                         public function fooFoo() {}
@@ -339,7 +344,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'nullableMethodWithGuardedNestedRedefinition' => [
-                '<?php
+                'code' => '<?php
                     class One {
                         /** @return void */
                         public function fooFoo() {}
@@ -369,7 +374,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'nullableMethodWithGuardedSwitchRedefinition' => [
-                '<?php
+                'code' => '<?php
                     class One {
                         /** @return void */
                         public function fooFoo() {}
@@ -397,7 +402,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'nullableMethodWithGuardedSwitchRedefinitionDueToException' => [
-                '<?php
+                'code' => '<?php
                     class One {
                         /** @return void */
                         public function fooFoo() {}
@@ -426,7 +431,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'nullableMethodWithGuardedSwitchThatAlwaysReturns' => [
-                '<?php
+                'code' => '<?php
                     class One {
                         /** @return void */
                         public function fooFoo() {}
@@ -452,7 +457,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'nullableMethodWithGuardedNestedRedefinitionWithReturn' => [
-                '<?php
+                'code' => '<?php
                     class One {
                         /** @return void */
                         public function fooFoo() {}
@@ -478,7 +483,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'nullableMethodWithGuardedNestedRedefinitionWithElseReturn' => [
-                '<?php
+                'code' => '<?php
                     class One {
                         /** @return void */
                         public function fooFoo() {}
@@ -504,7 +509,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'nullableMethodWithGuardedNestedRedefinitionWithElseifReturn' => [
-                '<?php
+                'code' => '<?php
                     class One {
                         /** @return void */
                         public function fooFoo() {}
@@ -533,7 +538,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'nullableMethodWithGuardedSwitchBreak' => [
-                '<?php
+                'code' => '<?php
                     class One {
                         /** @return void */
                         public function fooFoo() {}
@@ -557,7 +562,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'nullableMethodWithGuardedRedefinitionOnThis' => [
-                '<?php
+                'code' => '<?php
                     class One {
                         /** @return void */
                         public function fooFoo() {}
@@ -580,29 +585,29 @@ class TypeTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'arrayUnionTypeAssertion' => [
-                '<?php
+                'code' => '<?php
                     $ids = (1 + 1 === 2) ? [] : null;
 
                     if ($ids === null) {
                         $ids = [];
                     }',
                 'assertions' => [
-                    '$ids' => 'array<empty, empty>',
+                    '$ids' => 'array<never, never>',
                 ],
             ],
             'arrayUnionTypeAssertionWithIsArray' => [
-                '<?php
+                'code' => '<?php
                     $ids = (1 + 1 === 2) ? [] : null;
 
                     if (!is_array($ids)) {
                         $ids = [];
                     }',
                 'assertions' => [
-                    '$ids' => 'array<empty, empty>',
+                    '$ids' => 'array<never, never>',
                 ],
             ],
             '2dArrayUnionTypeAssertionWithIsArray' => [
-                '<?php
+                'code' => '<?php
                     /** @return array<array<string>>|null */
                     function foo() {
                         $ids = rand(0, 1) ? [["hello"]] : null;
@@ -615,7 +620,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'variableReassignment' => [
-                '<?php
+                'code' => '<?php
                     class One {
                         /** @return void */
                         public function fooFoo() {}
@@ -633,7 +638,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                     $one->barBar();',
             ],
             'variableReassignmentInIf' => [
-                '<?php
+                'code' => '<?php
                     class One {
                         /** @return void */
                         public function fooFoo() {}
@@ -653,7 +658,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'unionTypeFlow' => [
-                '<?php
+                'code' => '<?php
                     class One {
                         /** @return void */
                         public function fooFoo() {}
@@ -685,7 +690,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'unionTypeFlowWithThrow' => [
-                '<?php
+                'code' => '<?php
                     class One {
                         /** @return void */
                         public function fooFoo() {}
@@ -702,7 +707,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'unionTypeFlowWithElseif' => [
-                '<?php
+                'code' => '<?php
                     class One {
                         /** @return void */
                         public function fooFoo() {}
@@ -722,7 +727,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'typedAdjustment' => [
-                '<?php
+                'code' => '<?php
                     $var = 0;
 
                     if (5 + 3 === 8) {
@@ -735,7 +740,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                 ],
             ],
             'typeMixedAdjustment' => [
-                '<?php
+                'code' => '<?php
                     $var = 0;
 
                     $arr = ["hello"];
@@ -750,7 +755,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                 ],
             ],
             'typeAdjustmentIfNull' => [
-                '<?php
+                'code' => '<?php
                     class A {}
                     class B {}
 
@@ -764,7 +769,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                 ],
             ],
             'whileTrue' => [
-                '<?php
+                'code' => '<?php
                     class One {
                         /**
                          * @return array|false
@@ -782,7 +787,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'passingParam' => [
-                '<?php
+                'code' => '<?php
                     class A {}
 
                     class B {
@@ -794,7 +799,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                     $b->barBar(new A);',
             ],
             'nullToNullableParam' => [
-                '<?php
+                'code' => '<?php
                     class A {}
 
                     class B {
@@ -806,7 +811,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                     $b->barBar(null);',
             ],
             'objectToNullableObjectParam' => [
-                '<?php
+                'code' => '<?php
                     class A {}
 
                     class B {
@@ -818,7 +823,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                     $b->barBar(new A);',
             ],
             'paramCoercion' => [
-                '<?php
+                'code' => '<?php
                     class A {}
                     class B extends A {
                         /** @return void */
@@ -835,7 +840,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'paramElseifCoercion' => [
-                '<?php
+                'code' => '<?php
                     class A {}
                     class B extends A {
                         /** @return void */
@@ -859,7 +864,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'plusPlus' => [
-                '<?php
+                'code' => '<?php
                     $a = 0;
                     $b = $a++;',
                 'assertions' => [
@@ -867,7 +872,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                 ],
             ],
             'typedValueAssertion' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param array|string $a
                      */
@@ -880,13 +885,13 @@ class TypeTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'isIntOnUnaryPlus' => [
-                '<?php
+                'code' => '<?php
                     $a = +"5";
                     if (!is_int($a)) {
                     }',
             ],
             'suppressOneSuppressesAll' => [
-                '<?php
+                'code' => '<?php
                     class A {
                         /** @return void */
                         public function fooFoo() {}
@@ -907,7 +912,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                 'assertions' => [],
             ],
             'trueFalseTest' => [
-                '<?php
+                'code' => '<?php
                     class A {
                         /** @return true */
                         public function returnsTrue() { return true; }
@@ -925,7 +930,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'intersectionTypeAfterInstanceof' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @psalm-consistent-constructor
                      */
@@ -943,7 +948,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                     interface I {}',
             ],
             'intersectionTypeInsideInstanceof' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @psalm-consistent-constructor
                      */
@@ -966,7 +971,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                     function takesA(A $i): void {}',
             ],
             'intersectionInNamespace' => [
-                '<?php
+                'code' => '<?php
                     namespace NS;
                     use Countable;
 
@@ -986,7 +991,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                     mycount($collection);',
             ],
             'scalarTypeParam' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param scalar $var
                      */
@@ -999,7 +1004,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                     test(false);',
             ],
             'assignOpUpdateArray' => [
-                '<?php
+                'code' => '<?php
                     $optgroup = ["a" => ""];
 
                     if (rand(0, 1)) {
@@ -1009,7 +1014,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                     if ($optgroup["a"] !== "") {}'
             ],
             'redefineArrayKeyInsideIsStringConditional' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param string|int $key
                      */
@@ -1024,7 +1029,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'redefineArrayKeyInsideIsIntConditional' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param string|int $key
                      */
@@ -1039,7 +1044,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'arrayKeyCanBeNumeric' => [
-                '<?php
+                'code' => '<?php
                     /** @param array<string> $arr */
                     function foo(array $arr) : void {
                         foreach ($arr as $k => $_) {
@@ -1049,7 +1054,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'narrowScalar' => [
-                '<?php
+                'code' => '<?php
                     /** @var scalar $s */
                     $s = 1;
 
@@ -1058,7 +1063,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'narrowWithCountToAllowNonTupleKeyedArray' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param list<string> $arr
                      */
@@ -1074,7 +1079,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                     function consume($input): void{}'
             ],
             'notDateTimeWithDateTimeInterface' => [
-                '<?php
+                'code' => '<?php
                     function foo(DateTimeInterface $dateTime): DateTimeInterface {
                         $dateInterval = new DateInterval("P1D");
 
@@ -1089,7 +1094,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                 ',
             ],
             'notDateTimeImmutableWithDateTimeInterface' => [
-                '<?php
+                'code' => '<?php
                     function foo(DateTimeInterface $dateTime): DateTimeInterface {
                         $dateInterval = new DateInterval("P1D");
 
@@ -1104,7 +1109,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                 ',
             ],
             'CountEqual0MakesNonEmptyArray' => [
-                '<?php
+                'code' => '<?php
                     function a(array $a): void {
                         if (count($a) === 0) {
                             throw new \LogicException;
@@ -1130,13 +1135,13 @@ class TypeTest extends \Psalm\Tests\TestCase
     }
 
     /**
-     * @return iterable<string,array{string,error_message:string,1?:string[],2?:bool,3?:string}>
+     * @return iterable<string,array{code:string,error_message:string,ignored_issues?:list<string>,php_version?:string}>
      */
     public function providerInvalidCodeParse(): iterable
     {
         return [
             'possiblyUndefinedVariable' => [
-                '<?php
+                'code' => '<?php
                     if (rand(0, 1)) {
                         $a = 5;
                     }
@@ -1145,7 +1150,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                 'error_message' => 'PossiblyUndefinedGlobalVariable',
             ],
             'nullableMethodCall' => [
-                '<?php
+                'code' => '<?php
                     class A {
                         /** @return void */
                         public function fooFoo() {}
@@ -1160,7 +1165,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                 'error_message' => 'PossiblyNullReference',
             ],
             'nullableMethodCallWithThis' => [
-                '<?php
+                'code' => '<?php
                     class A {
                         /** @return void */
                         public function fooFoo() {}
@@ -1179,7 +1184,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                 'error_message' => 'PossiblyNullReference',
             ],
             'nullableMethodWithIfGuard' => [
-                '<?php
+                'code' => '<?php
                     class One {
                         /** @return void */
                         public function fooFoo() {}
@@ -1201,7 +1206,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                 'error_message' => 'PossiblyNullReference',
             ],
             'nullableMethodWithWrongBooleanIfGuard' => [
-                '<?php
+                'code' => '<?php
                     class One {
                         /** @return void */
                         public function fooFoo() {}
@@ -1223,7 +1228,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                 'error_message' => 'PossiblyNullReference',
             ],
             'nullableMethodWithWrongIfGuardedBefore' => [
-                '<?php
+                'code' => '<?php
                     class One {
                         /** @return void */
                         public function fooFoo() {}
@@ -1247,7 +1252,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                 'error_message' => 'PossiblyNullReference',
             ],
             'nullableMethodWithWrongBooleanIfGuardBefore' => [
-                '<?php
+                'code' => '<?php
                     class One {
                         /** @return void */
                         public function fooFoo() {}
@@ -1271,7 +1276,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                 'error_message' => 'PossiblyNullReference',
             ],
             'nullableMethodWithGuardedNestedIncompleteRedefinition' => [
-                '<?php
+                'code' => '<?php
                     class One {
                         /** @return void */
                         public function fooFoo() {}
@@ -1299,7 +1304,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                 'error_message' => 'PossiblyNullReference',
             ],
             'nullableMethodWithGuardedSwitchRedefinitionNoDefault' => [
-                '<?php
+                'code' => '<?php
                     class One {
                         /** @return void */
                         public function fooFoo() {}
@@ -1324,7 +1329,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                 'error_message' => 'PossiblyNullReference',
             ],
             'nullableMethodWithGuardedSwitchRedefinitionEmptyDefault' => [
-                '<?php
+                'code' => '<?php
                     class One {
                         /** @return void */
                         public function fooFoo() {}
@@ -1352,7 +1357,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                 'error_message' => 'PossiblyNullReference',
             ],
             'nullableMethodWithGuardedNestedRedefinitionWithUselessElseReturn' => [
-                '<?php
+                'code' => '<?php
                     class One {
                         /** @return void */
                         public function fooFoo() {}
@@ -1382,7 +1387,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                 'error_message' => 'PossiblyNullReference',
             ],
             'variableReassignmentInIfWithOutsideCall' => [
-                '<?php
+                'code' => '<?php
                     class One {
                         /** @return void */
                         public function fooFoo() {}
@@ -1405,7 +1410,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                 'error_message' => 'PossiblyUndefinedMethod',
             ],
             'wrongParam' => [
-                '<?php
+                'code' => '<?php
                     class A {}
 
                     class B {
@@ -1418,7 +1423,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                 'error_message' => 'InvalidArgument',
             ],
             'intToNullableObjectParam' => [
-                '<?php
+                'code' => '<?php
                     class A {}
 
                     class B {
@@ -1431,7 +1436,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                 'error_message' => 'InvalidArgument',
             ],
             'paramCoercionWithBadArg' => [
-                '<?php
+                'code' => '<?php
                     class A {}
                     class B extends A {
                         /** @return void */
@@ -1449,14 +1454,14 @@ class TypeTest extends \Psalm\Tests\TestCase
                 'error_message' => 'UndefinedMethod',
             ],
             'nullCheckInsideForeachWithNoLeaveStatement' => [
-                '<?php
+                'code' => '<?php
                     $a = null;
 
                     $a->fooBar();',
                 'error_message' => 'NullReference',
             ],
             'possiblyUndefinedMethod' => [
-                '<?php
+                'code' => '<?php
                     class A {
                         public function foo(): void {}
                     }
@@ -1478,21 +1483,21 @@ class TypeTest extends \Psalm\Tests\TestCase
                 'error_message' => 'PossiblyUndefinedMethod',
             ],
             'notTrueTest' => [
-                '<?php
+                'code' => '<?php
                     /** @return true */
                     function returnsTrue() { return rand() % 2 > 0; }
                     ',
                 'error_message' => 'InvalidReturnStatement',
             ],
             'notFalseTest' => [
-                '<?php
+                'code' => '<?php
                     /** @return false */
                     function returnsFalse() { return rand() % 2 > 0; }
                     ',
                 'error_message' => 'InvalidReturnStatement',
             ],
             'intersectionTypeClassCheckAfterInstanceof' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @psalm-consistent-constructor
                      */
@@ -1517,7 +1522,7 @@ class TypeTest extends \Psalm\Tests\TestCase
                     . ' parent type A&static provided',
             ],
             'intersectionTypeInterfaceCheckAfterInstanceof' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @psalm-consistent-constructor
                      */

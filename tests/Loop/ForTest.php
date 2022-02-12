@@ -1,23 +1,26 @@
 <?php
+
 namespace Psalm\Tests\Loop;
 
-use Psalm\Tests\Traits;
+use Psalm\Tests\TestCase;
+use Psalm\Tests\Traits\InvalidCodeAnalysisTestTrait;
+use Psalm\Tests\Traits\ValidCodeAnalysisTestTrait;
 
 use const DIRECTORY_SEPARATOR;
 
-class ForTest extends \Psalm\Tests\TestCase
+class ForTest extends TestCase
 {
-    use Traits\InvalidCodeAnalysisTestTrait;
-    use Traits\ValidCodeAnalysisTestTrait;
+    use InvalidCodeAnalysisTestTrait;
+    use ValidCodeAnalysisTestTrait;
 
     /**
-     * @return iterable<string,array{string,assertions?:array<string,string>,error_levels?:string[]}>
+     * @return iterable<string,array{code:string,assertions?:array<string,string>,ignored_issues?:list<string>}>
      */
     public function providerValidCodeParse(): iterable
     {
         return [
             'implicitFourthLoop' => [
-                '<?php
+                'code' => '<?php
                     function test(): int {
                       $x = 0;
                       $y = 1;
@@ -31,7 +34,7 @@ class ForTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'falseToBoolInContinueAndBreak' => [
-                '<?php
+                'code' => '<?php
                     $a = false;
 
                     for ($i = 0; $i < 4; $i++) {
@@ -52,14 +55,14 @@ class ForTest extends \Psalm\Tests\TestCase
                 ],
             ],
             'forLoopwithOKChange' => [
-                '<?php
+                'code' => '<?php
                     $j = 5;
                     for ($i = $j; $i < 4; $i++) {
                       $j = 9;
                     }',
             ],
             'preventNegativeZeroScrewingThingsUp' => [
-                '<?php
+                'code' => '<?php
                     function foo() : void {
                       $v = [1 => 0];
                       for ($d = 0; $d <= 10; $d++) {
@@ -76,7 +79,7 @@ class ForTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'whileTrueWithBreak' => [
-                '<?php
+                'code' => '<?php
                     for (;;) {
                         $a = "hello";
                         break;
@@ -91,7 +94,7 @@ class ForTest extends \Psalm\Tests\TestCase
                 ],
             ],
             'continueOutsideLoop' => [
-                '<?php
+                'code' => '<?php
                     class Node {
                         /** @var Node|null */
                         public $next;
@@ -106,12 +109,12 @@ class ForTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'echoAfterFor' => [
-                '<?php
+                'code' => '<?php
                     for ($i = 0; $i < 5; $i++);
                     echo $i;',
             ],
             'nestedEchoAfterFor' => [
-                '<?php
+                'code' => '<?php
                     for ($i = 1; $i < 2; $i++) {
                         for ($j = 1; $j < 2; $j++) {}
                     }
@@ -119,7 +122,7 @@ class ForTest extends \Psalm\Tests\TestCase
                     echo $i * $j;'
             ],
             'reconcileOuterVars' => [
-                '<?php
+                'code' => '<?php
                     for ($i = 0; $i < 2; $i++) {
                         if ($i === 0) {
                             continue;
@@ -127,7 +130,7 @@ class ForTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'noException' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param list<int> $arr
                      */
@@ -136,7 +139,7 @@ class ForTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'noCrashOnLongThing' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param list<array{a: array{int, int}}> $data
                      */
@@ -157,7 +160,7 @@ class ForTest extends \Psalm\Tests\TestCase
                     }'
             ],
             'InfiniteForLoop' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @return int
                      */
@@ -180,13 +183,13 @@ class ForTest extends \Psalm\Tests\TestCase
     }
 
     /**
-     * @return iterable<string,array{string,error_message:string,1?:string[],2?:bool,3?:string}>
+     * @return iterable<string,array{code:string,error_message:string,ignored_issues?:list<string>,php_version?:string}>
      */
     public function providerInvalidCodeParse(): iterable
     {
         return [
             'possiblyUndefinedArrayInWhileAndForeach' => [
-                '<?php
+                'code' => '<?php
                     for ($i = 0; $i < 4; $i++) {
                         while (rand(0,10) === 5) {
                             $array[] = "hello";
@@ -198,14 +201,14 @@ class ForTest extends \Psalm\Tests\TestCase
                     'global variable $array, first seen on line 4',
             ],
             'forLoopInvalidation' => [
-                '<?php
+                'code' => '<?php
                     for ($i = 0; $i < 4; $i++) {
                       foreach ([1, 2, 3] as $i) {}
                     }',
                 'error_message' => 'LoopInvalidation',
             ],
             'forInfiniteNoBreak' => [
-                '<?php
+                'code' => '<?php
                     for (;;) {
                         $a = "hello";
                     }
@@ -214,7 +217,7 @@ class ForTest extends \Psalm\Tests\TestCase
                 'error_message' => 'UndefinedGlobalVariable',
             ],
             'nestedEchoAfterFor' => [
-                '<?php
+                'code' => '<?php
                     for ($i = 1; $i < 2; $i++) {
                         if (rand(0, 1)) break;
                         for ($j = 1; $j < 2; $j++) {}

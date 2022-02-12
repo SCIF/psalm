@@ -1,17 +1,26 @@
 <?php
+
 namespace Psalm\Internal\Provider\ReturnTypeProvider;
 
+use Psalm\Internal\Analyzer\StatementsAnalyzer;
 use Psalm\Plugin\EventHandler\Event\FunctionReturnTypeProviderEvent;
+use Psalm\Plugin\EventHandler\FunctionReturnTypeProviderInterface;
 use Psalm\Type;
+use Psalm\Type\Atomic\TNull;
+use Psalm\Type\Union;
 
+use function count;
 use function in_array;
 
-class StrReplaceReturnTypeProvider implements \Psalm\Plugin\EventHandler\FunctionReturnTypeProviderInterface
+/**
+ * @internal
+ */
+class StrReplaceReturnTypeProvider implements FunctionReturnTypeProviderInterface
 {
     /**
      * @return array<lowercase-string>
      */
-    public static function getFunctionIds() : array
+    public static function getFunctionIds(): array
     {
         return [
             'str_replace',
@@ -22,13 +31,13 @@ class StrReplaceReturnTypeProvider implements \Psalm\Plugin\EventHandler\Functio
         ];
     }
 
-    public static function getFunctionReturnType(FunctionReturnTypeProviderEvent $event) : Type\Union
+    public static function getFunctionReturnType(FunctionReturnTypeProviderEvent $event): Union
     {
         $statements_source = $event->getStatementsSource();
         $call_args = $event->getCallArgs();
         $function_id = $event->getFunctionId();
-        if (!$statements_source instanceof \Psalm\Internal\Analyzer\StatementsAnalyzer
-            || \count($call_args) < 3
+        if (!$statements_source instanceof StatementsAnalyzer
+            || count($call_args) < 3
         ) {
             return Type::getMixed();
         }
@@ -41,7 +50,7 @@ class StrReplaceReturnTypeProvider implements \Psalm\Plugin\EventHandler\Functio
             $return_type = Type::getString();
 
             if (in_array($function_id, ['preg_replace', 'preg_replace_callback'], true)) {
-                $return_type->addType(new Type\Atomic\TNull());
+                $return_type->addType(new TNull());
 
                 $codebase = $statements_source->getCodebase();
 

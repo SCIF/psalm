@@ -2,10 +2,13 @@
 
 namespace Psalm\Tests;
 
+use Psalm\Tests\Traits\InvalidCodeAnalysisTestTrait;
+use Psalm\Tests\Traits\ValidCodeAnalysisTestTrait;
+
 class ImplementationRequirementTest extends TestCase
 {
-    use Traits\ValidCodeAnalysisTestTrait;
-    use Traits\InvalidCodeAnalysisTestTrait;
+    use ValidCodeAnalysisTestTrait;
+    use InvalidCodeAnalysisTestTrait;
 
     public function setUp(): void
     {
@@ -42,7 +45,7 @@ class ImplementationRequirementTest extends TestCase
     {
         return [
             'implementsAllRequirements' => [
-                '<?php
+                'code' => '<?php
                     use ImplementationRequirements\Base\A;
                     use ImplementationRequirements\Base\B;
                     use ImplementationRequirements\Trait\ImposesImplementationRequirements;
@@ -59,7 +62,7 @@ class ImplementationRequirementTest extends TestCase
     {
         return [
             'doesNotImplementAnything' => [
-                '<?php
+                'code' => '<?php
                     use ImplementationRequirements\Trait\ImposesImplementationRequirements;
 
                     class Invalid {
@@ -69,7 +72,7 @@ class ImplementationRequirementTest extends TestCase
                 'error_message' => 'requires using class to implement'
             ],
             'onlyImplementsOneRequirement' => [
-                '<?php
+                'code' => '<?php
                     use ImplementationRequirements\Trait\ImposesImplementationRequirements;
                     use ImplementationRequirements\Base\A;
 

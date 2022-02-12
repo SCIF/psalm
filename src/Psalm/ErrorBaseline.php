@@ -1,6 +1,10 @@
 <?php
+
 namespace Psalm;
 
+use DOMDocument;
+use DOMElement;
+use Psalm\Exception\ConfigException;
 use Psalm\Internal\Analyzer\IssueData;
 use Psalm\Internal\Provider\FileProvider;
 use RuntimeException;
@@ -17,6 +21,7 @@ use function ksort;
 use function min;
 use function phpversion;
 use function preg_replace_callback;
+use function sort;
 use function str_replace;
 use function strpos;
 use function trim;
@@ -43,9 +48,7 @@ class ErrorBaseline
                 /**
                  * @param array{o:int, s:array<int, string>} $existingIssue
                  */
-                static function (int $carry, array $existingIssue): int {
-                    return $carry + $existingIssue['o'];
-                },
+                static fn(int $carry, array $existingIssue): int => $carry + $existingIssue['o'],
                 0
             );
         }
@@ -71,28 +74,32 @@ class ErrorBaseline
     /**
      * @return array<string,array<string,array{o:int, s: list<string>}>>
      *
-     * @throws Exception\ConfigException
+     * @throws ConfigException
      */
     public static function read(FileProvider $fileProvider, string $baselineFile): array
     {
         if (!$fileProvider->fileExists($baselineFile)) {
-            throw new Exception\ConfigException("{$baselineFile} does not exist or is not readable");
+            throw new ConfigException("{$baselineFile} does not exist or is not readable");
         }
 
         $xmlSource = $fileProvider->getContents($baselineFile);
 
-        $baselineDoc = new \DOMDocument();
+        if ($xmlSource === '') {
+            throw new ConfigException('Baseline file is empty');
+        }
+
+        $baselineDoc = new DOMDocument();
         $baselineDoc->loadXML($xmlSource, LIBXML_NOBLANKS);
 
         $filesElement = $baselineDoc->getElementsByTagName('files');
 
         if ($filesElement->length === 0) {
-            throw new Exception\ConfigException('Baseline file does not contain <files>');
+            throw new ConfigException('Baseline file does not contain <files>');
         }
 
         $files = [];
 
-        /** @var \DOMElement $filesElement */
+        /** @var DOMElement $filesElement */
         $filesElement = $filesElement[0];
 
         foreach ($filesElement->getElementsByTagName('file') as $file) {
@@ -103,7 +110,7 @@ class ErrorBaseline
             $files[$fileName] = [];
 
             foreach ($file->childNodes as $issue) {
-                if (!$issue instanceof \DOMElement) {
+                if (!$issue instanceof DOMElement) {
                     continue;
                 }
 
@@ -129,7 +136,7 @@ class ErrorBaseline
      *
      * @return array<string, array<string, array{o: int, s: list<string>}>>
      *
-     * @throws Exception\ConfigException
+     * @throws ConfigException
      */
     public static function update(
         FileProvider $fileProvider,
@@ -237,7 +244,7 @@ class ErrorBaseline
         array $groupedIssues,
         bool $include_php_versions
     ): void {
-        $baselineDoc = new \DOMDocument('1.0', 'UTF-8');
+        $baselineDoc = new DOMDocument('1.0', 'UTF-8');
         $filesNode = $baselineDoc->createElement('files');
         $filesNode->setAttribute('psalm-version', PSALM_VERSION);
 
@@ -251,9 +258,7 @@ class ErrorBaseline
                     ('php:' . PHP_VERSION),
                 ],
                 array_map(
-                    static function (string $extension) : string {
-                        return $extension . ':' . phpversion($extension);
-                    },
+                    static fn(string $extension): string => $extension . ':' . phpversion($extension),
                     $extensions
                 )
             )));
@@ -269,16 +274,11 @@ class ErrorBaseline
 
                 $issueNode->setAttribute('occurrences', (string)$existingIssueType['o']);
 
-                \sort($existingIssueType['s']);
+                sort($existingIssueType['s']);
 
                 foreach ($existingIssueType['s'] as $selection) {
                     $codeNode = $baselineDoc->createElement('code');
-
-                    /** @todo in major version release (e.g. Psalm 5) replace $selection with trim($selection)
-                     * This will be a minor BC break as baselines generated will then not be compatible with Psalm
-                     * versions from before PR https://github.com/vimeo/psalm/pull/6000
-                     */
-                    $codeNode->textContent = $selection;
+                    $codeNode->textContent = trim($selection);
                     $issueNode->appendChild($codeNode);
                 }
                 $fileNode->appendChild($issueNode);
@@ -295,21 +295,18 @@ class ErrorBaseline
             /**
              * @param string[] $matches
              */
-            static function (array $matches) : string {
-                return
-                    '<files' .
-                    "\n  " .
-                    $matches[1] .
-                    "\n" .
-                    '  php-version="' .
-                    "\n    " .
-                    str_replace('&#10;&#9;', "\n    ", $matches[2]).
-                    "\n" .
-                    '  "' .
-                    "\n" .
-                    $matches[3] .
-                    "\n";
-            },
+            static fn(array $matches): string => '<files' .
+            "\n  " .
+            $matches[1] .
+            "\n" .
+            '  php-version="' .
+            "\n    " .
+            str_replace('&#10;&#9;', "\n    ", $matches[2]).
+            "\n" .
+            '  "' .
+            "\n" .
+            $matches[3] .
+            "\n",
             $baselineDoc->saveXML()
         );
 

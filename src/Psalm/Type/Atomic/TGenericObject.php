@@ -1,7 +1,9 @@
 <?php
+
 namespace Psalm\Type\Atomic;
 
 use Psalm\Type\Atomic;
+use Psalm\Type\Union;
 
 use function array_merge;
 use function count;
@@ -17,7 +19,7 @@ class TGenericObject extends TNamedObject
     use GenericTrait;
 
     /**
-     * @var non-empty-list<\Psalm\Type\Union>
+     * @var non-empty-list<Union>
      */
     public $type_params;
 
@@ -25,8 +27,8 @@ class TGenericObject extends TNamedObject
     public $remapped_params = false;
 
     /**
-     * @param string                            $value the name of the object
-     * @param non-empty-list<\Psalm\Type\Union>     $type_params
+     * @param string                $value the name of the object
+     * @param non-empty-list<Union> $type_params
      */
     public function __construct(string $value, array $type_params)
     {
@@ -55,7 +57,7 @@ class TGenericObject extends TNamedObject
         return $this->value . '<' . substr($s, 0, -2) . '>' . $extra_types;
     }
 
-    public function canBeFullyExpressedInPhp(int $php_major_version, int $php_minor_version): bool
+    public function canBeFullyExpressedInPhp(int $analysis_php_version_id): bool
     {
         return false;
     }
@@ -67,16 +69,11 @@ class TGenericObject extends TNamedObject
         ?string $namespace,
         array $aliased_classes,
         ?string $this_class,
-        int $php_major_version,
-        int $php_minor_version
+        int $analysis_php_version_id
     ): ?string {
         $result = $this->toNamespacedString($namespace, $aliased_classes, $this_class, true);
         $intersection = strrpos($result, '&');
-        if ($intersection === false || (
-                ($php_major_version === 8 && $php_minor_version >= 1) ||
-                ($php_major_version >= 9)
-            )
-        ) {
+        if ($intersection === false || $analysis_php_version_id >= 8_01_00) {
             return $result;
         }
         return substr($result, $intersection+1);
@@ -101,12 +98,12 @@ class TGenericObject extends TNamedObject
         return true;
     }
 
-    public function getAssertionString(bool $exact = false): string
+    public function getAssertionString(): string
     {
         return $this->value;
     }
 
-    public function getChildNodes() : array
+    public function getChildNodes(): array
     {
         return array_merge($this->type_params, $this->extra_types ?? []);
     }

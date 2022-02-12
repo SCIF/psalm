@@ -1,4 +1,5 @@
 <?php
+
 namespace Psalm\Internal\Analyzer\Statements\Expression\BinaryOp;
 
 use PhpParser;
@@ -10,6 +11,7 @@ use Psalm\Internal\Analyzer\Statements\Block\IfConditionalAnalyzer;
 use Psalm\Internal\Analyzer\Statements\Block\IfElseAnalyzer;
 use Psalm\Internal\Analyzer\Statements\ExpressionAnalyzer;
 use Psalm\Internal\Analyzer\StatementsAnalyzer;
+use Psalm\Internal\Clause;
 use Psalm\Node\Stmt\VirtualExpression;
 use Psalm\Node\Stmt\VirtualIf;
 use Psalm\Type\Reconciler;
@@ -19,6 +21,9 @@ use function array_filter;
 use function array_map;
 use function array_merge;
 use function array_values;
+use function count;
+use function in_array;
+use function spl_object_id;
 
 /**
  * @internal
@@ -30,7 +35,7 @@ class AndAnalyzer
         PhpParser\Node\Expr\BinaryOp $stmt,
         Context $context,
         bool $from_stmt = false
-    ) : bool {
+    ): bool {
         if ($from_stmt) {
             $fake_if_stmt = new VirtualIf(
                 $stmt->left,
@@ -67,7 +72,7 @@ class AndAnalyzer
 
         $codebase = $statements_analyzer->getCodebase();
 
-        $left_cond_id = \spl_object_id($stmt->left);
+        $left_cond_id = spl_object_id($stmt->left);
 
         $left_clauses = FormulaGenerator::getFormula(
             $left_cond_id,
@@ -100,13 +105,11 @@ class AndAnalyzer
             $context_clauses = array_values(
                 array_filter(
                     $context_clauses,
-                    static function ($c) use ($reconciled_expression_clauses): bool {
-                        return !\in_array($c->hash, $reconciled_expression_clauses);
-                    }
+                    static fn(Clause $c): bool => !in_array($c->hash, $reconciled_expression_clauses)
                 )
             );
 
-            if (\count($context_clauses) === 1
+            if (count($context_clauses) === 1
                 && $context_clauses[0]->wedge
                 && !$context_clauses[0]->possibilities
             ) {
@@ -206,9 +209,8 @@ class AndAnalyzer
             $if_context->reconciled_expression_clauses = array_merge(
                 $if_context->reconciled_expression_clauses,
                 array_map(
-                    static function ($c) {
-                        return $c->hash;
-                    },
+                    /** @return string|int */
+                    static fn(Clause $c) => $c->hash,
                     $partitioned_clauses[1]
                 )
             );

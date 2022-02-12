@@ -3,6 +3,8 @@
 namespace Psalm\Internal\Stubs\Generator;
 
 use PhpParser;
+use Psalm\Codebase;
+use Psalm\Internal\Codebase\ConstantTypeResolver;
 use Psalm\Node\Name\VirtualFullyQualified;
 use Psalm\Node\Stmt\VirtualClass;
 use Psalm\Node\Stmt\VirtualClassConst;
@@ -16,15 +18,23 @@ use Psalm\Storage\ClassLikeStorage;
 use Psalm\Internal\Analyzer\ClassLikeAnalyzer;
 use Psalm\Internal\Scanner\ParsedDocblock;
 use Psalm\Type;
-use function array_slice;
+use Psalm\Type\Union;
 
+use ReflectionProperty;
+use UnexpectedValueException;
+use function array_slice;
+use function rtrim;
+
+/**
+ * @internal
+ */
 class ClassLikeStubGenerator
 {
     /**
      * @return PhpParser\Node\Stmt\Class_|PhpParser\Node\Stmt\Interface_|PhpParser\Node\Stmt\Trait_
      */
     public static function getClassLikeNode(
-        \Psalm\Codebase $codebase,
+        Codebase $codebase,
         ClassLikeStorage $storage,
         string $classlike_name
     ) : PhpParser\Node\Stmt\ClassLike {
@@ -59,7 +69,7 @@ class ClassLikeStubGenerator
             'comments' => $docblock->tags
                 ? [
                     new PhpParser\Comment\Doc(
-                        \rtrim($docblock->render('        '))
+                        rtrim($docblock->render('        '))
                     )
                 ]
                 : []
@@ -110,14 +120,14 @@ class ClassLikeStubGenerator
     /**
      * @return list<PhpParser\Node\Stmt\ClassConst>
      */
-    private static function getConstantNodes(\Psalm\Codebase $codebase, ClassLikeStorage $storage) : array
+    private static function getConstantNodes(Codebase $codebase, ClassLikeStorage $storage): array
     {
         $constant_nodes = [];
 
         foreach ($storage->constants as $constant_name => $constant_storage) {
             if ($constant_storage->unresolved_node) {
-                $type = new Type\Union([
-                    \Psalm\Internal\Codebase\ConstantTypeResolver::resolve(
+                $type = new Union([
+                    ConstantTypeResolver::resolve(
                         $codebase->classlikes,
                         $constant_storage->unresolved_node
                     )
@@ -125,7 +135,7 @@ class ClassLikeStubGenerator
             } elseif ($constant_storage->type) {
                 $type = $constant_storage->type;
             } else {
-                throw new \UnexpectedValueException('bad');
+                throw new UnexpectedValueException('bad');
             }
 
             $constant_nodes[] = new VirtualClassConst(
@@ -149,7 +159,7 @@ class ClassLikeStubGenerator
     /**
      * @return list<PhpParser\Node\Stmt\Property>
      */
-    private static function getPropertyNodes(ClassLikeStorage $storage) : array
+    private static function getPropertyNodes(ClassLikeStorage $storage): array
     {
         $namespace_name = implode('\\', array_slice(explode('\\', $storage->name), 0, -1));
 
@@ -195,7 +205,7 @@ class ClassLikeStubGenerator
                     'comments' => $docblock->tags
                         ? [
                             new PhpParser\Comment\Doc(
-                                \rtrim($docblock->render('        '))
+                                rtrim($docblock->render('        '))
                             )
                         ]
                         : []
@@ -218,14 +228,14 @@ class ClassLikeStubGenerator
 
         foreach ($storage->methods as $method_storage) {
             if (!$method_storage->cased_name) {
-                throw new \UnexpectedValueException('very bad');
+                throw new UnexpectedValueException('very bad');
             }
 
             switch ($method_storage->visibility) {
-                case \ReflectionProperty::IS_PRIVATE:
+                case ReflectionProperty::IS_PRIVATE:
                     $flag = PhpParser\Node\Stmt\Class_::MODIFIER_PRIVATE;
                     break;
-                case \ReflectionProperty::IS_PROTECTED:
+                case ReflectionProperty::IS_PROTECTED:
                     $flag = PhpParser\Node\Stmt\Class_::MODIFIER_PROTECTED;
                     break;
                 default:
@@ -294,7 +304,7 @@ class ClassLikeStubGenerator
                     'comments' => $docblock->tags
                         ? [
                             new PhpParser\Comment\Doc(
-                                \rtrim($docblock->render('        '))
+                                rtrim($docblock->render('        '))
                             )
                         ]
                         : []

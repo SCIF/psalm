@@ -1,10 +1,13 @@
 <?php
+
 namespace Psalm\Type\Atomic;
+
+use Psalm\Type\Atomic;
 
 /**
  * Denotes the `mixed` type, used when you don’t know the type of an expression.
  */
-class TMixed extends \Psalm\Type\Atomic
+class TMixed extends Atomic
 {
     /** @var bool */
     public $from_loop_isset = false;
@@ -31,18 +34,17 @@ class TMixed extends \Psalm\Type\Atomic
         ?string $namespace,
         array $aliased_classes,
         ?string $this_class,
-        int $php_major_version,
-        int $php_minor_version
+        int $analysis_php_version_id
     ): ?string {
-        return $php_major_version >= 8 ? 'mixed' : null;
+        return $analysis_php_version_id >= 8_00_00 ? 'mixed' : null;
     }
 
-    public function canBeFullyExpressedInPhp(int $php_major_version, int $php_minor_version): bool
+    public function canBeFullyExpressedInPhp(int $analysis_php_version_id): bool
     {
-        return $php_major_version >= 8;
+        return $analysis_php_version_id >= 8_00_00;
     }
 
-    public function getAssertionString(bool $exact = false): string
+    public function getAssertionString(): string
     {
         return 'mixed';
     }

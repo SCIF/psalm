@@ -1,7 +1,9 @@
 <?php
+
 namespace Psalm\Issue;
 
 use Psalm\CodeLocation;
+use Psalm\Internal\Analyzer\IssueData;
 
 use function array_pop;
 use function explode;
@@ -36,15 +38,6 @@ abstract class CodeIssue
         $this->message = $message;
     }
 
-    /**
-     * @deprecated going to be removed in Psalm 5
-     * @psalm-suppress PossiblyUnusedMethod
-     */
-    public function getLocation(): CodeLocation
-    {
-        return $this->code_location;
-    }
-
     public function getShortLocationWithPrevious(): string
     {
         $previous_text = '';
@@ -67,38 +60,23 @@ abstract class CodeIssue
         return $this->code_location->file_path;
     }
 
-    /**
-     * @deprecated going to be removed in Psalm 5
-     * @psalm-suppress PossiblyUnusedMethod for convenience
-     */
-    public function getFileName(): string
+    public static function getIssueType(): string
     {
-        return $this->code_location->file_name;
+        $fqcn_parts = explode('\\', static::class);
+        return array_pop($fqcn_parts);
     }
 
-    /**
-     * @deprecated going to be removed in Psalm 5
-     * @psalm-suppress PossiblyUnusedMethod
-     */
-    public function getMessage(): string
-    {
-        return $this->message;
-    }
-
-    public function toIssueData(string $severity): \Psalm\Internal\Analyzer\IssueData
+    public function toIssueData(string $severity): IssueData
     {
         $location = $this->code_location;
         $selection_bounds = $location->getSelectionBounds();
         $snippet_bounds = $location->getSnippetBounds();
 
-        $fqcn_parts = explode('\\', static::class);
-        $issue_type = array_pop($fqcn_parts);
-
-        return new \Psalm\Internal\Analyzer\IssueData(
+        return new IssueData(
             $severity,
             $location->getLineNumber(),
             $location->getEndLineNumber(),
-            $issue_type,
+            static::getIssueType(),
             $this->message,
             $location->file_name,
             $location->file_path,

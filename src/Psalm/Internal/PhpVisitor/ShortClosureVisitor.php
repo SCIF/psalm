@@ -1,7 +1,10 @@
 <?php
+
 namespace Psalm\Internal\PhpVisitor;
 
 use PhpParser;
+
+use function is_string;
 
 /**
  * @internal
@@ -15,7 +18,7 @@ class ShortClosureVisitor extends PhpParser\NodeVisitorAbstract
 
     public function enterNode(PhpParser\Node $node): ?int
     {
-        if ($node instanceof PhpParser\Node\Expr\Variable && \is_string($node->name)) {
+        if ($node instanceof PhpParser\Node\Expr\Variable && is_string($node->name)) {
             $this->used_variables['$' . $node->name] = true;
         }
 

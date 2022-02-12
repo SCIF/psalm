@@ -1,4 +1,5 @@
 <?php
+
 namespace Psalm\Internal\TypeVisitor;
 
 use Psalm\Type\Atomic\TArray;
@@ -10,6 +11,9 @@ use Psalm\Type\Atomic\TTrue;
 use Psalm\Type\NodeVisitor;
 use Psalm\Type\TypeNode;
 
+/**
+ * @internal
+ */
 class ContainsLiteralVisitor extends NodeVisitor
 {
     /**
@@ -17,7 +21,7 @@ class ContainsLiteralVisitor extends NodeVisitor
      */
     private $contains_literal = false;
 
-    protected function enterNode(TypeNode $type) : ?int
+    protected function enterNode(TypeNode $type): ?int
     {
         if ($type instanceof TLiteralString
             || $type instanceof TLiteralInt
@@ -29,7 +33,7 @@ class ContainsLiteralVisitor extends NodeVisitor
             return NodeVisitor::STOP_TRAVERSAL;
         }
 
-        if ($type instanceof TArray && $type->type_params[1]->isEmpty()) {
+        if ($type instanceof TArray && $type->isEmptyArray()) {
             $this->contains_literal = true;
             return NodeVisitor::STOP_TRAVERSAL;
         }
@@ -37,7 +41,7 @@ class ContainsLiteralVisitor extends NodeVisitor
         return null;
     }
 
-    public function matches() : bool
+    public function matches(): bool
     {
         return $this->contains_literal;
     }

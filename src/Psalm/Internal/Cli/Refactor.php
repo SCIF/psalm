@@ -2,14 +2,23 @@
 
 namespace Psalm\Internal\Cli;
 
+use Composer\XdebugHandler\XdebugHandler;
 use Psalm\Internal\Analyzer\ProjectAnalyzer;
 use Psalm\Internal\CliUtils;
 use Psalm\Internal\Composer;
 use Psalm\Internal\ErrorHandler;
 use Psalm\Internal\IncludeCollector;
+use Psalm\Internal\Provider\ClassLikeStorageCacheProvider;
+use Psalm\Internal\Provider\FileProvider;
+use Psalm\Internal\Provider\FileStorageCacheProvider;
+use Psalm\Internal\Provider\ParserCacheProvider;
+use Psalm\Internal\Provider\ProjectCacheProvider;
+use Psalm\Internal\Provider\Providers;
 use Psalm\IssueBuffer;
 use Psalm\Progress\DebugProgress;
 use Psalm\Progress\DefaultProgress;
+use Psalm\Report;
+use Psalm\Report\ReportOptions;
 
 use function array_key_exists;
 use function array_map;
@@ -47,6 +56,9 @@ require_once __DIR__ . '/../Composer.php';
 require_once __DIR__ . '/../IncludeCollector.php';
 require_once __DIR__ . '/../../IssueBuffer.php';
 
+/**
+ * @internal
+ */
 final class Refactor
 {
     /** @param array<int,string> $argv */
@@ -110,37 +122,37 @@ final class Refactor
 
         if (array_key_exists('h', $options)) {
             echo <<<HELP
-Usage:
-    psalm-refactor [options] [symbol1] into [symbol2]
+            Usage:
+                psalm-refactor [options] [symbol1] into [symbol2]
 
-Options:
-    -h, --help
-        Display this help message
+            Options:
+                -h, --help
+                    Display this help message
 
-    --debug, --debug-by-line, --debug-emitted-issues
-        Debug information
+                --debug, --debug-by-line, --debug-emitted-issues
+                    Debug information
 
-    -c, --config=psalm.xml
-        Path to a psalm.xml configuration file. Run psalm --init to create one.
+                -c, --config=psalm.xml
+                    Path to a psalm.xml configuration file. Run psalm --init to create one.
 
-    -r, --root
-        If running Psalm globally you'll need to specify a project root. Defaults to cwd
+                -r, --root
+                    If running Psalm globally you'll need to specify a project root. Defaults to cwd
 
-    --threads=auto
-        If greater than one, Psalm will run analysis on multiple threads, speeding things up.
-        By default
+                --threads=auto
+                    If greater than one, Psalm will run analysis on multiple threads, speeding things up.
+                    By default
 
-    --move "[Identifier]" --into "[Class]"
-        Moves the specified item into the class. More than one item can be moved into a class
-        by passing a comma-separated list of values e.g.
+                --move "[Identifier]" --into "[Class]"
+                    Moves the specified item into the class. More than one item can be moved into a class
+                    by passing a comma-separated list of values e.g.
 
-        --move "Ns\Foo::bar,Ns\Foo::baz" --into "Biz\Bang\DestinationClass"
+                    --move "Ns\Foo::bar,Ns\Foo::baz" --into "Biz\Bang\DestinationClass"
 
-    --rename "[Identifier]" --to "[NewIdentifier]"
-        Renames a specified item (e.g. method) and updates all references to it that Psalm can
-        identify.
+                --rename "[Identifier]" --to "[NewIdentifier]"
+                    Renames a specified item (e.g. method) and updates all references to it that Psalm can
+                    identify.
 
-HELP;
+            HELP;
 
             exit;
         }
@@ -168,13 +180,14 @@ HELP;
 
         $include_collector = new IncludeCollector();
         $first_autoloader = $include_collector->runAndCollect(
-            static function () use ($current_dir, $options, $vendor_dir): ?\Composer\Autoload\ClassLoader {
-                return CliUtils::requireAutoloaders($current_dir, isset($options['r']), $vendor_dir);
-            }
+            // we ignore the FQN because of a hack in scoper.inc that needs full path
+            // phpcs:ignore SlevomatCodingStandard.Namespaces.ReferenceUsedNamesOnly.ReferenceViaFullyQualifiedName
+            static fn(): ?\Composer\Autoload\ClassLoader =>
+                CliUtils::requireAutoloaders($current_dir, isset($options['r']), $vendor_dir)
         );
 
         // If Xdebug is enabled, restart without it
-        (new \Composer\XdebugHandler\XdebugHandler('PSALTER'))->check();
+        (new XdebugHandler('PSALTER'))->check();
 
         $path_to_config = CliUtils::getPathToConfig($options);
 
@@ -263,7 +276,7 @@ HELP;
         $config = CliUtils::initializeConfig(
             $path_to_config,
             $current_dir,
-            \Psalm\Report::TYPE_CONSOLE,
+            Report::TYPE_CONSOLE,
             $first_autoloader
         );
         $config->setIncludeCollector($include_collector);
@@ -277,13 +290,13 @@ HELP;
             ? (int)$options['threads']
             : max(1, ProjectAnalyzer::getCpuCount() - 2);
 
-        $providers = new \Psalm\Internal\Provider\Providers(
-            new \Psalm\Internal\Provider\FileProvider(),
-            new \Psalm\Internal\Provider\ParserCacheProvider($config, false),
-            new \Psalm\Internal\Provider\FileStorageCacheProvider($config),
-            new \Psalm\Internal\Provider\ClassLikeStorageCacheProvider($config),
+        $providers = new Providers(
+            new FileProvider(),
+            new ParserCacheProvider($config, false),
+            new FileStorageCacheProvider($config),
+            new ClassLikeStorageCacheProvider($config),
             null,
-            new \Psalm\Internal\Provider\ProjectCacheProvider(Composer::getLockFilePath($current_dir))
+            new ProjectCacheProvider(Composer::getLockFilePath($current_dir))
         );
 
         $debug = array_key_exists('debug', $options) || array_key_exists('debug-by-line', $options);
@@ -298,7 +311,7 @@ HELP;
         $project_analyzer = new ProjectAnalyzer(
             $config,
             $providers,
-            new \Psalm\Report\ReportOptions(),
+            new ReportOptions(),
             [],
             $threads,
             $progress
@@ -307,8 +320,6 @@ HELP;
         if (array_key_exists('debug-by-line', $options)) {
             $project_analyzer->debug_lines = true;
         }
-
-        $config->visitComposerAutoloadFiles($project_analyzer);
 
         $project_analyzer->refactorCodeAfterCompletion($to_refactor);
 

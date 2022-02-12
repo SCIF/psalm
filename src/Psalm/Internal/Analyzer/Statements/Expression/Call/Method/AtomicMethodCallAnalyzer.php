@@ -1,4 +1,5 @@
 <?php
+
 namespace Psalm\Internal\Analyzer\Statements\Expression\Call\Method;
 
 use PhpParser;
@@ -14,15 +15,34 @@ use Psalm\Internal\Analyzer\Statements\Expression\Call\ClassTemplateParamCollect
 use Psalm\Internal\Analyzer\Statements\Expression\CallAnalyzer;
 use Psalm\Internal\Analyzer\Statements\ExpressionAnalyzer;
 use Psalm\Internal\Analyzer\StatementsAnalyzer;
+use Psalm\Internal\Analyzer\TraitAnalyzer;
 use Psalm\Internal\Codebase\InternalCallMapHandler;
 use Psalm\Internal\Codebase\VariableUseGraph;
 use Psalm\Internal\MethodIdentifier;
+use Psalm\Internal\Type\TemplateResult;
+use Psalm\Internal\Type\TypeExpander;
 use Psalm\Issue\MixedMethodCall;
 use Psalm\IssueBuffer;
+use Psalm\StatementsSource;
+use Psalm\Storage\ClassLikeStorage;
 use Psalm\Type;
+use Psalm\Type\Atomic;
+use Psalm\Type\Atomic\TEmptyMixed;
+use Psalm\Type\Atomic\TFalse;
+use Psalm\Type\Atomic\TGenericObject;
+use Psalm\Type\Atomic\TMixed;
 use Psalm\Type\Atomic\TNamedObject;
+use Psalm\Type\Atomic\TNever;
+use Psalm\Type\Atomic\TNonEmptyMixed;
+use Psalm\Type\Atomic\TNull;
+use Psalm\Type\Atomic\TObject;
+use Psalm\Type\Atomic\TObjectWithProperties;
+use Psalm\Type\Atomic\TTemplateParam;
+use Psalm\Type\Union;
 
+use function array_keys;
 use function array_merge;
+use function array_search;
 use function array_shift;
 use function array_values;
 use function count;
@@ -36,11 +56,13 @@ use function strtolower;
  * methods.
  *
  * The happy path (i.e 99% of method calls) is handled in ExistingAtomicMethodCallAnalyzer
+ *
+ * @internal
  */
 class AtomicMethodCallAnalyzer extends CallAnalyzer
 {
     /**
-     * @param  Type\Atomic\TNamedObject|Type\Atomic\TTemplateParam  $static_type
+     * @param  TNamedObject|TTemplateParam|null $static_type
      *
      * @psalm-suppress ComplexMethod it's really complex, but unavoidably so
      */
@@ -49,14 +71,15 @@ class AtomicMethodCallAnalyzer extends CallAnalyzer
         PhpParser\Node\Expr\MethodCall $stmt,
         Codebase $codebase,
         Context $context,
-        Type\Union $lhs_type,
-        Type\Atomic $lhs_type_part,
-        ?Type\Atomic $static_type,
+        Union $lhs_type,
+        Atomic $lhs_type_part,
+        ?Atomic $static_type,
         bool $is_intersection,
         ?string $lhs_var_id,
-        AtomicMethodCallAnalysisResult $result
-    ) : void {
-        if ($lhs_type_part instanceof Type\Atomic\TTemplateParam
+        AtomicMethodCallAnalysisResult $result,
+        ?TemplateResult $inferred_template_result = null
+    ): void {
+        if ($lhs_type_part instanceof TTemplateParam
             && !$lhs_type_part->as->isMixed()
         ) {
             $extra_types = $lhs_type_part->extra_types;
@@ -69,7 +92,7 @@ class AtomicMethodCallAnalyzer extends CallAnalyzer
 
             if ($lhs_type_part instanceof TNamedObject) {
                 $lhs_type_part->extra_types = $extra_types;
-            } elseif ($lhs_type_part instanceof Type\Atomic\TObject && $extra_types) {
+            } elseif ($lhs_type_part instanceof TObject && $extra_types) {
                 $lhs_type_part = array_shift($extra_types);
                 if ($extra_types) {
                     $lhs_type_part->extra_types = $extra_types;
@@ -101,8 +124,8 @@ class AtomicMethodCallAnalyzer extends CallAnalyzer
             && !$context->collect_mutations
             && $statements_analyzer->getFilePath() === $statements_analyzer->getRootFilePath()
             && (!(($parent_source = $statements_analyzer->getSource())
-                    instanceof \Psalm\Internal\Analyzer\FunctionLikeAnalyzer)
-                || !$parent_source->getSource() instanceof \Psalm\Internal\Analyzer\TraitAnalyzer)
+                    instanceof FunctionLikeAnalyzer)
+                || !$parent_source->getSource() instanceof TraitAnalyzer)
         ) {
             $codebase->analyzer->incrementNonMixedCount($statements_analyzer->getFilePath());
         }
@@ -185,7 +208,7 @@ class AtomicMethodCallAnalyzer extends CallAnalyzer
 
         $method_id = new MethodIdentifier($fq_class_name, $method_name_lc);
 
-        $args = $stmt->getArgs();
+        $args = $stmt->isFirstClassCallable() ? [] : $stmt->getArgs();
 
         $naive_method_id = $method_id;
 
@@ -227,7 +250,7 @@ class AtomicMethodCallAnalyzer extends CallAnalyzer
             // @mixin attributes are an absolute pain! Lots of complexity here,
             // as they can redefine the called class, method id etc.
             if ($class_storage->templatedMixins
-                && $lhs_type_part instanceof Type\Atomic\TGenericObject
+                && $lhs_type_part instanceof TGenericObject
                 && $class_storage->template_types
             ) {
                 [$lhs_type_part, $class_storage, $naive_method_exists, $method_id, $fq_class_name]
@@ -334,7 +357,8 @@ class AtomicMethodCallAnalyzer extends CallAnalyzer
                     $context,
                     $codebase->config,
                     $all_intersection_return_type,
-                    $result
+                    $result,
+                    $lhs_type_part
                 );
 
                 if ($new_call_context) {
@@ -397,7 +421,8 @@ class AtomicMethodCallAnalyzer extends CallAnalyzer
                 $all_intersection_existent_method_ids,
                 $intersection_method_id,
                 $cased_method_id,
-                $result
+                $result,
+                $lhs_type_part
             );
 
             return;
@@ -416,7 +441,8 @@ class AtomicMethodCallAnalyzer extends CallAnalyzer
             $static_type,
             $lhs_var_id,
             $method_id,
-            $result
+            $result,
+            $inferred_template_result
         );
 
         $statements_analyzer->node_data = $old_node_data;
@@ -448,29 +474,29 @@ class AtomicMethodCallAnalyzer extends CallAnalyzer
     }
 
     /**
-     * @param  Type\Atomic\TNamedObject|Type\Atomic\TTemplateParam  $lhs_type_part
-     * @param   array<string, Type\Atomic> $intersection_types
+     * @param  TNamedObject|TTemplateParam $lhs_type_part
+     * @param   array<string, Atomic> $intersection_types
      *
-     * @return  array{?Type\Union, array<string>}
+     * @return  array{?Union, array<string>}
      */
     private static function getIntersectionReturnType(
         StatementsAnalyzer $statements_analyzer,
         PhpParser\Node\Expr\MethodCall $stmt,
         Codebase $codebase,
         Context $context,
-        Type\Union $lhs_type,
-        Type\Atomic $lhs_type_part,
+        Union $lhs_type,
+        Atomic $lhs_type_part,
         ?string $lhs_var_id,
         AtomicMethodCallAnalysisResult $result,
         array $intersection_types
-    ) : array {
+    ): array {
         $all_intersection_return_type = null;
         $all_intersection_existent_method_ids = [];
 
         foreach ($intersection_types as $intersection_type) {
             $intersection_result = clone $result;
 
-            /** @var ?Type\Union $intersection_result->return_type */
+            /** @var ?Union $intersection_result->return_type */
             $intersection_result->return_type = null;
 
             self::analyze(
@@ -517,10 +543,10 @@ class AtomicMethodCallAnalyzer extends CallAnalyzer
 
     private static function updateResultReturnType(
         AtomicMethodCallAnalysisResult $result,
-        Type\Union $return_type_candidate,
-        ?Type\Union $all_intersection_return_type,
+        Union $return_type_candidate,
+        ?Union $all_intersection_return_type,
         Codebase $codebase
-    ) : void {
+    ): void {
         if ($all_intersection_return_type) {
             $return_type_candidate = Type::intersectUnionTypes(
                 $all_intersection_return_type,
@@ -536,39 +562,39 @@ class AtomicMethodCallAnalyzer extends CallAnalyzer
         StatementsAnalyzer $statements_analyzer,
         Codebase $codebase,
         PhpParser\Node\Expr\MethodCall $stmt,
-        Type\Union $lhs_type,
-        Type\Atomic $lhs_type_part,
+        Union $lhs_type,
+        Atomic $lhs_type_part,
         ?string $lhs_var_id,
         Context $context,
         bool $is_intersection,
         AtomicMethodCallAnalysisResult $result
-    ) : void {
+    ): void {
         switch (get_class($lhs_type_part)) {
-            case Type\Atomic\TNull::class:
-            case Type\Atomic\TFalse::class:
+            case TNull::class:
+            case TFalse::class:
                 // handled above
                 return;
 
-            case Type\Atomic\TTemplateParam::class:
-            case Type\Atomic\TEmptyMixed::class:
-            case Type\Atomic\TEmpty::class:
-            case Type\Atomic\TMixed::class:
-            case Type\Atomic\TNonEmptyMixed::class:
-            case Type\Atomic\TObject::class:
-            case Type\Atomic\TObjectWithProperties::class:
+            case TTemplateParam::class:
+            case TEmptyMixed::class:
+            case TNever::class:
+            case TMixed::class:
+            case TNonEmptyMixed::class:
+            case TObject::class:
+            case TObjectWithProperties::class:
                 if (!$context->collect_initializations
                     && !$context->collect_mutations
                     && $statements_analyzer->getFilePath() === $statements_analyzer->getRootFilePath()
                     && (!(($parent_source = $statements_analyzer->getSource())
-                            instanceof \Psalm\Internal\Analyzer\FunctionLikeAnalyzer)
-                        || !$parent_source->getSource() instanceof \Psalm\Internal\Analyzer\TraitAnalyzer)
+                            instanceof FunctionLikeAnalyzer)
+                        || !$parent_source->getSource() instanceof TraitAnalyzer)
                 ) {
                     $codebase->analyzer->incrementMixedCount($statements_analyzer->getFilePath());
                 }
 
                 $result->has_mixed_method_call = true;
 
-                if ($lhs_type_part instanceof Type\Atomic\TObjectWithProperties
+                if ($lhs_type_part instanceof TObjectWithProperties
                     && $stmt->name instanceof PhpParser\Node\Identifier
                     && isset($lhs_type_part->methods[$stmt->name->name])
                 ) {
@@ -612,16 +638,14 @@ class AtomicMethodCallAnalyzer extends CallAnalyzer
                             $origin_location = null;
                         }
 
-                        if (IssueBuffer::accepts(
+                        IssueBuffer::maybeAdd(
                             new MixedMethodCall(
                                 $message,
                                 $name_code_location,
                                 $origin_location
                             ),
                             $statements_analyzer->getSuppressedIssues()
-                        )) {
-                            // fall through
-                        }
+                        );
                     }
                 }
 
@@ -647,16 +671,16 @@ class AtomicMethodCallAnalyzer extends CallAnalyzer
 
     /**
      * @param lowercase-string $method_name_lc
-     * @return array{Type\Atomic\TNamedObject, \Psalm\Storage\ClassLikeStorage, bool, MethodIdentifier, string}
+     * @return array{TNamedObject, ClassLikeStorage, bool, MethodIdentifier, string}
      */
     private static function handleTemplatedMixins(
-        \Psalm\Storage\ClassLikeStorage $class_storage,
-        Type\Atomic\TNamedObject $lhs_type_part,
+        ClassLikeStorage $class_storage,
+        TNamedObject $lhs_type_part,
         string $method_name_lc,
         Codebase $codebase,
         Context $context,
         MethodIdentifier $method_id,
-        \Psalm\StatementsSource $source,
+        StatementsSource $source,
         PhpParser\Node\Expr\MethodCall $stmt,
         StatementsAnalyzer $statements_analyzer,
         string $fq_class_name
@@ -664,13 +688,13 @@ class AtomicMethodCallAnalyzer extends CallAnalyzer
         $naive_method_exists = false;
 
         if ($class_storage->templatedMixins
-            && $lhs_type_part instanceof Type\Atomic\TGenericObject
+            && $lhs_type_part instanceof TGenericObject
             && $class_storage->template_types
         ) {
-            $template_type_keys = \array_keys($class_storage->template_types);
+            $template_type_keys = array_keys($class_storage->template_types);
 
             foreach ($class_storage->templatedMixins as $mixin) {
-                $param_position = \array_search(
+                $param_position = array_search(
                     $mixin->param_name,
                     $template_type_keys
                 );
@@ -684,7 +708,7 @@ class AtomicMethodCallAnalyzer extends CallAnalyzer
                             $current_type_param->getAtomicTypes()
                         )[0];
 
-                        if ($lhs_type_part_new instanceof Type\Atomic\TNamedObject) {
+                        if ($lhs_type_part_new instanceof TNamedObject) {
                             $new_method_id = new MethodIdentifier(
                                 $lhs_type_part_new->value,
                                 $method_name_lc
@@ -735,16 +759,16 @@ class AtomicMethodCallAnalyzer extends CallAnalyzer
 
     /**
      * @param lowercase-string $method_name_lc
-     * @return array{Type\Atomic\TNamedObject, \Psalm\Storage\ClassLikeStorage, bool, MethodIdentifier, string}
+     * @return array{TNamedObject, ClassLikeStorage, bool, MethodIdentifier, string}
      */
     private static function handleRegularMixins(
-        \Psalm\Storage\ClassLikeStorage $class_storage,
-        Type\Atomic\TNamedObject $lhs_type_part,
+        ClassLikeStorage $class_storage,
+        TNamedObject $lhs_type_part,
         string $method_name_lc,
         Codebase $codebase,
         Context $context,
         MethodIdentifier $method_id,
-        \Psalm\StatementsSource $source,
+        StatementsSource $source,
         PhpParser\Node\Expr\MethodCall $stmt,
         StatementsAnalyzer $statements_analyzer,
         string $fq_class_name,
@@ -792,13 +816,13 @@ class AtomicMethodCallAnalyzer extends CallAnalyzer
                 $lhs_type_part = clone $mixin;
 
                 $lhs_type_part->replaceTemplateTypesWithArgTypes(
-                    new \Psalm\Internal\Type\TemplateResult([], $mixin_class_template_params ?: []),
+                    new TemplateResult([], $mixin_class_template_params ?: []),
                     $codebase
                 );
 
-                $lhs_type_expanded = \Psalm\Internal\Type\TypeExpander::expandUnion(
+                $lhs_type_expanded = TypeExpander::expandUnion(
                     $codebase,
-                    new Type\Union([$lhs_type_part]),
+                    new Union([$lhs_type_part]),
                     $mixin_declaring_class_storage->name,
                     $fq_class_name,
                     $class_storage->parent_class,
@@ -807,9 +831,9 @@ class AtomicMethodCallAnalyzer extends CallAnalyzer
                     $class_storage->final
                 );
 
-                $new_lhs_type_part = array_values($lhs_type_expanded->getAtomicTypes())[0];
+                $new_lhs_type_part = $lhs_type_expanded->getSingleAtomic();
 
-                if ($new_lhs_type_part instanceof Type\Atomic\TNamedObject) {
+                if ($new_lhs_type_part instanceof TNamedObject) {
                     $lhs_type_part = $new_lhs_type_part;
                 }
 

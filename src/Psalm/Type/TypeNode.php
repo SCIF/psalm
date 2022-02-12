@@ -1,4 +1,5 @@
 <?php
+
 namespace Psalm\Type;
 
 interface TypeNode
@@ -6,5 +7,5 @@ interface TypeNode
     /**
      * @return array<TypeNode>
      */
-    public function getChildNodes() : array;
+    public function getChildNodes(): array;
 }

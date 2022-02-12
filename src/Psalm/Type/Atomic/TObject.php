@@ -1,10 +1,13 @@
 <?php
+
 namespace Psalm\Type\Atomic;
+
+use Psalm\Type\Atomic;
 
 /**
  * Denotes the `object` type
  */
-class TObject extends \Psalm\Type\Atomic
+class TObject extends Atomic
 {
     public function __toString(): string
     {
@@ -23,16 +26,12 @@ class TObject extends \Psalm\Type\Atomic
         ?string $namespace,
         array $aliased_classes,
         ?string $this_class,
-        int $php_major_version,
-        int $php_minor_version
+        int $analysis_php_version_id
     ): ?string {
-        return $php_major_version > 7
-            || ($php_major_version === 7 && $php_minor_version >= 2)
-            ? $this->getKey()
-            : null;
+        return $analysis_php_version_id >= 7_02_00 ? $this->getKey() : null;
     }
 
-    public function canBeFullyExpressedInPhp(int $php_major_version, int $php_minor_version): bool
+    public function canBeFullyExpressedInPhp(int $analysis_php_version_id): bool
     {
         return true;
     }

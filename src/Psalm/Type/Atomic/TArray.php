@@ -1,7 +1,9 @@
 <?php
+
 namespace Psalm\Type\Atomic;
 
 use Psalm\Type\Atomic;
+use Psalm\Type\Union;
 
 use function count;
 use function get_class;
@@ -9,12 +11,12 @@ use function get_class;
 /**
  * Denotes a simple array of the form `array<TKey, TValue>`. It expects an array with two elements, both union types.
  */
-class TArray extends \Psalm\Type\Atomic
+class TArray extends Atomic
 {
     use GenericTrait;
 
     /**
-     * @var array{\Psalm\Type\Union, \Psalm\Type\Union}
+     * @var array{Union, Union}
      */
     public $type_params;
 
@@ -26,7 +28,7 @@ class TArray extends \Psalm\Type\Atomic
     /**
      * Constructs a new instance of a generic type
      *
-     * @param array{\Psalm\Type\Union, \Psalm\Type\Union} $type_params
+     * @param array{Union, Union} $type_params
      */
     public function __construct(array $type_params)
     {
@@ -45,13 +47,12 @@ class TArray extends \Psalm\Type\Atomic
         ?string $namespace,
         array $aliased_classes,
         ?string $this_class,
-        int $php_major_version,
-        int $php_minor_version
+        int $analysis_php_version_id
     ): string {
         return $this->getKey();
     }
 
-    public function canBeFullyExpressedInPhp(int $php_major_version, int $php_minor_version): bool
+    public function canBeFullyExpressedInPhp(int $analysis_php_version_id): bool
     {
         return $this->type_params[0]->isArrayKey() && $this->type_params[1]->isMixed();
     }
@@ -82,12 +83,17 @@ class TArray extends \Psalm\Type\Atomic
         return true;
     }
 
-    public function getAssertionString(bool $exact = false): string
+    public function getAssertionString(): string
     {
-        if (!$exact || $this->type_params[1]->isMixed()) {
+        if ($this->type_params[0]->isMixed() && $this->type_params[1]->isMixed()) {
             return 'array';
         }
 
-        return $this->toNamespacedString(null, [], null, false);
+        return $this->getId();
+    }
+
+    public function isEmptyArray(): bool
+    {
+        return $this->type_params[1]->isNever();
     }
 }

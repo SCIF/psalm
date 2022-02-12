@@ -1,5 +1,13 @@
 <?php
+
 namespace Psalm\Internal\Provider;
+
+use FilesystemIterator;
+use RecursiveCallbackFilterIterator;
+use RecursiveDirectoryIterator;
+use RecursiveIterator;
+use RecursiveIteratorIterator;
+use UnexpectedValueException;
 
 use function file_exists;
 use function file_get_contents;
@@ -9,6 +17,11 @@ use function in_array;
 use function is_dir;
 use function strtolower;
 
+use const DIRECTORY_SEPARATOR;
+
+/**
+ * @internal
+ */
 class FileProvider
 {
     /**
@@ -33,11 +46,11 @@ class FileProvider
         }
 
         if (!file_exists($file_path)) {
-            throw new \UnexpectedValueException('File ' . $file_path . ' should exist to get contents');
+            throw new UnexpectedValueException('File ' . $file_path . ' should exist to get contents');
         }
 
         if (is_dir($file_path)) {
-            throw new \UnexpectedValueException('File ' . $file_path . ' is a directory');
+            throw new UnexpectedValueException('File ' . $file_path . ' is a directory');
         }
 
         return (string)file_get_contents($file_path);
@@ -68,7 +81,7 @@ class FileProvider
     public function getModifiedTime(string $file_path): int
     {
         if (!file_exists($file_path)) {
-            throw new \UnexpectedValueException('File should exist to get modified time');
+            throw new UnexpectedValueException('File should exist to get modified time');
         }
 
         return (int)filemtime($file_path);
@@ -108,23 +121,43 @@ class FileProvider
 
     /**
      * @param array<string> $file_extensions
+     * @param null|callable(string):bool $filter
      *
      * @return list<string>
      */
-    public function getFilesInDir(string $dir_path, array $file_extensions): array
+    public function getFilesInDir(string $dir_path, array $file_extensions, callable $filter = null): array
     {
         $file_paths = [];
 
-        /** @var \RecursiveDirectoryIterator */
-        $iterator = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($dir_path));
+        $iterator = new RecursiveDirectoryIterator(
+            $dir_path,
+            FilesystemIterator::CURRENT_AS_PATHNAME | FilesystemIterator::SKIP_DOTS
+        );
+
+        if ($filter !== null) {
+            $iterator = new RecursiveCallbackFilterIterator(
+                $iterator,
+                /** @param mixed $_ */
+                function (string $current, $_, RecursiveIterator $iterator) use ($filter): bool {
+                    if ($iterator->hasChildren()) {
+                        $path = $current . DIRECTORY_SEPARATOR;
+                    } else {
+                        $path = $current;
+                    }
+
+                    return $filter($path);
+                }
+            );
+        }
+
+        /** @var RecursiveDirectoryIterator */
+        $iterator = new RecursiveIteratorIterator($iterator);
         $iterator->rewind();
 
         while ($iterator->valid()) {
-            if (!$iterator->isDot()) {
-                $extension = $iterator->getExtension();
-                if (in_array($extension, $file_extensions, true)) {
-                    $file_paths[] = (string)$iterator->getRealPath();
-                }
+            $extension = $iterator->getExtension();
+            if (in_array($extension, $file_extensions, true)) {
+                $file_paths[] = (string)$iterator->getRealPath();
             }
 
             $iterator->next();

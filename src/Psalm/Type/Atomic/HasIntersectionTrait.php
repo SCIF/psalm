@@ -1,10 +1,10 @@
 <?php
+
 namespace Psalm\Type\Atomic;
 
 use Psalm\Codebase;
 use Psalm\Internal\Type\TemplateResult;
 use Psalm\Internal\Type\TemplateStandinTypeReplacer;
-use Psalm\Type;
 use Psalm\Type\Atomic;
 
 use function array_map;
@@ -25,7 +25,7 @@ trait HasIntersectionTrait
         array $aliased_classes,
         ?string $this_class,
         bool $use_phpdoc_format
-    ) : string {
+    ): string {
         if (!$this->extra_types) {
             return '';
         }
@@ -35,22 +35,13 @@ trait HasIntersectionTrait
             array_map(
                 /**
                  * @param TNamedObject|TTemplateParam|TIterable|TObjectWithProperties $extra_type
-                 *
-                 * @return string
                  */
-                static function (Atomic $extra_type) use (
+                static fn(Atomic $extra_type): string => $extra_type->toNamespacedString(
                     $namespace,
                     $aliased_classes,
                     $this_class,
                     $use_phpdoc_format
-                ): string {
-                    return $extra_type->toNamespacedString(
-                        $namespace,
-                        $aliased_classes,
-                        $this_class,
-                        $use_phpdoc_format
-                    );
-                },
+                ),
                 $this->extra_types
             )
         );
@@ -59,7 +50,7 @@ trait HasIntersectionTrait
     /**
      * @param TNamedObject|TTemplateParam|TIterable|TObjectWithProperties $type
      */
-    public function addIntersectionType(Type\Atomic $type) : void
+    public function addIntersectionType(Atomic $type): void
     {
         $this->extra_types[$type->getKey()] = $type;
     }
@@ -67,7 +58,7 @@ trait HasIntersectionTrait
     /**
      * @return array<string, TNamedObject|TTemplateParam|TIterable|TObjectWithProperties>|null
      */
-    public function getIntersectionTypes() : ?array
+    public function getIntersectionTypes(): ?array
     {
         return $this->extra_types;
     }
@@ -75,7 +66,7 @@ trait HasIntersectionTrait
     public function replaceIntersectionTemplateTypesWithArgTypes(
         TemplateResult $template_result,
         ?Codebase $codebase
-    ) : void {
+    ): void {
         if (!$this->extra_types) {
             return;
         }

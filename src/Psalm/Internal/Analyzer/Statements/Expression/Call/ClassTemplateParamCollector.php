@@ -1,4 +1,5 @@
 <?php
+
 namespace Psalm\Internal\Analyzer\Statements\Expression\Call;
 
 use Psalm\Codebase;
@@ -8,16 +9,21 @@ use Psalm\Type;
 use Psalm\Type\Atomic;
 use Psalm\Type\Atomic\TClassConstant;
 use Psalm\Type\Atomic\TGenericObject;
+use Psalm\Type\Atomic\TTemplateParam;
+use Psalm\Type\Union;
 
 use function array_keys;
 use function array_merge;
 use function array_search;
 
+/**
+ * @internal
+ */
 class ClassTemplateParamCollector
 {
     /**
      * @param lowercase-string $method_name
-     * @return array<string, non-empty-array<string, Type\Union>>|null
+     * @return array<string, non-empty-array<string, Union>>|null
      * @psalm-suppress MoreSpecificReturnType
      * @psalm-suppress LessSpecificReturnStatement
      */
@@ -26,7 +32,7 @@ class ClassTemplateParamCollector
         ClassLikeStorage $class_storage,
         ClassLikeStorage $static_class_storage,
         ?string $method_name = null,
-        ?Type\Atomic $lhs_type_part = null,
+        ?Atomic $lhs_type_part = null,
         bool $self_call = false
     ): ?array {
         $static_fq_class_name = $static_class_storage->name;
@@ -113,57 +119,11 @@ class ClassTemplateParamCollector
                 ) {
                     $input_type_extends = $e[$class_storage->name][$type_name];
 
-                    $output_type_extends = null;
-
-                    foreach ($input_type_extends->getAtomicTypes() as $type_extends_atomic) {
-                        if ($type_extends_atomic instanceof Type\Atomic\TTemplateParam) {
-                            if (isset($static_class_storage->template_types[$type_extends_atomic->param_name])) {
-                                $mapped_offset = array_search(
-                                    $type_extends_atomic->param_name,
-                                    array_keys($static_class_storage->template_types),
-                                    true
-                                );
-
-                                if ($mapped_offset !== false
-                                    && isset($lhs_type_part->type_params[$mapped_offset])
-                                ) {
-                                    $output_type_extends = Type::combineUnionTypes(
-                                        $lhs_type_part->type_params[$mapped_offset],
-                                        $output_type_extends
-                                    );
-                                }
-                            } elseif (isset(
-                                $static_class_storage
-                                    ->template_extended_params
-                                        [$type_extends_atomic->defining_class]
-                                        [$type_extends_atomic->param_name]
-                            )) {
-                                $mapped_offset = array_search(
-                                    $type_extends_atomic->param_name,
-                                    array_keys(
-                                        $static_class_storage->template_extended_params
-                                            [$type_extends_atomic->defining_class]
-                                    ),
-                                    true
-                                );
-
-                                if ($mapped_offset !== false
-                                    && isset($lhs_type_part->type_params[$mapped_offset])
-                                ) {
-                                    $output_type_extends = Type::combineUnionTypes(
-                                        $lhs_type_part->type_params[$mapped_offset],
-                                        $output_type_extends
-                                    );
-                                }
-                            }
-                        } else {
-                            $output_type_extends = Type::combineUnionTypes(
-                                new Type\Union([$type_extends_atomic]),
-                                $output_type_extends
-                            );
-                        }
-                    }
-
+                    $output_type_extends = self::resolveTemplateParam(
+                        $input_type_extends,
+                        $static_class_storage,
+                        $lhs_type_part
+                    );
                     if (!$self_call || $static_fq_class_name !== $class_storage->name) {
                         $class_template_params[$type_name][$class_storage->name]
                             = $output_type_extends ?? Type::getMixed();
@@ -185,7 +145,7 @@ class ClassTemplateParamCollector
                         && isset($e[$candidate_class_storage->name][$type_name])
                         && !isset($class_template_params[$type_name][$candidate_class_storage->name])
                     ) {
-                        $class_template_params[$type_name][$candidate_class_storage->name] = new Type\Union(
+                        $class_template_params[$type_name][$candidate_class_storage->name] = new Union(
                             self::expandType(
                                 $codebase,
                                 $e[$candidate_class_storage->name][$type_name],
@@ -208,21 +168,81 @@ class ClassTemplateParamCollector
         return $class_template_params;
     }
 
+    public static function resolveTemplateParam(
+        Union $input_type_extends,
+        ClassLikeStorage $static_class_storage,
+        TGenericObject $lhs_type_part
+    ): ?Union {
+        $output_type_extends = null;
+        foreach ($input_type_extends->getAtomicTypes() as $type_extends_atomic) {
+            if ($type_extends_atomic instanceof TTemplateParam) {
+                if (isset(
+                    $static_class_storage
+                            ->template_types
+                                [$type_extends_atomic->param_name]
+                                [$type_extends_atomic->defining_class]
+                )
+                ) {
+                    $mapped_offset = array_search(
+                        $type_extends_atomic->param_name,
+                        array_keys($static_class_storage->template_types),
+                        true
+                    );
+
+                    if ($mapped_offset !== false
+                        && isset($lhs_type_part->type_params[$mapped_offset])
+                    ) {
+                        $output_type_extends = Type::combineUnionTypes(
+                            $lhs_type_part->type_params[$mapped_offset],
+                            $output_type_extends
+                        );
+                    }
+                } elseif (isset(
+                    $static_class_storage
+                        ->template_extended_params
+                            [$type_extends_atomic->defining_class]
+                            [$type_extends_atomic->param_name]
+                )) {
+                    $nested_output_type = self::resolveTemplateParam(
+                        $static_class_storage
+                        ->template_extended_params
+                            [$type_extends_atomic->defining_class]
+                            [$type_extends_atomic->param_name],
+                        $static_class_storage,
+                        $lhs_type_part
+                    );
+                    if ($nested_output_type !== null) {
+                        $output_type_extends = Type::combineUnionTypes(
+                            $nested_output_type,
+                            $output_type_extends
+                        );
+                    }
+                }
+            } else {
+                $output_type_extends = Type::combineUnionTypes(
+                    new Union([$type_extends_atomic]),
+                    $output_type_extends
+                );
+            }
+        }
+        return $output_type_extends;
+    }
+
     /**
-     * @param array<string, array<string, Type\Union>> $e
-     * @return non-empty-list<Type\Atomic>
+     * @param array<string, array<string, Union>> $e
+     * @return non-empty-list<Atomic>
      */
     private static function expandType(
         Codebase $codebase,
-        Type\Union $input_type_extends,
+        Union $input_type_extends,
         array $e,
         string $static_fq_class_name,
         ?array $static_template_types
-    ) : array {
+    ): array {
         $output_type_extends = [];
 
         foreach ($input_type_extends->getAtomicTypes() as $type_extends_atomic) {
-            if ($type_extends_atomic instanceof Type\Atomic\TTemplateParam
+            if ($type_extends_atomic instanceof TTemplateParam
                 && ($static_fq_class_name !== $type_extends_atomic->defining_class
                     || !isset($static_template_types[$type_extends_atomic->param_name]))
                 && isset($e[$type_extends_atomic->defining_class][$type_extends_atomic->param_name])
@@ -248,12 +268,8 @@ class ClassTemplateParamCollector
                     true
                 );
 
-                if ($expanded instanceof Atomic) {
-                    $output_type_extends[] = $expanded;
-                } else {
-                    foreach ($expanded as $type) {
-                        $output_type_extends[] = $type;
-                    }
+                foreach ($expanded as $type) {
+                    $output_type_extends[] = $type;
                 }
             } else {
                 $output_type_extends[] = $type_extends_atomic;

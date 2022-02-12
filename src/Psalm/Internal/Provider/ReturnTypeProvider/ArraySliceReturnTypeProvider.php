@@ -1,25 +1,40 @@
 <?php
+
 namespace Psalm\Internal\Provider\ReturnTypeProvider;
 
+use Psalm\Internal\Analyzer\StatementsAnalyzer;
 use Psalm\Plugin\EventHandler\Event\FunctionReturnTypeProviderEvent;
+use Psalm\Plugin\EventHandler\FunctionReturnTypeProviderInterface;
 use Psalm\Type;
+use Psalm\Type\Atomic\TArray;
+use Psalm\Type\Atomic\TKeyedArray;
+use Psalm\Type\Atomic\TList;
+use Psalm\Type\Atomic\TTemplateParam;
+use Psalm\Type\Union;
+use UnexpectedValueException;
 
-class ArraySliceReturnTypeProvider implements \Psalm\Plugin\EventHandler\FunctionReturnTypeProviderInterface
+use function array_merge;
+use function array_shift;
+
+/**
+ * @internal
+ */
+class ArraySliceReturnTypeProvider implements FunctionReturnTypeProviderInterface
 {
     /**
      * @return array<lowercase-string>
      */
-    public static function getFunctionIds() : array
+    public static function getFunctionIds(): array
     {
         return ['array_slice'];
     }
 
-    public static function getFunctionReturnType(FunctionReturnTypeProviderEvent $event) : Type\Union
+    public static function getFunctionReturnType(FunctionReturnTypeProviderEvent $event): Union
     {
         $statements_source = $event->getStatementsSource();
         $call_args = $event->getCallArgs();
 
-        if (!$statements_source instanceof \Psalm\Internal\Analyzer\StatementsAnalyzer) {
+        if (!$statements_source instanceof StatementsAnalyzer) {
             return Type::getMixed();
         }
 
@@ -39,30 +54,30 @@ class ArraySliceReturnTypeProvider implements \Psalm\Plugin\EventHandler\Functio
 
         $return_atomic_type = null;
 
-        while ($atomic_type = \array_shift($atomic_types)) {
-            if ($atomic_type instanceof Type\Atomic\TTemplateParam) {
-                $atomic_types = \array_merge($atomic_types, $atomic_type->as->getAtomicTypes());
+        while ($atomic_type = array_shift($atomic_types)) {
+            if ($atomic_type instanceof TTemplateParam) {
+                $atomic_types = array_merge($atomic_types, $atomic_type->as->getAtomicTypes());
                 continue;
             }
 
             $already_cloned = false;
 
-            if ($atomic_type instanceof Type\Atomic\TKeyedArray) {
+            if ($atomic_type instanceof TKeyedArray) {
                 $already_cloned = true;
                 $atomic_type = $atomic_type->getGenericArrayType();
             }
 
-            if ($atomic_type instanceof Type\Atomic\TArray) {
+            if ($atomic_type instanceof TArray) {
                 if (!$already_cloned) {
                     $atomic_type = clone $atomic_type;
                 }
 
-                $return_atomic_type = new Type\Atomic\TArray($atomic_type->type_params);
+                $return_atomic_type = new TArray($atomic_type->type_params);
                 continue;
             }
 
-            if ($atomic_type instanceof Type\Atomic\TList) {
-                $return_atomic_type = new Type\Atomic\TArray([Type::getInt(), clone $atomic_type->type_param]);
+            if ($atomic_type instanceof TList) {
+                $return_atomic_type = new TArray([Type::getInt(), clone $atomic_type->type_param]);
                 continue;
             }
 
@@ -70,7 +85,7 @@ class ArraySliceReturnTypeProvider implements \Psalm\Plugin\EventHandler\Functio
         }
 
         if (!$return_atomic_type) {
-            throw new \UnexpectedValueException('This should never happen');
+            throw new UnexpectedValueException('This should never happen');
         }
 
         $dont_preserve_int_keys = !isset($call_args[3]->value)
@@ -78,9 +93,9 @@ class ArraySliceReturnTypeProvider implements \Psalm\Plugin\EventHandler\Functio
                 && ((string) $third_arg_type === 'false'));
 
         if ($dont_preserve_int_keys && $return_atomic_type->type_params[0]->isInt()) {
-            $return_atomic_type = new Type\Atomic\TList($return_atomic_type->type_params[1]);
+            $return_atomic_type = new TList($return_atomic_type->type_params[1]);
         }
 
-        return new Type\Union([$return_atomic_type]);
+        return new Union([$return_atomic_type]);
     }
 }

@@ -1,6 +1,8 @@
 <?php
+
 namespace Psalm\Tests;
 
+use InvalidArgumentException;
 use Prophecy\Argument;
 use Prophecy\PhpUnit\ProphecyTrait;
 use Prophecy\Prophecy\ObjectProphecy;
@@ -30,7 +32,7 @@ class PsalmPluginTest extends TestCase
     /** @var Application */
     private $app;
 
-    public function setUp() : void
+    public function setUp(): void
     {
         RuntimeCaches::clearAll();
         $this->plugin_list = $this->prophesize(PluginList::class);
@@ -166,7 +168,7 @@ class PsalmPluginTest extends TestCase
      */
     public function enableComplainsWhenPassedUnresolvablePlugin(): void
     {
-        $this->plugin_list->resolvePluginClass(Argument::any())->willThrow(new \InvalidArgumentException);
+        $this->plugin_list->resolvePluginClass(Argument::any())->willThrow(new InvalidArgumentException);
 
         $enable_command = new CommandTester($this->app->find('enable'));
         $enable_command->execute(['pluginName' => 'vendor/package']);
@@ -237,7 +239,7 @@ class PsalmPluginTest extends TestCase
      */
     public function disableComplainsWhenPassedUnresolvablePlugin(): void
     {
-        $this->plugin_list->resolvePluginClass(Argument::any())->willThrow(new \InvalidArgumentException);
+        $this->plugin_list->resolvePluginClass(Argument::any())->willThrow(new InvalidArgumentException);
 
         $disable_command = new CommandTester($this->app->find('disable'));
         $disable_command->execute(['pluginName' => 'vendor/package']);

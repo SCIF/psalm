@@ -1,24 +1,33 @@
 <?php
+
 namespace Psalm\Internal\Provider\ReturnTypeProvider;
 
 use Psalm\CodeLocation;
 use Psalm\Context;
 use Psalm\Internal\Analyzer\ClassAnalyzer;
 use Psalm\Internal\Analyzer\SourceAnalyzer;
+use Psalm\Internal\Analyzer\StatementsAnalyzer;
 use Psalm\Plugin\EventHandler\Event\FunctionReturnTypeProviderEvent;
 use Psalm\Plugin\EventHandler\FunctionReturnTypeProviderInterface;
 use Psalm\Type;
+use Psalm\Type\Atomic\TKeyedArray;
+use Psalm\Type\Atomic\TNamedObject;
+use Psalm\Type\Atomic\TObjectWithProperties;
+use Psalm\Type\Union;
 use stdClass;
 
 use function reset;
 use function strtolower;
 
+/**
+ * @internal
+ */
 class GetObjectVarsReturnTypeProvider implements FunctionReturnTypeProviderInterface
 {
     /**
      * @return array<lowercase-string>
      */
-    public static function getFunctionIds() : array
+    public static function getFunctionIds(): array
     {
         return [
             'get_object_vars',
@@ -26,25 +35,25 @@ class GetObjectVarsReturnTypeProvider implements FunctionReturnTypeProviderInter
     }
 
     public static function getGetObjectVarsReturnType(
-        Type\Union $first_arg_type,
+        Union $first_arg_type,
         SourceAnalyzer $statements_source,
         Context $context,
         CodeLocation $location
-    ): Type\Union {
+    ): Union {
         if ($first_arg_type->isSingle()) {
             $atomics = $first_arg_type->getAtomicTypes();
             $object_type = reset($atomics);
 
-            if ($object_type instanceof Type\Atomic\TObjectWithProperties) {
+            if ($object_type instanceof TObjectWithProperties) {
                 if ([] === $object_type->properties) {
-                    return Type::getEmptyArray();
+                    return Type::parseString('array<string, mixed>');
                 }
-                return new Type\Union([
-                    new Type\Atomic\TKeyedArray($object_type->properties)
+                return new Union([
+                    new TKeyedArray($object_type->properties)
                 ]);
             }
 
-            if ($object_type instanceof Type\Atomic\TNamedObject) {
+            if ($object_type instanceof TNamedObject) {
                 if (strtolower($object_type->value) === strtolower(stdClass::class)) {
                     return Type::parseString('array<string, mixed>');
                 }
@@ -56,7 +65,11 @@ class GetObjectVarsReturnTypeProvider implements FunctionReturnTypeProviderInter
                 }
 
                 if ([] === $class_storage->appearing_property_ids) {
-                    return Type::getEmptyArray();
+                    if ($class_storage->final) {
+                        return Type::getEmptyArray();
+                    }
+
+                    return Type::parseString('array<string, mixed>');
                 }
 
                 $properties = [];
@@ -80,22 +93,26 @@ class GetObjectVarsReturnTypeProvider implements FunctionReturnTypeProviderInter
                 }
 
                 if ([] === $properties) {
-                    return Type::getEmptyArray();
+                    if ($class_storage->final) {
+                        return Type::getEmptyArray();
+                    }
+
+                    return Type::parseString('array<string, mixed>');
                 }
 
-                return new Type\Union([
-                    new Type\Atomic\TKeyedArray($properties)
+                return new Union([
+                    new TKeyedArray($properties)
                 ]);
             }
         }
         return Type::parseString('array<string, mixed>');
     }
 
-    public static function getFunctionReturnType(FunctionReturnTypeProviderEvent $event): ?Type\Union
+    public static function getFunctionReturnType(FunctionReturnTypeProviderEvent $event): ?Union
     {
         $statements_source = $event->getStatementsSource();
         $call_args = $event->getCallArgs();
-        if (!$statements_source instanceof \Psalm\Internal\Analyzer\StatementsAnalyzer
+        if (!$statements_source instanceof StatementsAnalyzer
             || !$call_args
         ) {
             return Type::getMixed();

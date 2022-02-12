@@ -1,4 +1,5 @@
 <?php
+
 namespace Psalm\Internal\Analyzer\Statements\Block\IfElse;
 
 use PhpParser;
@@ -14,11 +15,17 @@ use Psalm\IssueBuffer;
 use Psalm\Type\Reconciler;
 
 use function array_diff_key;
+use function array_key_exists;
 use function array_keys;
 use function array_merge;
 use function count;
 use function in_array;
+use function preg_match;
+use function preg_quote;
 
+/**
+ * @internal
+ */
 class ElseAnalyzer
 {
     /**
@@ -87,8 +94,8 @@ class ElseAnalyzer
 
             foreach ($changed_var_ids as $changed_var_id => $_) {
                 foreach ($else_context->vars_in_scope as $var_id => $_) {
-                    if (\preg_match('/' . \preg_quote($changed_var_id, '/') . '[\]\[\-]/', $var_id)
-                        && !\array_key_exists($var_id, $changed_var_ids)
+                    if (preg_match('/' . preg_quote($changed_var_id, '/') . '[\]\[\-]/', $var_id)
+                        && !array_key_exists($var_id, $changed_var_ids)
                     ) {
                         unset($else_context->vars_in_scope[$var_id]);
                     }
@@ -133,15 +140,13 @@ class ElseAnalyzer
                         $outer_constraint_type
                     )
                 ) {
-                    if (IssueBuffer::accepts(
+                    IssueBuffer::maybeAdd(
                         new ConflictingReferenceConstraint(
                             'There is more than one pass-by-reference constraint on ' . $var_id,
                             new CodeLocation($statements_analyzer, $else, $outer_context->include_location, true)
                         ),
                         $statements_analyzer->getSuppressedIssues()
-                    )) {
-                        // fall through
-                    }
+                    );
                 } else {
                     $outer_context->byref_constraints[$var_id] = $byref_constraint;
                 }
@@ -152,7 +157,6 @@ class ElseAnalyzer
             ? ScopeAnalyzer::getControlActions(
                 $else->stmts,
                 $statements_analyzer->node_data,
-                $codebase->config->exit_functions,
                 []
             )
             : [ScopeAnalyzer::ACTION_NONE];

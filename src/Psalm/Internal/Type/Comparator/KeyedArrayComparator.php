@@ -4,6 +4,7 @@ namespace Psalm\Internal\Type\Comparator;
 
 use Psalm\Codebase;
 use Psalm\Type;
+use Psalm\Type\Atomic;
 use Psalm\Type\Atomic\TKeyedArray;
 use Psalm\Type\Atomic\TNamedObject;
 use Psalm\Type\Atomic\TObjectWithProperties;
@@ -21,11 +22,11 @@ class KeyedArrayComparator
      */
     public static function isContainedBy(
         Codebase $codebase,
-        Type\Atomic $input_type_part,
-        Type\Atomic $container_type_part,
+        Atomic $input_type_part,
+        Atomic $container_type_part,
         bool $allow_interface_equality,
         ?TypeComparisonResult $atomic_comparison_result
-    ) : bool {
+    ): bool {
         $all_types_contain = true;
 
         foreach ($container_type_part->properties as $key => $container_property_type) {
@@ -41,7 +42,7 @@ class KeyedArrayComparator
 
             $property_type_comparison = new TypeComparisonResult();
 
-            if (!$input_property_type->isEmpty()) {
+            if (!$input_property_type->isNever()) {
                 if (!UnionTypeComparator::isContainedBy(
                     $codebase,
                     $input_property_type,
@@ -90,7 +91,7 @@ class KeyedArrayComparator
         TObjectWithProperties $container_type_part,
         bool $allow_interface_equality,
         ?TypeComparisonResult $atomic_comparison_result
-    ) : bool {
+    ): bool {
         $all_types_contain = true;
 
         foreach ($container_type_part->properties as $property_name => $container_property_type) {
@@ -126,7 +127,7 @@ class KeyedArrayComparator
 
             $property_type_comparison = new TypeComparisonResult();
 
-            if (!$input_property_type->isEmpty()
+            if (!$input_property_type->isNever()
                 && !UnionTypeComparator::isContainedBy(
                     $codebase,
                     $input_property_type,

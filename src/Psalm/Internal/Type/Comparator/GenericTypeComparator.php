@@ -3,12 +3,15 @@
 namespace Psalm\Internal\Type\Comparator;
 
 use Psalm\Codebase;
+use Psalm\Internal\Type\TemplateStandinTypeReplacer;
 use Psalm\Type;
+use Psalm\Type\Atomic;
 use Psalm\Type\Atomic\TGenericObject;
 use Psalm\Type\Atomic\TIterable;
 use Psalm\Type\Atomic\TNamedObject;
 
 use function array_fill;
+use function array_values;
 use function count;
 
 /**
@@ -21,11 +24,11 @@ class GenericTypeComparator
      */
     public static function isContainedBy(
         Codebase $codebase,
-        Type\Atomic $input_type_part,
-        Type\Atomic $container_type_part,
+        Atomic $input_type_part,
+        Atomic $container_type_part,
         bool $allow_interface_equality = false,
         ?TypeComparisonResult $atomic_comparison_result = null
-    ) : bool {
+    ): bool {
         $all_types_contain = true;
         $container_was_iterable = false;
 
@@ -53,7 +56,7 @@ class GenericTypeComparator
                 if (!empty($class_storage->template_extended_params[$container_class])) {
                     $input_type_part = new TGenericObject(
                         $input_type_part->value,
-                        \array_values($class_storage->template_extended_params[$container_class])
+                        array_values($class_storage->template_extended_params[$container_class])
                     );
                 }
             }
@@ -77,7 +80,7 @@ class GenericTypeComparator
 
         $container_type_params_covariant = [];
 
-        $input_type_params = \Psalm\Internal\Type\TemplateStandinTypeReplacer::getMappedGenericTypeParams(
+        $input_type_params = TemplateStandinTypeReplacer::getMappedGenericTypeParams(
             $codebase,
             $input_type_part,
             $container_type_part,
@@ -91,7 +94,7 @@ class GenericTypeComparator
 
             $container_param = $container_type_part->type_params[$i];
 
-            if ($input_param->isEmpty()) {
+            if ($input_param->isNever()) {
                 if ($atomic_comparison_result) {
                     if (!$atomic_comparison_result->replacement_atomic_type) {
                         $atomic_comparison_result->replacement_atomic_type = clone $input_type_part;
@@ -189,17 +192,8 @@ class GenericTypeComparator
                             $allow_interface_equality
                         ) || $param_comparison_result->type_coerced
                         ) {
-                            if ($container_param->hasFormerStaticObject()
-                                && $input_param->isFormerStaticObject()
-                                && UnionTypeComparator::isContainedBy(
-                                    $codebase,
-                                    $input_param,
-                                    $container_param,
-                                    $container_param->ignore_nullable_issues,
-                                    $container_param->ignore_falsable_issues,
-                                    $param_comparison_result,
-                                    $allow_interface_equality
-                                )
+                            if ($container_param->hasStaticObject()
+                                && $input_param->isStaticObject()
                             ) {
                                 // do nothing
                             } else {

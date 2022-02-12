@@ -1,7 +1,10 @@
 <?php
+
 namespace Psalm\Type\Atomic;
 
+use Psalm\Type;
 use Psalm\Type\Atomic;
+use Psalm\Type\Union;
 
 use function array_merge;
 use function count;
@@ -17,7 +20,7 @@ class TIterable extends Atomic
     use GenericTrait;
 
     /**
-     * @var array{\Psalm\Type\Union, \Psalm\Type\Union}
+     * @var array{Union, Union}
      */
     public $type_params;
 
@@ -32,7 +35,7 @@ class TIterable extends Atomic
     public $has_docblock_params = false;
 
     /**
-     * @param list<\Psalm\Type\Union>     $type_params
+     * @param list<Union> $type_params
      */
     public function __construct(array $type_params = [])
     {
@@ -40,7 +43,7 @@ class TIterable extends Atomic
             $this->has_docblock_params = true;
             $this->type_params = $type_params;
         } else {
-            $this->type_params = [\Psalm\Type::getMixed(), \Psalm\Type::getMixed()];
+            $this->type_params = [Type::getMixed(), Type::getMixed()];
         }
     }
 
@@ -53,7 +56,7 @@ class TIterable extends Atomic
         return 'iterable';
     }
 
-    public function getAssertionString(bool $exact = false): string
+    public function getAssertionString(): string
     {
         return 'iterable';
     }
@@ -86,16 +89,12 @@ class TIterable extends Atomic
         ?string $namespace,
         array $aliased_classes,
         ?string $this_class,
-        int $php_major_version,
-        int $php_minor_version
+        int $analysis_php_version_id
     ): ?string {
-        return $php_major_version > 7
-            || ($php_major_version === 7 && $php_minor_version >= 1)
-            ? 'iterable'
-            : null;
+        return $analysis_php_version_id >= 7_01_00 ? 'iterable' : null;
     }
 
-    public function canBeFullyExpressedInPhp(int $php_major_version, int $php_minor_version): bool
+    public function canBeFullyExpressedInPhp(int $analysis_php_version_id): bool
     {
         return $this->type_params[0]->isMixed() && $this->type_params[1]->isMixed();
     }
@@ -119,7 +118,7 @@ class TIterable extends Atomic
         return true;
     }
 
-    public function getChildNodes() : array
+    public function getChildNodes(): array
     {
         return array_merge($this->type_params, $this->extra_types ?? []);
     }

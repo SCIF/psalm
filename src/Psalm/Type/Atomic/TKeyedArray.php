@@ -1,4 +1,5 @@
 <?php
+
 namespace Psalm\Type\Atomic;
 
 use Psalm\Codebase;
@@ -10,19 +11,24 @@ use Psalm\Internal\Type\TypeCombiner;
 use Psalm\Type;
 use Psalm\Type\Atomic;
 use Psalm\Type\Union;
+use UnexpectedValueException;
 
+use function addslashes;
 use function array_keys;
 use function array_map;
 use function count;
 use function get_class;
 use function implode;
 use function is_int;
+use function is_string;
+use function preg_match;
 use function sort;
+use function str_replace;
 
 /**
  * Represents an 'object-like array' - an array with known keys.
  */
-class TKeyedArray extends \Psalm\Type\Atomic
+class TKeyedArray extends Atomic
 {
     /**
      * @var non-empty-array<string|int, Union>
@@ -145,16 +151,20 @@ class TKeyedArray extends \Psalm\Type\Atomic
                             $this_class,
                             $use_phpdoc_format
                         ): string {
-                            if (\is_string($name) && \preg_match('/[ "\'\\\\.\n:]/', $name)) {
-                                $name = '\'' . \str_replace("\n", '\n', \addslashes($name)) . '\'';
+                            $class_string_suffix = '';
+                            if (isset($this->class_strings[$name])) {
+                                $class_string_suffix = '::class';
                             }
 
-                            return $name . ($type->possibly_undefined ? '?' : '') . ': ' . $type->toNamespacedString(
-                                $namespace,
-                                $aliased_classes,
-                                $this_class,
-                                $use_phpdoc_format
-                            );
+                            $name = $this->escapeAndQuote($name);
+
+                            return $name . $class_string_suffix . ($type->possibly_undefined ? '?' : '') . ': ' .
+                                $type->toNamespacedString(
+                                    $namespace,
+                                    $aliased_classes,
+                                    $this_class,
+                                    $use_phpdoc_format
+                                );
                         },
                         array_keys($this->properties),
                         $this->properties
@@ -170,13 +180,12 @@ class TKeyedArray extends \Psalm\Type\Atomic
         ?string $namespace,
         array $aliased_classes,
         ?string $this_class,
-        int $php_major_version,
-        int $php_minor_version
+        int $analysis_php_version_id
     ): string {
         return $this->getKey();
     }
 
-    public function canBeFullyExpressedInPhp(int $php_major_version, int $php_minor_version): bool
+    public function canBeFullyExpressedInPhp(int $analysis_php_version_id): bool
     {
         return false;
     }
@@ -187,11 +196,11 @@ class TKeyedArray extends \Psalm\Type\Atomic
 
         foreach ($this->properties as $key => $_) {
             if (is_int($key)) {
-                $key_types[] = new Type\Atomic\TLiteralInt($key);
+                $key_types[] = new TLiteralInt($key);
             } elseif (isset($this->class_strings[$key])) {
-                $key_types[] = new Type\Atomic\TLiteralClassString($key);
+                $key_types[] = new TLiteralClassString($key);
             } else {
-                $key_types[] = new Type\Atomic\TLiteralString($key);
+                $key_types[] = new TLiteralString($key);
             }
         }
 
@@ -226,11 +235,11 @@ class TKeyedArray extends \Psalm\Type\Atomic
 
         foreach ($this->properties as $key => $property) {
             if (is_int($key)) {
-                $key_types[] = new Type\Atomic\TLiteralInt($key);
+                $key_types[] = new TLiteralInt($key);
             } elseif (isset($this->class_strings[$key])) {
-                $key_types[] = new Type\Atomic\TLiteralClassString($key);
+                $key_types[] = new TLiteralClassString($key);
             } else {
-                $key_types[] = new Type\Atomic\TLiteralString($key);
+                $key_types[] = new TLiteralString($key);
             }
 
             $value_type = Type::combineUnionTypes(clone $property, $value_type);
@@ -282,7 +291,7 @@ class TKeyedArray extends \Psalm\Type\Atomic
 
     public function replaceTemplateTypesWithStandins(
         TemplateResult $template_result,
-        ?Codebase $codebase = null,
+        Codebase $codebase,
         ?StatementsAnalyzer $statements_analyzer = null,
         ?Atomic $input_type = null,
         ?int $input_arg_offset = null,
@@ -291,13 +300,13 @@ class TKeyedArray extends \Psalm\Type\Atomic
         bool $replace = true,
         bool $add_lower_bound = false,
         int $depth = 0
-    ) : Atomic {
+    ): Atomic {
         $object_like = clone $this;
 
         foreach ($this->properties as $offset => $property) {
             $input_type_param = null;
 
-            if ($input_type instanceof Atomic\TKeyedArray
+            if ($input_type instanceof TKeyedArray
                 && isset($input_type->properties[$offset])
             ) {
                 $input_type_param = $input_type->properties[$offset];
@@ -325,7 +334,7 @@ class TKeyedArray extends \Psalm\Type\Atomic
     public function replaceTemplateTypesWithArgTypes(
         TemplateResult $template_result,
         ?Codebase $codebase
-    ) : void {
+    ): void {
         foreach ($this->properties as $property) {
             TemplateInferredTypeReplacer::replace(
                 $property,
@@ -335,7 +344,7 @@ class TKeyedArray extends \Psalm\Type\Atomic
         }
     }
 
-    public function getChildNodes() : array
+    public function getChildNodes(): array
     {
         return $this->properties;
     }
@@ -367,32 +376,48 @@ class TKeyedArray extends \Psalm\Type\Atomic
         return true;
     }
 
-    public function getAssertionString(bool $exact = false): string
+    public function getAssertionString(): string
     {
         return $this->getKey();
     }
 
-    public function getList() : TNonEmptyList
+    public function getList(): TNonEmptyList
     {
         if (!$this->is_list) {
-            throw new \UnexpectedValueException('Object-like array must be a list for conversion');
+            throw new UnexpectedValueException('Object-like array must be a list for conversion');
         }
 
         return new TNonEmptyList($this->getGenericValueType());
     }
 
     /**
+     * @param string|int $name
+     * @return string|int
+     */
+    private function escapeAndQuote($name)
+    {
+        if (is_string($name) && ($name === '' || preg_match('/[^a-zA-Z0-9_]/', $name))) {
+            $name = '\'' . str_replace("\n", '\n', addslashes($name)) . '\'';
+        }
+
+        return $name;
+    }
+    /**
      * @param int|string $name
      */
-    private function getTypeName($name, Union $type): string {
+    private function getTypeName($name, Union $type): string
+    {
         if ($this->is_list && $this->sealed) {
             return (string) $type;
         }
 
-        if (\is_string($name) && \preg_match('/[ "\'\\\\.\n:]/', $name)) {
-            $name = '\'' . \str_replace("\n", '\n', \addslashes($name)) . '\'';
+        $class_string_suffix = '';
+        if (isset($this->class_strings[$name])) {
+            $class_string_suffix = '::class';
         }
 
-        return $name . ($type->possibly_undefined ? '?' : '') . ': ' . $type;
+        $name = $this->escapeAndQuote($name);
+
+        return $name.$class_string_suffix.($type->possibly_undefined ? '?' : '').': '.$type;
     }
 }

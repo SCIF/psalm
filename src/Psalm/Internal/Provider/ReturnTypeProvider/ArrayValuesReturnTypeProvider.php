@@ -1,24 +1,41 @@
 <?php
+
 namespace Psalm\Internal\Provider\ReturnTypeProvider;
 
+use Psalm\Internal\Analyzer\StatementsAnalyzer;
 use Psalm\Plugin\EventHandler\Event\FunctionReturnTypeProviderEvent;
+use Psalm\Plugin\EventHandler\FunctionReturnTypeProviderInterface;
 use Psalm\Type;
+use Psalm\Type\Atomic\TArray;
+use Psalm\Type\Atomic\TKeyedArray;
+use Psalm\Type\Atomic\TList;
+use Psalm\Type\Atomic\TNonEmptyArray;
+use Psalm\Type\Atomic\TNonEmptyList;
+use Psalm\Type\Atomic\TTemplateParam;
+use Psalm\Type\Union;
+use UnexpectedValueException;
 
-class ArrayValuesReturnTypeProvider implements \Psalm\Plugin\EventHandler\FunctionReturnTypeProviderInterface
+use function array_merge;
+use function array_shift;
+
+/**
+ * @internal
+ */
+class ArrayValuesReturnTypeProvider implements FunctionReturnTypeProviderInterface
 {
     /**
      * @return array<lowercase-string>
      */
-    public static function getFunctionIds() : array
+    public static function getFunctionIds(): array
     {
         return ['array_values'];
     }
 
-    public static function getFunctionReturnType(FunctionReturnTypeProviderEvent $event) : Type\Union
+    public static function getFunctionReturnType(FunctionReturnTypeProviderEvent $event): Union
     {
         $statements_source = $event->getStatementsSource();
         $call_args = $event->getCallArgs();
-        if (!$statements_source instanceof \Psalm\Internal\Analyzer\StatementsAnalyzer) {
+        if (!$statements_source instanceof StatementsAnalyzer) {
             return Type::getMixed();
         }
 
@@ -38,27 +55,27 @@ class ArrayValuesReturnTypeProvider implements \Psalm\Plugin\EventHandler\Functi
 
         $return_atomic_type = null;
 
-        while ($atomic_type = \array_shift($atomic_types)) {
-            if ($atomic_type instanceof Type\Atomic\TTemplateParam) {
-                $atomic_types = \array_merge($atomic_types, $atomic_type->as->getAtomicTypes());
+        while ($atomic_type = array_shift($atomic_types)) {
+            if ($atomic_type instanceof TTemplateParam) {
+                $atomic_types = array_merge($atomic_types, $atomic_type->as->getAtomicTypes());
                 continue;
             }
 
-            if ($atomic_type instanceof Type\Atomic\TKeyedArray) {
+            if ($atomic_type instanceof TKeyedArray) {
                 $atomic_type = $atomic_type->getGenericArrayType();
             }
 
-            if ($atomic_type instanceof Type\Atomic\TArray) {
-                if ($atomic_type instanceof Type\Atomic\TNonEmptyArray) {
-                    $return_atomic_type = new Type\Atomic\TNonEmptyList(
+            if ($atomic_type instanceof TArray) {
+                if ($atomic_type instanceof TNonEmptyArray) {
+                    $return_atomic_type = new TNonEmptyList(
                         clone $atomic_type->type_params[1]
                     );
                 } else {
-                    $return_atomic_type = new Type\Atomic\TList(
+                    $return_atomic_type = new TList(
                         clone $atomic_type->type_params[1]
                     );
                 }
-            } elseif ($atomic_type instanceof Type\Atomic\TList) {
+            } elseif ($atomic_type instanceof TList) {
                 $return_atomic_type = $atomic_type;
             } else {
                 return Type::getArray();
@@ -66,9 +83,9 @@ class ArrayValuesReturnTypeProvider implements \Psalm\Plugin\EventHandler\Functi
         }
 
         if (!$return_atomic_type) {
-            throw new \UnexpectedValueException('This should never happen');
+            throw new UnexpectedValueException('This should never happen');
         }
 
-        return new Type\Union([$return_atomic_type]);
+        return new Union([$return_atomic_type]);
     }
 }

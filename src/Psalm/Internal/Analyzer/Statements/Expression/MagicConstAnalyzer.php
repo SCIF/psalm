@@ -1,4 +1,5 @@
 <?php
+
 namespace Psalm\Internal\Analyzer\Statements\Expression;
 
 use PhpParser;
@@ -7,32 +8,37 @@ use Psalm\Context;
 use Psalm\Internal\Analyzer\FunctionAnalyzer;
 use Psalm\Internal\Analyzer\MethodAnalyzer;
 use Psalm\Internal\Analyzer\StatementsAnalyzer;
+use Psalm\Internal\Analyzer\TraitAnalyzer;
 use Psalm\Issue\UndefinedConstant;
 use Psalm\IssueBuffer;
 use Psalm\Type;
+use Psalm\Type\Atomic\TCallableString;
+use Psalm\Type\Atomic\TNonEmptyString;
+use Psalm\Type\Union;
 
+/**
+ * @internal
+ */
 class MagicConstAnalyzer
 {
     public static function analyze(
         StatementsAnalyzer $statements_analyzer,
         PhpParser\Node\Scalar\MagicConst $stmt,
         Context $context
-    ) : void {
+    ): void {
         if ($stmt instanceof PhpParser\Node\Scalar\MagicConst\Line) {
             $statements_analyzer->node_data->setType($stmt, Type::getInt());
         } elseif ($stmt instanceof PhpParser\Node\Scalar\MagicConst\Class_) {
             $codebase = $statements_analyzer->getCodebase();
 
             if (!$context->self) {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new UndefinedConstant(
                         'Cannot get __class__ outside a class',
                         new CodeLocation($statements_analyzer->getSource(), $stmt)
                     ),
                     $statements_analyzer->getSuppressedIssues()
-                )) {
-                    // fall through
-                }
+                );
 
                 $statements_analyzer->node_data->setType($stmt, Type::getClassString());
             } else {
@@ -79,15 +85,15 @@ class MagicConstAnalyzer
             } elseif ($source instanceof FunctionAnalyzer) {
                 $statements_analyzer->node_data->setType($stmt, Type::getString($source->getCorrectlyCasedMethodId()));
             } else {
-                $statements_analyzer->node_data->setType($stmt, new Type\Union([new Type\Atomic\TCallableString]));
+                $statements_analyzer->node_data->setType($stmt, new Union([new TCallableString]));
             }
         } elseif ($stmt instanceof PhpParser\Node\Scalar\MagicConst\File
             || $stmt instanceof PhpParser\Node\Scalar\MagicConst\Dir
         ) {
-            $statements_analyzer->node_data->setType($stmt, new Type\Union([new Type\Atomic\TNonEmptyString()]));
+            $statements_analyzer->node_data->setType($stmt, new Union([new TNonEmptyString()]));
         } elseif ($stmt instanceof PhpParser\Node\Scalar\MagicConst\Trait_) {
-            if ($statements_analyzer->getSource() instanceof \Psalm\Internal\Analyzer\TraitAnalyzer) {
-                $statements_analyzer->node_data->setType($stmt, new Type\Union([new Type\Atomic\TNonEmptyString()]));
+            if ($statements_analyzer->getSource() instanceof TraitAnalyzer) {
+                $statements_analyzer->node_data->setType($stmt, new Union([new TNonEmptyString()]));
             } else {
                 $statements_analyzer->node_data->setType($stmt, Type::getString());
             }

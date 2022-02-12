@@ -20,6 +20,8 @@ use function array_map;
  * parameters — given a parameter type `callable(): T2` and an argument typed as
  * `callable(): string`, `string` will be added as a _lower_ bound for the template
  * param `T2`.
+ *
+ * @internal
  */
 class TemplateResult
 {
@@ -59,14 +61,10 @@ class TemplateResult
         $this->template_types = $template_types;
 
         $this->lower_bounds = array_map(
-            static function ($type_map) {
-                return array_map(
-                    static function ($type) {
-                        return [new TemplateBound($type)];
-                    },
-                    $type_map
-                );
-            },
+            static fn(array $type_map): array => array_map(
+                static fn(Union $type): array => [new TemplateBound($type)],
+                $type_map
+            ),
             $lower_bounds
         );
     }

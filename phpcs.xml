@@ -4,50 +4,237 @@
     xsi:noNamespaceSchemaLocation="vendor/squizlabs/php_codesniffer/phpcs.xsd"
     name="Psalm coding standard"
 >
-    <config name="installed_paths" value="../../slevomat/coding-standard"/>
-    <rule ref="PSR2" />
-    <!-- Forbid usage of a function or a class constant via fallback global name -->
-    <rule ref="SlevomatCodingStandard.Namespaces.ReferenceUsedNamesOnly">
-        <properties>
-            <property name="allowFallbackGlobalConstants" value="false"/>
-            <property name="allowFallbackGlobalFunctions" value="false"/>
-            <property name="allowFullyQualifiedGlobalConstants" value="true"/>
-            <property name="allowFullyQualifiedGlobalFunctions" value="true"/>
-            <property name="allowFullyQualifiedGlobalClasses" value="true"/>
-        </properties>
-        <exclude name="SlevomatCodingStandard.Namespaces.ReferenceUsedNamesOnly.ReferenceViaFullyQualifiedName"/>
-    </rule>
+    <description>The coding standard for Psalm.</description>
 
+    <!-- **************************************************************************************************************
+      *  Configuration                                                                                                *
+      ************************************************************************************************************** -->
+
+    <config name="php_version" value="70100"/>
+    <config name="installed_paths" value="../../slevomat/coding-standard"/>
+
+    <arg name="basepath" value="."/>
+
+    <!-- **************************************************************************************************************
+      *  Files to include/exclude                                                                                     *
+      ************************************************************************************************************** -->
+
+    <file>bin/</file>
+    <file>src/</file>
+    <file>tests/</file>
+
+    <!-- These are just examples and stub classes/files, so it doesn't really matter if they're PSR-2 compliant. -->
+    <exclude-pattern>src/Psalm/Internal/Stubs/</exclude-pattern>
+    <exclude-pattern>tests/fixtures/</exclude-pattern>
+
+
+    <!-- **************************************************************************************************************
+      *  STANDARD:  Generic                                                                                           *
+      ************************************************************************************************************** -->
+
+    <!--
+        Restrict line length.
+        https://github.com/squizlabs/PHP_CodeSniffer/blob/master/src/Standards/Generic/Docs/Files/LineLengthStandard.xml
+     -->
     <rule ref="Generic.Files.LineLength">
         <exclude-pattern>tests</exclude-pattern>
         <exclude-pattern>src/Psalm/Internal/Type/TemplateStandinTypeReplacer.php</exclude-pattern>
     </rule>
+
+
+    <!-- **************************************************************************************************************
+      *  STANDARD:  PSR2                                                                                              *
+      ************************************************************************************************************** -->
+
+    <rule ref="PSR2"/>
+
+    <!--
+        Namespace Declarations.
+        https://github.com/squizlabs/PHP_CodeSniffer/blob/master/src/Standards/PSR2/Docs/Namespaces/UseDeclarationStandard.xml
+     -->
     <rule ref="PSR2.Namespaces.UseDeclaration">
         <exclude-pattern>*</exclude-pattern>
     </rule>
 
+
+    <!-- **************************************************************************************************************
+      *  STANDARD:  Squiz                                                                                             *
+      ************************************************************************************************************** -->
+
+    <!--
+        The self keyword should be used instead of the current class name.
+        https://github.com/squizlabs/PHP_CodeSniffer/blob/master/src/Standards/Squiz/Docs/Classes/SelfMemberReferenceStandard.xml
+     -->
+    <rule ref="Squiz.Classes.SelfMemberReference"/>
+
+
+    <!-- **************************************************************************************************************
+      *  STANDARD:  SlevomatCodingStandard                                                                            *
+      ************************************************************************************************************** -->
+
+    <!--
+        Handles enforcement and line spacing of declare(strict_types=1).
+        https://github.com/slevomat/coding-standard#slevomatcodingstandardtypehintsdeclarestricttypes-
+     -->
+    <rule ref="SlevomatCodingStandard.TypeHints.DeclareStrictTypes">
+        <properties>
+            <property name="declareOnFirstLine" type="bool" value="false"/>
+            <property name="linesCountBeforeDeclare" type="int" value="1"/>
+            <property name="linesCountAfterDeclare" type="int" value="1"/>
+            <property name="spacesCountAroundEqualsSign" type="int" value="0"/>
+        </properties>
+
+        <exclude name="SlevomatCodingStandard.TypeHints.DeclareStrictTypes.DeclareStrictTypesMissing"/>
+    </rule>
+
+    <!--
+        Requires only one namespace in a file.
+        https://github.com/slevomat/coding-standard#slevomatcodingstandardnamespacesrequireonenamespaceinfile
+     -->
+    <rule ref="SlevomatCodingStandard.Namespaces.RequireOneNamespaceInFile"/>
+
+    <!--
+        Enforces formatting of namespace.
+        https://github.com/slevomat/coding-standard#slevomatcodingstandardnamespacesnamespacedeclaration-
+     -->
+    <rule ref="SlevomatCodingStandard.Namespaces.NamespaceDeclaration"/>
+
+    <!--
+        Enforces number of lines before and after namespace.
+        https://github.com/slevomat/coding-standard#slevomatcodingstandardnamespacesnamespacespacing-
+     -->
+    <rule ref="SlevomatCodingStandard.Namespaces.NamespaceSpacing">
+        <properties>
+            <property name="linesCountBeforeNamespace" type="int" value="1"/>
+            <property name="linesCountAfterNamespace" type="int" value="1"/>
+        </properties>
+    </rule>
+
+    <rule ref="Squiz.Classes.ValidClassName">
+        <exclude-pattern>src/Psalm/Storage/Assertion/Empty_.php</exclude-pattern>
+    </rule>
+
+    <!--
+        Handle imports from namespaces.
+        https://github.com/slevomat/coding-standard#slevomatcodingstandardnamespacesreferenceusednamesonly-
+     -->
+    <rule ref="SlevomatCodingStandard.Namespaces.ReferenceUsedNamesOnly">
+        <properties>
+            <property name="allowFullyQualifiedExceptions" type="bool" value="false"/>
+            <property name="allowFullyQualifiedGlobalFunctions" type="bool" value="false"/>
+            <property name="allowFullyQualifiedGlobalConstants" type="bool" value="false"/>
+            <property name="allowFullyQualifiedGlobalClasses" type="bool" value="false"/>
+
+			<property name="allowFullyQualifiedNameForCollidingClasses" type="bool" value="false"/>
+			<property name="allowFullyQualifiedNameForCollidingFunctions" type="bool" value="false"/>
+			<property name="allowFullyQualifiedNameForCollidingConstants" type="bool" value="false"/>
+
+			<property name="allowFallbackGlobalFunctions" type="bool" value="false"/>
+			<property name="allowFallbackGlobalConstants" type="bool" value="false"/>
+
+            <property name="allowPartialUses" type="bool" value="true"/>
+
+			<property name="searchAnnotations" type="bool" value="true"/>
+        </properties>
+    </rule>
+
+    <!--
+        Looks for unused imports from other namespaces.
+        https://github.com/slevomat/coding-standard#slevomatcodingstandardnamespacesunuseduses-
+     -->
     <rule ref="SlevomatCodingStandard.Namespaces.UnusedUses">
         <properties>
             <property name="searchAnnotations" value="true"/>
         </properties>
     </rule>
+
+    <!--
+        Checks whether uses at the top of a file are alphabetically sorted.
+        https://github.com/slevomat/coding-standard#slevomatcodingstandardnamespacesalphabeticallysorteduses-
+     -->
     <rule ref="SlevomatCodingStandard.Namespaces.AlphabeticallySortedUses">
         <properties>
-            <property name="caseSensitive" value="true" />
+            <property name="psr12Compatible" type="bool" value="true"/>
+            <property name="caseSensitive" value="true"/>
         </properties>
     </rule>
+
+    <!--
+        Enforces configurable number of lines before/after/between use.
+        https://github.com/slevomat/coding-standard#slevomatcodingstandardnamespacesusespacing-
+     -->
     <rule ref="SlevomatCodingStandard.Namespaces.UseSpacing">
         <properties>
-            <property name="linesCountBetweenUseTypes" value="1" />
+            <property name="linesCountBetweenUseTypes" value="1"/>
         </properties>
     </rule>
-    <file>bin/</file>
-    <file>src/</file>
-    <file>tests/</file>
 
-    <exclude-pattern>src/Psalm/Internal/Visitor/SimpleNameResolver.php</exclude-pattern>
+    <!--
+        Checks for missing return typehints and useless @return annotations.
+        https://github.com/slevomat/coding-standard#slevomatcodingstandardtypehintsreturntypehint-
+     -->
+    <rule ref="SlevomatCodingStandard.TypeHints.ReturnTypeHint">
+        <properties>
+			<property name="enableObjectTypeHint" type="bool" value="false"/>
+			<property name="enableStaticTypeHint" type="bool" value="false"/>
+			<property name="enableMixedTypeHint" type="bool" value="false"/>
+			<property name="enableUnionTypeHint" type="bool" value="false"/>
+        </properties>
 
-    <!-- These are just examples and stub classes/files, so it doesn't really matter if they're PSR-2 compliant. -->
-    <exclude-pattern>src/Psalm/Internal/Stubs/</exclude-pattern>
-    <exclude-pattern>tests/fixtures/</exclude-pattern>
+        <exclude name="SlevomatCodingStandard.TypeHints.ReturnTypeHint.MissingTraversableTypeHintSpecification"/>
+    </rule>
+
+    <!--
+        Enforces consistent formatting of return typehints.
+        https://github.com/slevomat/coding-standard#slevomatcodingstandardtypehintsreturntypehintspacing-
+     -->
+    <rule ref="SlevomatCodingStandard.TypeHints.ReturnTypeHintSpacing">
+        <properties>
+            <property name="spacesCountBeforeColon" value="0"/>
+        </properties>
+    </rule>
+
+    <!--
+        Requires using a underscore separator for long numbers.
+        https://github.com/slevomat/coding-standard/#slevomatcodingstandardnumbersrequirenumericliteralseparator
+    -->
+    <rule ref="SlevomatCodingStandard.Numbers.RequireNumericLiteralSeparator">
+        <properties>
+            <property name="enable" value="true"/>
+            <property name="minDigitsBeforeDecimalPoint" value="5"/>
+        </properties>
+    </rule>
+
+    <!--
+        Requires use of null coalesce operator when possible.
+        https://github.com/slevomat/coding-standard/#slevomatcodingstandardcontrolstructuresrequirenullcoalesceoperator-
+    -->
+    <rule ref="SlevomatCodingStandard.ControlStructures.RequireNullCoalesceOperator" />
+
+    <!--
+        Requires use of null coalesce equal operator when possible.
+        https://github.com/slevomat/coding-standard/#slevomatcodingstandardcontrolstructuresrequirenullcoalesceequaloperator-
+    -->
+    <rule ref="SlevomatCodingStandard.ControlStructures.RequireNullCoalesceEqualOperator">
+        <properties>
+            <property name="enable" value="true"/>
+        </properties>
+    </rule>
+
+    <!--
+        Enforces using short form of list syntax, [...] instead of list(...).
+        https://github.com/slevomat/coding-standard/#slevomatcodingstandardphpshortlist-
+    -->
+    <rule ref="SlevomatCodingStandard.PHP.ShortList"/>
+
+    <!-- 
+        Requires arrow functions.
+        https://github.com/slevomat/coding-standard/#slevomatcodingstandardfunctionsrequirearrowfunction-
+    -->
+    <rule ref="SlevomatCodingStandard.Functions.RequireArrowFunction">
+        <properties>
+            <property name="enabled" value="true"/>
+            <property name="allowNested" value="true"/>
+        </properties>
+    </rule>
 </ruleset>

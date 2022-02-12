@@ -1,5 +1,8 @@
 <?php
+
 namespace Psalm\Issue;
+
+use Psalm\CodeLocation;
 
 use function strtolower;
 
@@ -12,7 +15,7 @@ abstract class VariableIssue extends CodeIssue
 
     public function __construct(
         string $message,
-        \Psalm\CodeLocation $code_location,
+        CodeLocation $code_location,
         string $var_name
     ) {
         parent::__construct($message, $code_location);

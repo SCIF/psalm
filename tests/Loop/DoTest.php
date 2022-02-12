@@ -1,23 +1,26 @@
 <?php
+
 namespace Psalm\Tests\Loop;
 
-use Psalm\Tests\Traits;
+use Psalm\Tests\TestCase;
+use Psalm\Tests\Traits\InvalidCodeAnalysisTestTrait;
+use Psalm\Tests\Traits\ValidCodeAnalysisTestTrait;
 
 use const DIRECTORY_SEPARATOR;
 
-class DoTest extends \Psalm\Tests\TestCase
+class DoTest extends TestCase
 {
-    use Traits\InvalidCodeAnalysisTestTrait;
-    use Traits\ValidCodeAnalysisTestTrait;
+    use InvalidCodeAnalysisTestTrait;
+    use ValidCodeAnalysisTestTrait;
 
     /**
-     * @return iterable<string,array{string,assertions?:array<string,string>,error_levels?:string[]}>
+     * @return iterable<string,array{code:string,assertions?:array<string,string>,ignored_issues?:list<string>}>
      */
     public function providerValidCodeParse(): iterable
     {
         return [
             'doWhileVar' => [
-                '<?php
+                'code' => '<?php
                     $worked = false;
 
                     do {
@@ -29,7 +32,7 @@ class DoTest extends \Psalm\Tests\TestCase
                 ],
             ],
             'doWhileVarWithPossibleBreak' => [
-                '<?php
+                'code' => '<?php
                     $a = false;
 
                     do {
@@ -48,7 +51,7 @@ class DoTest extends \Psalm\Tests\TestCase
                 ],
             ],
             'SKIPPED-doWhileVarWithPossibleBreakThatSetsToTrue' => [
-                '<?php
+                'code' => '<?php
                     $a = false;
                     $b = false;
 
@@ -67,7 +70,7 @@ class DoTest extends \Psalm\Tests\TestCase
                 ],
             ],
             'doWhileVarWithPossibleBreakThatMaybeSetsToTrue' => [
-                '<?php
+                'code' => '<?php
                     $a = false;
 
                     do {
@@ -86,7 +89,7 @@ class DoTest extends \Psalm\Tests\TestCase
                 ],
             ],
             'doWhileVarWithPossibleInitialisingBreakNoInitialDefinition' => [
-                '<?php
+                'code' => '<?php
                     do {
                         if (rand(0, 1)) {
                             $worked = true;
@@ -100,7 +103,7 @@ class DoTest extends \Psalm\Tests\TestCase
                 ],
             ],
             'doWhileUndefinedVar' => [
-                '<?php
+                'code' => '<?php
                     do {
                         $result = (bool) rand(0,1);
                     } while (!$result);',
@@ -109,7 +112,7 @@ class DoTest extends \Psalm\Tests\TestCase
                 ],
             ],
             'doWhileVarAndBreak' => [
-                '<?php
+                'code' => '<?php
                     /** @return void */
                     function foo(string $b) {}
 
@@ -123,7 +126,7 @@ class DoTest extends \Psalm\Tests\TestCase
                     while (rand(0,100) === 10);',
             ],
             'doWhileWithNotEmptyCheck' => [
-                '<?php
+                'code' => '<?php
                     class A {
                         /** @var A|null */
                         public $a;
@@ -145,7 +148,7 @@ class DoTest extends \Psalm\Tests\TestCase
                 ],
             ],
             'doWhileWithMethodCall' => [
-                '<?php
+                'code' => '<?php
                     class A {
                         public function getParent(): ?A {
                             return rand(0, 1) ? new A() : null;
@@ -162,13 +165,13 @@ class DoTest extends \Psalm\Tests\TestCase
                 ],
             ],
             'doWhileFirstGood' => [
-                '<?php
+                'code' => '<?php
                     do {
                         $done = rand(0, 1) > 0;
                     } while (!$done);',
             ],
             'doWhileWithIfException' => [
-                '<?php
+                'code' => '<?php
                     class A
                     {
                         /**
@@ -189,7 +192,7 @@ class DoTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'doWhileWithIfExceptionOutside' => [
-                '<?php
+                'code' => '<?php
                     class A
                     {
                         /**
@@ -210,7 +213,7 @@ class DoTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'doWhileDefinedVar' => [
-                '<?php
+                'code' => '<?php
                     $value = null;
                     do {
                         $count = rand(0, 1);
@@ -218,7 +221,7 @@ class DoTest extends \Psalm\Tests\TestCase
                     } while ($count);',
             ],
             'doWhileDefinedVarWithPossibleBreak' => [
-                '<?php
+                'code' => '<?php
                     $value = null;
                     do {
                         if (rand(0, 1)) {
@@ -229,7 +232,7 @@ class DoTest extends \Psalm\Tests\TestCase
                     } while ($count);',
             ],
             'invalidateBothByRefAssignmentsInDo' => [
-                '<?php
+                'code' => '<?php
                     function foo(?string &$i) : void {}
                     function bar(?string &$i) : void {}
 
@@ -244,7 +247,7 @@ class DoTest extends \Psalm\Tests\TestCase
                     } while (rand(0, 1));',
             ],
             'doParentCall' => [
-                '<?php
+                'code' => '<?php
                     class A {
                         /** @return A|false */
                         public function getParent() {
@@ -259,7 +262,7 @@ class DoTest extends \Psalm\Tests\TestCase
                     } while ($a !== false);',
             ],
             'doCallInWhile' => [
-                '<?php
+                'code' => '<?php
                     class A {
                         public function getParent() : ?A {
                             return rand(0, 1) ? new A : null;
@@ -273,7 +276,7 @@ class DoTest extends \Psalm\Tests\TestCase
                     } while ($a = $a->getParent());',
             ],
             'doWithContinue' => [
-                '<?php
+                'code' => '<?php
                     do {
                         if (rand(0, 1)) {
                             continue;
@@ -281,7 +284,7 @@ class DoTest extends \Psalm\Tests\TestCase
                     } while (rand(0, 1));',
             ],
             'noEmptyArrayAccessComplaintInsideDo' => [
-                '<?php
+                'code' => '<?php
                     $foo = [];
                     do {
                         if (isset($foo["bar"])) {}
@@ -289,13 +292,13 @@ class DoTest extends \Psalm\Tests\TestCase
                     } while (rand(0, 1));',
             ],
             'noRedundantConditionAfterDoWhile' => [
-                '<?php
+                'code' => '<?php
                     $i = 5;
                     do {} while (--$i > 0);
                     echo $i === 0;',
             ],
             'doWhileNonInfinite' => [
-                '<?php
+                'code' => '<?php
                     function foo(): int {
                         do {
                             $value = mt_rand(0, 10);
@@ -307,7 +310,7 @@ class DoTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'doNoRedundant' => [
-                '<?php
+                'code' => '<?php
                     class Event {}
 
                     function fetchEvent(): ?Event {
@@ -321,7 +324,7 @@ class DoTest extends \Psalm\Tests\TestCase
                     }',
             ],
             'doConditionInWhileAndIfWithSingleVar' => [
-                '<?php
+                'code' => '<?php
                     $b = !!rand(0, 1);
 
                     do {
@@ -329,12 +332,12 @@ class DoTest extends \Psalm\Tests\TestCase
                            $b = !rand(0, 1);
                         }
                     } while (!$b);',
-                [
+                'assertions' => [
                     '$b' => 'true'
                 ]
             ],
             'doConditionInWhileAndIfWithTwoVars' => [
-                '<?php
+                'code' => '<?php
                     $b = !!rand(0, 1);
 
                     do {
@@ -345,14 +348,14 @@ class DoTest extends \Psalm\Tests\TestCase
                     if ($b) {}'
             ],
             'regularAssignmentInsideDo' => [
-                '<?php
+                'code' => '<?php
                     do {
                         $code = rand(0, 1);
                         echo "here";
                     } while ($code === 1);'
             ],
             'destructuringAssignmentInsideDo' => [
-                '<?php
+                'code' => '<?php
                     do {
                         [$code] = [rand(0, 1)];
                         echo "here";
@@ -362,13 +365,13 @@ class DoTest extends \Psalm\Tests\TestCase
     }
 
     /**
-     * @return iterable<string,array{string,error_message:string,1?:string[],2?:bool,3?:string}>
+     * @return iterable<string,array{code:string,error_message:string,ignored_issues?:list<string>,php_version?:string}>
      */
     public function providerInvalidCodeParse(): iterable
     {
         return [
             'doWhileVarWithPossibleBreakWithoutDefining' => [
-                '<?php
+                'code' => '<?php
                     do {
                         if (rand(0, 1)) {
                             break;
@@ -381,7 +384,7 @@ class DoTest extends \Psalm\Tests\TestCase
                 'error_message' => 'PossiblyUndefinedGlobalVariable',
             ],
             'doWhileVarWithPossibleBreakThatMaybeSetsToTrueWithoutDefining' => [
-                '<?php
+                'code' => '<?php
                     do {
                         if (rand(0, 1)) {
                             if (rand(0, 1)) {
@@ -398,7 +401,7 @@ class DoTest extends \Psalm\Tests\TestCase
                 'error_message' => 'PossiblyUndefinedGlobalVariable',
             ],
             'SKIPPED-doWhileVarWithPossibleContinueWithoutDefining' => [
-                '<?php
+                'code' => '<?php
                     do {
                         if (rand(0, 1)) {
                             continue;
@@ -411,7 +414,7 @@ class DoTest extends \Psalm\Tests\TestCase
                 'error_message' => 'PossiblyUndefinedGlobalVariable',
             ],
             'possiblyUndefinedArrayInDo' => [
-                '<?php
+                'code' => '<?php
                     do {
                         $array[] = "hello";
                     } while (rand(0, 1));',

@@ -1,10 +1,15 @@
 <?php
+
 namespace Psalm\Internal\Type\TypeAlias;
+
+use Psalm\Internal\Type\TypeAlias;
 
 /**
  * @psalm-immutable
+ *
+ * @internal
  */
-class LinkableTypeAlias implements \Psalm\Internal\Type\TypeAlias
+class LinkableTypeAlias implements TypeAlias
 {
     public $declaring_fq_classlike_name;
 

@@ -1,4 +1,5 @@
 <?php
+
 namespace Psalm\Internal\Analyzer\Statements\Expression;
 
 use PhpParser;
@@ -7,23 +8,31 @@ use Psalm\Context;
 use Psalm\Internal\Analyzer\MethodAnalyzer;
 use Psalm\Internal\Analyzer\Statements\ExpressionAnalyzer;
 use Psalm\Internal\Analyzer\StatementsAnalyzer;
+use Psalm\Internal\MethodIdentifier;
 use Psalm\Issue\InvalidClone;
 use Psalm\Issue\MixedClone;
 use Psalm\Issue\PossiblyInvalidClone;
 use Psalm\IssueBuffer;
-use Psalm\Type;
+use Psalm\Type\Atomic\TFalse;
 use Psalm\Type\Atomic\TMixed;
 use Psalm\Type\Atomic\TNamedObject;
+use Psalm\Type\Atomic\TNull;
 use Psalm\Type\Atomic\TObject;
 use Psalm\Type\Atomic\TTemplateParam;
 
+use function array_merge;
+use function array_pop;
+
+/**
+ * @internal
+ */
 class CloneAnalyzer
 {
     public static function analyze(
         StatementsAnalyzer $statements_analyzer,
         PhpParser\Node\Expr\Clone_ $stmt,
         Context $context
-    ) : bool {
+    ): bool {
         $codebase = $statements_analyzer->getCodebase();
         $codebase_methods = $codebase->methods;
         if (ExpressionAnalyzer::analyze($statements_analyzer, $stmt->expr, $context) === false) {
@@ -44,7 +53,7 @@ class CloneAnalyzer
             $atomic_types = $clone_type->getAtomicTypes();
 
             while ($atomic_types) {
-                $clone_type_part = \array_pop($atomic_types);
+                $clone_type_part = array_pop($atomic_types);
 
                 if ($clone_type_part instanceof TMixed) {
                     $mixed_clone = true;
@@ -54,7 +63,7 @@ class CloneAnalyzer
                     if (!$codebase->classlikes->classOrInterfaceExists($clone_type_part->value)) {
                         $invalid_clones[] = $clone_type_part->getId();
                     } else {
-                        $clone_method_id = new \Psalm\Internal\MethodIdentifier(
+                        $clone_method_id = new MethodIdentifier(
                             $clone_type_part->value,
                             '__clone'
                         );
@@ -77,15 +86,15 @@ class CloneAnalyzer
                         }
                     }
                 } elseif ($clone_type_part instanceof TTemplateParam) {
-                    $atomic_types = \array_merge($atomic_types, $clone_type_part->as->getAtomicTypes());
+                    $atomic_types = array_merge($atomic_types, $clone_type_part->as->getAtomicTypes());
                 } else {
-                    if ($clone_type_part instanceof Type\Atomic\TFalse
+                    if ($clone_type_part instanceof TFalse
                         && $clone_type->ignore_falsable_issues
                     ) {
                         continue;
                     }
 
-                    if ($clone_type_part instanceof Type\Atomic\TNull
+                    if ($clone_type_part instanceof TNull
                         && $clone_type->ignore_nullable_issues
                     ) {
                         continue;
@@ -96,38 +105,32 @@ class CloneAnalyzer
             }
 
             if ($mixed_clone) {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new MixedClone(
                         'Cannot clone mixed',
                         new CodeLocation($statements_analyzer->getSource(), $stmt)
                     ),
                     $statements_analyzer->getSuppressedIssues()
-                )) {
-                    // fall through
-                }
+                );
             }
 
             if ($invalid_clones) {
                 if ($possibly_valid) {
-                    if (IssueBuffer::accepts(
+                    IssueBuffer::maybeAdd(
                         new PossiblyInvalidClone(
                             'Cannot clone ' . $invalid_clones[0],
                             new CodeLocation($statements_analyzer->getSource(), $stmt)
                         ),
                         $statements_analyzer->getSuppressedIssues()
-                    )) {
-                        // fall through
-                    }
+                    );
                 } else {
-                    if (IssueBuffer::accepts(
+                    IssueBuffer::maybeAdd(
                         new InvalidClone(
                             'Cannot clone ' . $invalid_clones[0],
                             new CodeLocation($statements_analyzer->getSource(), $stmt)
                         ),
                         $statements_analyzer->getSuppressedIssues()
-                    )) {
-                        // fall through
-                    }
+                    );
                 }
 
                 return true;

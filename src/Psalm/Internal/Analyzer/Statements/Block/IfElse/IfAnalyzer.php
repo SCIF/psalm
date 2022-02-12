@@ -1,4 +1,5 @@
 <?php
+
 namespace Psalm\Internal\Analyzer\Statements\Block\IfElse;
 
 use PhpParser;
@@ -6,9 +7,11 @@ use Psalm\CodeLocation;
 use Psalm\Codebase;
 use Psalm\Context;
 use Psalm\Internal\Algebra;
+use Psalm\Internal\Analyzer\FunctionLikeAnalyzer;
 use Psalm\Internal\Analyzer\ScopeAnalyzer;
 use Psalm\Internal\Analyzer\Statements\ExpressionAnalyzer;
 use Psalm\Internal\Analyzer\StatementsAnalyzer;
+use Psalm\Internal\Analyzer\TraitAnalyzer;
 use Psalm\Internal\Scope\IfConditionalScope;
 use Psalm\Internal\Scope\IfScope;
 use Psalm\Internal\Type\Comparator\UnionTypeComparator;
@@ -21,9 +24,12 @@ use Psalm\Node\Name\VirtualFullyQualified;
 use Psalm\Node\VirtualArg;
 use Psalm\Type;
 use Psalm\Type\Reconciler;
+use Psalm\Type\Union;
 
 use function array_diff_key;
+use function array_filter;
 use function array_intersect;
+use function array_intersect_key;
 use function array_keys;
 use function array_merge;
 use function array_unique;
@@ -32,10 +38,13 @@ use function in_array;
 use function strpos;
 use function substr;
 
+/**
+ * @internal
+ */
 class IfAnalyzer
 {
     /**
-     * @param  array<string,Type\Union> $pre_assignment_else_redefined_vars
+     * @param  array<string, Union> $pre_assignment_else_redefined_vars
      *
      * @return false|null
      */
@@ -69,7 +78,6 @@ class IfAnalyzer
         $final_actions = ScopeAnalyzer::getControlActions(
             $stmt->stmts,
             $statements_analyzer->node_data,
-            $codebase->config->exit_functions,
             []
         );
 
@@ -104,7 +112,7 @@ class IfAnalyzer
                     $outer_constraint_type
                 )
             ) {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new ConflictingReferenceConstraint(
                         'There is more than one pass-by-reference constraint on ' . $var_id
                             . ' between ' . $byref_constraint->type->getId()
@@ -112,9 +120,7 @@ class IfAnalyzer
                         new CodeLocation($statements_analyzer, $stmt, $outer_context->include_location, true)
                     ),
                     $statements_analyzer->getSuppressedIssues()
-                )) {
-                    // fall through
-                }
+                );
             } else {
                 $outer_context->byref_constraints[$var_id] = $byref_constraint;
             }
@@ -261,7 +267,7 @@ class IfAnalyzer
         IfScope $if_scope,
         Context $post_if_context,
         array $new_assigned_var_ids
-    ) : bool {
+    ): bool {
         if (!$if_scope->negated_types) {
             return false;
         }
@@ -315,12 +321,12 @@ class IfAnalyzer
                 ) {
                     $parent_source = $statements_analyzer->getSource();
 
-                    $functionlike_storage = $parent_source instanceof \Psalm\Internal\Analyzer\FunctionLikeAnalyzer
+                    $functionlike_storage = $parent_source instanceof FunctionLikeAnalyzer
                         ? $parent_source->getFunctionLikeStorage($statements_analyzer)
                         : null;
 
                     if (!$functionlike_storage
-                            || (!$parent_source->getSource() instanceof \Psalm\Internal\Analyzer\TraitAnalyzer
+                            || (!$parent_source->getSource() instanceof TraitAnalyzer
                                 && !isset($functionlike_storage->param_lookup[substr($var_id, 1)]))
                     ) {
                         $codebase = $statements_analyzer->getCodebase();
@@ -350,9 +356,9 @@ class IfAnalyzer
         Context $post_leaving_if_context,
         Context $post_if_context,
         array $assigned_in_conditional_var_ids
-    ) : void {
+    ): void {
         // this filters out coercions to expected types in ArgumentAnalyzer
-        $assigned_in_conditional_var_ids = \array_filter($assigned_in_conditional_var_ids);
+        $assigned_in_conditional_var_ids = array_filter($assigned_in_conditional_var_ids);
 
         if (!$assigned_in_conditional_var_ids) {
             return;
@@ -430,7 +436,7 @@ class IfAnalyzer
         return [$stmt];
     }
 
-    private static function negateExpr(PhpParser\Node\Expr $expr) : PhpParser\Node\Expr
+    private static function negateExpr(PhpParser\Node\Expr $expr): PhpParser\Node\Expr
     {
         if ($expr instanceof PhpParser\Node\Expr\BooleanNot) {
             return $expr->expr;
@@ -453,7 +459,7 @@ class IfAnalyzer
         array $possibly_assigned_var_ids,
         array $newly_reconciled_var_ids,
         bool $update_new_vars = true
-    ) : void {
+    ): void {
         $redefined_vars = $if_context->getRedefinedVars($outer_context->vars_in_scope);
 
         if ($if_scope->new_vars === null) {
@@ -487,7 +493,7 @@ class IfAnalyzer
         if ($if_scope->assigned_var_ids === null) {
             $if_scope->assigned_var_ids = $assigned_var_ids;
         } else {
-            $if_scope->assigned_var_ids = \array_intersect_key($assigned_var_ids, $if_scope->assigned_var_ids);
+            $if_scope->assigned_var_ids = array_intersect_key($assigned_var_ids, $if_scope->assigned_var_ids);
         }
 
         $if_scope->possibly_assigned_var_ids += $possibly_assigned_var_ids;

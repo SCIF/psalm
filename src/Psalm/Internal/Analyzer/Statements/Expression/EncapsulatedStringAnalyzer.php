@@ -1,4 +1,5 @@
 <?php
+
 namespace Psalm\Internal\Analyzer\Statements\Expression;
 
 use PhpParser;
@@ -9,14 +10,22 @@ use Psalm\Internal\Analyzer\StatementsAnalyzer;
 use Psalm\Internal\DataFlow\DataFlowNode;
 use Psalm\Plugin\EventHandler\Event\AddRemoveTaintsEvent;
 use Psalm\Type;
+use Psalm\Type\Atomic\TNonEmptyNonspecificLiteralString;
+use Psalm\Type\Atomic\TNonEmptyString;
+use Psalm\Type\Union;
 
+use function in_array;
+
+/**
+ * @internal
+ */
 class EncapsulatedStringAnalyzer
 {
     public static function analyze(
         StatementsAnalyzer $statements_analyzer,
         PhpParser\Node\Scalar\Encapsed $stmt,
         Context $context
-    ) : bool {
+    ): bool {
         $stmt_type = Type::getString();
 
         $non_empty = false;
@@ -49,7 +58,7 @@ class EncapsulatedStringAnalyzer
                 }
 
                 if ($statements_analyzer->data_flow_graph
-                    && !\in_array('TaintedInput', $statements_analyzer->getSuppressedIssues())
+                    && !in_array('TaintedInput', $statements_analyzer->getSuppressedIssues())
                 ) {
                     $var_location = new CodeLocation($statements_analyzer, $part);
 
@@ -81,9 +90,9 @@ class EncapsulatedStringAnalyzer
 
         if ($non_empty) {
             if ($all_literals) {
-                $new_type = new Type\Union([new Type\Atomic\TNonEmptyNonspecificLiteralString()]);
+                $new_type = new Union([new TNonEmptyNonspecificLiteralString()]);
             } else {
-                $new_type = new Type\Union([new Type\Atomic\TNonEmptyString()]);
+                $new_type = new Union([new TNonEmptyString()]);
             }
 
             $new_type->parent_nodes = $stmt_type->parent_nodes;

@@ -1,4 +1,5 @@
 <?php
+
 namespace Psalm\Type\Atomic;
 
 use Psalm\Codebase;
@@ -6,7 +7,10 @@ use Psalm\Internal\Analyzer\StatementsAnalyzer;
 use Psalm\Internal\Type\TemplateResult;
 use Psalm\Internal\Type\TemplateStandinTypeReplacer;
 use Psalm\Type\Atomic;
+use Psalm\Type\Union;
 
+use function array_values;
+use function count;
 use function preg_quote;
 use function preg_replace;
 use function stripos;
@@ -29,6 +33,12 @@ class TClassString extends TString
      */
     public $as_type;
 
+    /** @var bool */
+    public $is_loaded = false;
+
+    /** @var bool */
+    public $is_interface = false;
+
     public function __construct(string $as = 'object', ?TNamedObject $as_type = null)
     {
         $this->as = $as;
@@ -37,7 +47,8 @@ class TClassString extends TString
 
     public function getKey(bool $include_extra = true): string
     {
-        return 'class-string' . ($this->as === 'object' ? '' : '<' . $this->as_type . '>');
+        return ($this->is_interface ? 'interface' : 'class')
+            . '-string' . ($this->as === 'object' ? '' : '<' . $this->as_type . '>');
     }
 
     public function __toString(): string
@@ -47,10 +58,12 @@ class TClassString extends TString
 
     public function getId(bool $nested = false): string
     {
-        return $this->getKey();
+        return ($this->is_loaded ? 'loaded-' : '')
+            . ($this->is_interface ? 'interface' : 'class')
+            . '-string' . ($this->as === 'object' ? '' : '<' . $this->as_type . '>');
     }
 
-    public function getAssertionString(bool $exact = false): string
+    public function getAssertionString(): string
     {
         return 'class-string';
     }
@@ -62,8 +75,7 @@ class TClassString extends TString
         ?string $namespace,
         array $aliased_classes,
         ?string $this_class,
-        int $php_major_version,
-        int $php_minor_version
+        int $analysis_php_version_id
     ): ?string {
         return 'string';
     }
@@ -100,19 +112,19 @@ class TClassString extends TString
         return 'class-string<\\' . $this->as . '>';
     }
 
-    public function canBeFullyExpressedInPhp(int $php_major_version, int $php_minor_version): bool
+    public function canBeFullyExpressedInPhp(int $analysis_php_version_id): bool
     {
         return false;
     }
 
-    public function getChildNodes() : array
+    public function getChildNodes(): array
     {
         return $this->as_type ? [$this->as_type] : [];
     }
 
     public function replaceTemplateTypesWithStandins(
         TemplateResult $template_result,
-        ?Codebase $codebase = null,
+        Codebase $codebase,
         ?StatementsAnalyzer $statements_analyzer = null,
         ?Atomic $input_type = null,
         ?int $input_arg_offset = null,
@@ -121,7 +133,7 @@ class TClassString extends TString
         bool $replace = true,
         bool $add_lower_bound = false,
         int $depth = 0
-    ) : Atomic {
+    ): Atomic {
         $class_string = clone $this;
 
         if (!$class_string->as_type) {
@@ -137,11 +149,11 @@ class TClassString extends TString
         }
 
         $as_type = TemplateStandinTypeReplacer::replace(
-            new \Psalm\Type\Union([$class_string->as_type]),
+            new Union([$class_string->as_type]),
             $template_result,
             $codebase,
             $statements_analyzer,
-            new \Psalm\Type\Union([$input_object_type]),
+            new Union([$input_object_type]),
             $input_arg_offset,
             $calling_class,
             $calling_function,
@@ -151,9 +163,9 @@ class TClassString extends TString
             $depth
         );
 
-        $as_type_types = \array_values($as_type->getAtomicTypes());
+        $as_type_types = array_values($as_type->getAtomicTypes());
 
-        $class_string->as_type = \count($as_type_types) === 1
+        $class_string->as_type = count($as_type_types) === 1
             && $as_type_types[0] instanceof TNamedObject
             ? $as_type_types[0]
             : null;

@@ -1,9 +1,12 @@
 <?php
+
 namespace Psalm\Internal\Analyzer\Statements\Expression\BinaryOp;
 
 use PhpParser;
 use Psalm\CodeLocation;
 use Psalm\Context;
+use Psalm\Exception\ComplicatedExpressionException;
+use Psalm\Exception\ScopeAnalysisException;
 use Psalm\Internal\Algebra;
 use Psalm\Internal\Algebra\FormulaGenerator;
 use Psalm\Internal\Analyzer\Statements\Block\IfConditionalAnalyzer;
@@ -12,10 +15,13 @@ use Psalm\Internal\Analyzer\Statements\Block\IfElseAnalyzer;
 use Psalm\Internal\Analyzer\Statements\Expression\ExpressionIdentifier;
 use Psalm\Internal\Analyzer\Statements\ExpressionAnalyzer;
 use Psalm\Internal\Analyzer\StatementsAnalyzer;
+use Psalm\Internal\Clause;
+use Psalm\Internal\Scope\IfScope;
 use Psalm\Internal\Type\AssertionReconciler;
 use Psalm\Node\Expr\VirtualBooleanNot;
 use Psalm\Node\Stmt\VirtualExpression;
 use Psalm\Node\Stmt\VirtualIf;
+use Psalm\Storage\Assertion\Truthy;
 use Psalm\Type;
 use Psalm\Type\Reconciler;
 
@@ -24,6 +30,9 @@ use function array_filter;
 use function array_map;
 use function array_merge;
 use function array_values;
+use function count;
+use function in_array;
+use function spl_object_id;
 
 /**
  * @internal
@@ -35,7 +44,7 @@ class OrAnalyzer
         PhpParser\Node\Expr\BinaryOp $stmt,
         Context $context,
         bool $from_stmt = false
-    ) : bool {
+    ): bool {
         if ($from_stmt) {
             $fake_if_stmt = new VirtualIf(
                 new VirtualBooleanNot($stmt->left, $stmt->left->getAttributes()),
@@ -60,7 +69,7 @@ class OrAnalyzer
             || !$stmt->left->left instanceof PhpParser\Node\Expr\BinaryOp\BooleanOr
             || !$stmt->left->left->left instanceof PhpParser\Node\Expr\BinaryOp\BooleanOr
         ) {
-            $if_scope = new \Psalm\Internal\Scope\IfScope();
+            $if_scope = new IfScope();
 
             try {
                 $if_conditional_scope = IfConditionalAnalyzer::analyze(
@@ -80,7 +89,7 @@ class OrAnalyzer
                 if ($stmt->left instanceof PhpParser\Node\Expr\BinaryOp\BooleanOr) {
                     $post_leaving_if_context = clone $context;
                 }
-            } catch (\Psalm\Exception\ScopeAnalysisException $e) {
+            } catch (ScopeAnalysisException $e) {
                 return false;
             }
         } else {
@@ -125,7 +134,7 @@ class OrAnalyzer
             $left_referenced_var_ids = array_diff_key($left_referenced_var_ids, $left_assigned_var_ids);
         }
 
-        $left_cond_id = \spl_object_id($stmt->left);
+        $left_cond_id = spl_object_id($stmt->left);
 
         $left_clauses = FormulaGenerator::getFormula(
             $left_cond_id,
@@ -138,7 +147,7 @@ class OrAnalyzer
 
         try {
             $negated_left_clauses = Algebra::negateFormula($left_clauses);
-        } catch (\Psalm\Exception\ComplicatedExpressionException $e) {
+        } catch (ComplicatedExpressionException $e) {
             try {
                 $negated_left_clauses = FormulaGenerator::getFormula(
                     $left_cond_id,
@@ -149,7 +158,7 @@ class OrAnalyzer
                     $codebase,
                     false
                 );
-            } catch (\Psalm\Exception\ComplicatedExpressionException $e) {
+            } catch (ComplicatedExpressionException $e) {
                 return false;
             }
         }
@@ -160,13 +169,11 @@ class OrAnalyzer
             $negated_left_clauses = array_values(
                 array_filter(
                     $negated_left_clauses,
-                    static function ($c) use ($reconciled_expression_clauses): bool {
-                        return !\in_array($c->hash, $reconciled_expression_clauses);
-                    }
+                    static fn(Clause $c): bool => !in_array($c->hash, $reconciled_expression_clauses)
                 )
             );
 
-            if (\count($negated_left_clauses) === 1
+            if (count($negated_left_clauses) === 1
                 && $negated_left_clauses[0]->wedge
                 && !$negated_left_clauses[0]->possibilities
             ) {
@@ -233,9 +240,7 @@ class OrAnalyzer
             $right_context->reconciled_expression_clauses = array_merge(
                 $context->reconciled_expression_clauses,
                 array_map(
-                    static function ($c) {
-                        return $c->hash;
-                    },
+                    static fn(Clause $c) => $c->hash,
                     $partitioned_clauses[1]
                 )
             );
@@ -245,9 +250,7 @@ class OrAnalyzer
             $context->reconciled_expression_clauses = array_merge(
                 $context->reconciled_expression_clauses,
                 array_map(
-                    static function ($c) {
-                        return $c->hash;
-                    },
+                    static fn(Clause $c) => $c->hash,
                     $partitioned_clauses[1]
                 )
             );
@@ -273,7 +276,7 @@ class OrAnalyzer
         $right_assigned_var_ids = $right_context->assigned_var_ids;
         $right_context->assigned_var_ids = array_merge($pre_assigned_var_ids, $right_assigned_var_ids);
 
-        $right_cond_id = \spl_object_id($stmt->right);
+        $right_cond_id = spl_object_id($stmt->right);
 
         $right_clauses = FormulaGenerator::getFormula(
             $right_cond_id,
@@ -334,7 +337,7 @@ class OrAnalyzer
 
             if ($var_id && isset($left_context->vars_in_scope[$var_id])) {
                 $left_inferred_reconciled = AssertionReconciler::reconcile(
-                    '!falsy',
+                    new Truthy(),
                     clone $left_context->vars_in_scope[$var_id],
                     '',
                     $statements_analyzer,

@@ -1,4 +1,5 @@
 <?php
+
 namespace Psalm\Internal\Analyzer\Statements\Expression\Call;
 
 use PhpParser;
@@ -6,6 +7,7 @@ use Psalm\CodeLocation;
 use Psalm\Context;
 use Psalm\Internal\Analyzer\ClassLikeAnalyzer;
 use Psalm\Internal\Analyzer\ClassLikeNameOptions;
+use Psalm\Internal\Analyzer\Statements\Expression\Call\StaticMethod\AtomicStaticCallAnalyzer;
 use Psalm\Internal\Analyzer\Statements\Expression\CallAnalyzer;
 use Psalm\Internal\Analyzer\Statements\ExpressionAnalyzer;
 use Psalm\Internal\Analyzer\StatementsAnalyzer;
@@ -14,15 +16,21 @@ use Psalm\Internal\DataFlow\DataFlowNode;
 use Psalm\Internal\DataFlow\TaintSource;
 use Psalm\Internal\MethodIdentifier;
 use Psalm\Internal\Type\TemplateInferredTypeReplacer;
+use Psalm\Internal\Type\TemplateResult;
+use Psalm\Internal\Type\TypeExpander;
 use Psalm\Issue\NonStaticSelfCall;
 use Psalm\Issue\ParentNotFound;
 use Psalm\IssueBuffer;
 use Psalm\Plugin\EventHandler\Event\AddRemoveTaintsEvent;
+use Psalm\Storage\MethodStorage;
 use Psalm\Type;
 use Psalm\Type\Atomic\TNamedObject;
+use Psalm\Type\Union;
 
+use function array_merge;
 use function count;
 use function in_array;
+use function md5;
 use function strtolower;
 
 /**
@@ -33,8 +41,9 @@ class StaticCallAnalyzer extends CallAnalyzer
     public static function analyze(
         StatementsAnalyzer $statements_analyzer,
         PhpParser\Node\Expr\StaticCall $stmt,
-        Context $context
-    ) : bool {
+        Context $context,
+        ?TemplateResult $template_result = null
+    ): bool {
         $method_id = null;
 
         $lhs_type = null;
@@ -110,7 +119,7 @@ class StaticCallAnalyzer extends CallAnalyzer
                 ) {
                     $codebase->file_reference_provider->addMethodReferenceToClassMember(
                         $context->calling_method_id,
-                        'use:' . $stmt->class->parts[0] . ':' . \md5($statements_analyzer->getFilePath()),
+                        'use:' . $stmt->class->parts[0] . ':' . md5($statements_analyzer->getFilePath()),
                         false
                     );
                 }
@@ -173,7 +182,7 @@ class StaticCallAnalyzer extends CallAnalyzer
             }
 
             if ($fq_class_name && !$lhs_type) {
-                $lhs_type = new Type\Union([new TNamedObject($fq_class_name)]);
+                $lhs_type = new Union([new TNamedObject($fq_class_name)]);
             }
         } else {
             $was_inside_general_use = $context->inside_general_use;
@@ -203,7 +212,7 @@ class StaticCallAnalyzer extends CallAnalyzer
         $has_existing_method = false;
 
         foreach ($lhs_type->getAtomicTypes() as $lhs_type_part) {
-            StaticMethod\AtomicStaticCallAnalyzer::analyze(
+            AtomicStaticCallAnalyzer::analyze(
                 $statements_analyzer,
                 $stmt,
                 $context,
@@ -211,11 +220,12 @@ class StaticCallAnalyzer extends CallAnalyzer
                 $lhs_type->ignore_nullable_issues,
                 $moved_call,
                 $has_mock,
-                $has_existing_method
+                $has_existing_method,
+                $template_result
             );
         }
 
-        if (!$has_existing_method) {
+        if (!$stmt->isFirstClassCallable() && !$has_existing_method) {
             return self::checkMethodArgs(
                 $method_id,
                 $stmt->getArgs(),
@@ -242,17 +252,17 @@ class StaticCallAnalyzer extends CallAnalyzer
         PhpParser\Node\Expr\StaticCall $stmt,
         MethodIdentifier $method_id,
         string $cased_method_id,
-        Type\Union $return_type_candidate,
-        ?\Psalm\Storage\MethodStorage $method_storage,
-        ?\Psalm\Internal\Type\TemplateResult $template_result,
+        Union $return_type_candidate,
+        ?MethodStorage $method_storage,
+        ?TemplateResult $template_result,
         ?Context $context = null
-    ) : void {
+    ): void {
         if (!$statements_analyzer->data_flow_graph) {
             return;
         }
 
         if ($statements_analyzer->data_flow_graph instanceof TaintFlowGraph
-            && \in_array('TaintedInput', $statements_analyzer->getSuppressedIssues())
+            && in_array('TaintedInput', $statements_analyzer->getSuppressedIssues())
         ) {
             return;
         }
@@ -296,7 +306,7 @@ class StaticCallAnalyzer extends CallAnalyzer
                     $codebase
                 );
 
-                $expanded_type = \Psalm\Internal\Type\TypeExpander::expandUnion(
+                $expanded_type = TypeExpander::expandUnion(
                     $statements_analyzer->getCodebase(),
                     $conditionally_removed_taint,
                     null,
@@ -334,7 +344,7 @@ class StaticCallAnalyzer extends CallAnalyzer
                 $assignment_node,
                 'conditionally-escaped',
                 $added_taints,
-                \array_merge($conditionally_removed_taints, $removed_taints)
+                array_merge($conditionally_removed_taints, $removed_taints)
             );
 
             $return_type_candidate->parent_nodes[$assignment_node->id] = $assignment_node;
@@ -366,7 +376,7 @@ class StaticCallAnalyzer extends CallAnalyzer
                 $stmt->getArgs(),
                 $node_location,
                 $method_source,
-                \array_merge($method_storage->removed_taints, $removed_taints),
+                array_merge($method_storage->removed_taints, $removed_taints),
                 $added_taints
             );
         }

@@ -1,21 +1,28 @@
 <?php
+
 namespace Psalm\Internal\Codebase;
 
-use Psalm\Config;
+use InvalidArgumentException;
 use Psalm\Internal\Analyzer\ClassLikeAnalyzer;
+use Psalm\Internal\MethodIdentifier;
 use Psalm\Internal\Provider\ClassLikeStorageProvider;
 use Psalm\Internal\Provider\FileReferenceProvider;
 use Psalm\Internal\Provider\FileStorageProvider;
 use Psalm\Issue\CircularReference;
 use Psalm\IssueBuffer;
 use Psalm\Progress\Progress;
+use Psalm\Storage\ClassConstantStorage;
 use Psalm\Storage\ClassLikeStorage;
 use Psalm\Storage\FileStorage;
-use Psalm\Type;
+use Psalm\Type\Atomic\TTemplateParam;
+use Psalm\Type\Union;
 
+use function array_filter;
+use function array_intersect_key;
 use function array_keys;
 use function array_merge;
 use function count;
+use function in_array;
 use function reset;
 use function strlen;
 use function strpos;
@@ -54,17 +61,11 @@ class Populator
     private $classlikes;
 
     /**
-     * @var Config
-     */
-    private $config;
-
-    /**
      * @var FileReferenceProvider
      */
     private $file_reference_provider;
 
     public function __construct(
-        Config $config,
         ClassLikeStorageProvider $classlike_storage_provider,
         FileStorageProvider $file_storage_provider,
         ClassLikes $classlikes,
@@ -75,7 +76,6 @@ class Populator
         $this->file_storage_provider = $file_storage_provider;
         $this->classlikes = $classlikes;
         $this->progress = $progress;
-        $this->config = $config;
         $this->file_reference_provider = $file_reference_provider;
     }
 
@@ -98,50 +98,14 @@ class Populator
         }
 
         foreach ($this->classlike_storage_provider->getNew() as $class_storage) {
-            if ($this->config->allow_phpstorm_generics) {
-                foreach ($class_storage->properties as $property_storage) {
-                    if ($property_storage->type) {
-                        $this->convertPhpStormGenericToPsalmGeneric($property_storage->type, true);
-                    }
-                }
-
-                foreach ($class_storage->methods as $method_storage) {
-                    if ($method_storage->return_type) {
-                        $this->convertPhpStormGenericToPsalmGeneric($method_storage->return_type);
-                    }
-
-                    foreach ($method_storage->params as $param_storage) {
-                        if ($param_storage->type) {
-                            $this->convertPhpStormGenericToPsalmGeneric($param_storage->type);
-                        }
-                    }
-                }
-            }
-
             foreach ($class_storage->dependent_classlikes as $dependent_classlike_lc => $_) {
                 try {
                     $dependee_storage = $this->classlike_storage_provider->get($dependent_classlike_lc);
-                } catch (\InvalidArgumentException $exception) {
+                } catch (InvalidArgumentException $exception) {
                     continue;
                 }
 
                 $class_storage->dependent_classlikes += $dependee_storage->dependent_classlikes;
-            }
-        }
-
-        if ($this->config->allow_phpstorm_generics) {
-            foreach ($all_file_storage as $file_storage) {
-                foreach ($file_storage->functions as $function_storage) {
-                    if ($function_storage->return_type) {
-                        $this->convertPhpStormGenericToPsalmGeneric($function_storage->return_type);
-                    }
-
-                    foreach ($function_storage->params as $param_storage) {
-                        if ($param_storage->type) {
-                            $this->convertPhpStormGenericToPsalmGeneric($param_storage->type);
-                        }
-                    }
-                }
             }
         }
 
@@ -299,7 +263,7 @@ class Populator
                             = ($declaring_class_storage->overridden_method_ids[$method_name] ?? [])
                                 + [$declaring_method_id->fq_class_name => $declaring_method_id];
                     } else {
-                        $candidate_overridden_ids = \array_intersect_key(
+                        $candidate_overridden_ids = array_intersect_key(
                             $candidate_overridden_ids,
                             ($declaring_class_storage->overridden_method_ids[$method_name] ?? [])
                                 + [$declaring_method_id->fq_class_name => $declaring_method_id]
@@ -327,7 +291,7 @@ class Populator
                             $storage->documenting_method_ids[$method_name] = $declaring_method_id;
                             $method_storage->inherited_return_type = true;
                         } else {
-                            if (\in_array(
+                            if (in_array(
                                 $storage->documenting_method_ids[$method_name]->fq_class_name,
                                 $declaring_class_storage->parent_interfaces
                             )) {
@@ -337,7 +301,7 @@ class Populator
                                 $documenting_class_storage = $declaring_class_storages
                                     [$storage->documenting_method_ids[$method_name]->fq_class_name];
 
-                                if (!\in_array(
+                                if (!in_array(
                                     $declaring_class,
                                     $documenting_class_storage->parent_interfaces
                                 ) && $documenting_class_storage->is_interface
@@ -382,7 +346,7 @@ class Populator
                     )
                 );
                 $trait_storage = $storage_provider->get($used_trait_lc);
-            } catch (\InvalidArgumentException $e) {
+            } catch (InvalidArgumentException $e) {
                 continue;
             }
 
@@ -440,20 +404,20 @@ class Populator
     }
 
     private static function extendType(
-        Type\Union $type,
+        Union $type,
         ClassLikeStorage $storage
-    ) : Type\Union {
+    ): Union {
         $extended_types = [];
 
         foreach ($type->getAtomicTypes() as $atomic_type) {
-            if ($atomic_type instanceof Type\Atomic\TTemplateParam) {
+            if ($atomic_type instanceof TTemplateParam) {
                 $referenced_type
                     = $storage->template_extended_params[$atomic_type->defining_class][$atomic_type->param_name]
                         ?? null;
 
                 if ($referenced_type) {
                     foreach ($referenced_type->getAtomicTypes() as $atomic_referenced_type) {
-                        if (!$atomic_referenced_type instanceof Type\Atomic\TTemplateParam) {
+                        if (!$atomic_referenced_type instanceof TTemplateParam) {
                             $extended_types[] = $atomic_referenced_type;
                         } else {
                             $extended_types[] = $atomic_type;
@@ -467,7 +431,7 @@ class Populator
             }
         }
 
-        return new Type\Union($extended_types);
+        return new Union($extended_types);
     }
 
     private function populateDataFromParentClass(
@@ -485,7 +449,7 @@ class Populator
 
         try {
             $parent_storage = $storage_provider->get($parent_storage_class);
-        } catch (\InvalidArgumentException $e) {
+        } catch (InvalidArgumentException $e) {
             $this->progress->debug('Populator could not find dependency (' . __LINE__ . ")\n");
 
             $storage->invalid_dependencies[] = $parent_storage_class;
@@ -561,12 +525,10 @@ class Populator
         }
 
         $storage->constants = array_merge(
-            \array_filter(
+            array_filter(
                 $parent_storage->constants,
-                static function ($constant) {
-                    return $constant->visibility === ClassLikeAnalyzer::VISIBILITY_PUBLIC
-                        || $constant->visibility === ClassLikeAnalyzer::VISIBILITY_PROTECTED;
-                }
+                static fn(ClassConstantStorage $constant): bool => $constant->visibility === ClassLikeAnalyzer::VISIBILITY_PUBLIC
+                    || $constant->visibility === ClassLikeAnalyzer::VISIBILITY_PROTECTED
             ),
             $storage->constants
         );
@@ -611,7 +573,7 @@ class Populator
                     )
                 );
                 $parent_interface_storage = $storage_provider->get($parent_interface_lc);
-            } catch (\InvalidArgumentException $e) {
+            } catch (InvalidArgumentException $e) {
                 $this->progress->debug('Populator could not find dependency (' . __LINE__ . ")\n");
 
                 $storage->invalid_dependencies[] = $parent_interface_lc;
@@ -622,11 +584,9 @@ class Populator
 
             // copy over any constants
             $storage->constants = array_merge(
-                \array_filter(
+                array_filter(
                     $parent_interface_storage->constants,
-                    static function ($constant) {
-                        return $constant->visibility === ClassLikeAnalyzer::VISIBILITY_PUBLIC;
-                    }
+                    static fn(ClassConstantStorage $constant): bool => $constant->visibility === ClassLikeAnalyzer::VISIBILITY_PUBLIC
                 ),
                 $storage->constants
             );
@@ -694,7 +654,7 @@ class Populator
                     )
                 );
                 $parent_interface_storage = $storage_provider->get($parent_interface_lc);
-            } catch (\InvalidArgumentException $e) {
+            } catch (InvalidArgumentException $e) {
                 continue;
             }
 
@@ -717,7 +677,7 @@ class Populator
                     )
                 );
                 $implemented_interface_storage = $storage_provider->get($implemented_interface_lc);
-            } catch (\InvalidArgumentException $e) {
+            } catch (InvalidArgumentException $e) {
                 $this->progress->debug('Populator could not find dependency (' . __LINE__ . ")\n");
 
                 $storage->invalid_dependencies[] = $implemented_interface_lc;
@@ -728,11 +688,9 @@ class Populator
 
             // copy over any constants
             $storage->constants = array_merge(
-                \array_filter(
+                array_filter(
                     $implemented_interface_storage->constants,
-                    static function ($constant) {
-                        return $constant->visibility === ClassLikeAnalyzer::VISIBILITY_PUBLIC;
-                    }
+                    static fn(ClassConstantStorage $constant): bool => $constant->visibility === ClassLikeAnalyzer::VISIBILITY_PUBLIC
                 ),
                 $storage->constants
             );
@@ -799,7 +757,7 @@ class Populator
                     )
                 );
                 $implemented_interface_storage = $storage_provider->get($implemented_interface);
-            } catch (\InvalidArgumentException $e) {
+            } catch (InvalidArgumentException $e) {
                 continue;
             }
 
@@ -807,7 +765,7 @@ class Populator
 
             foreach ($implemented_interface_storage->methods as $method_name => $method) {
                 if ($method->visibility === ClassLikeAnalyzer::VISIBILITY_PUBLIC) {
-                    $interface_method_implementers[$method_name][] = new \Psalm\Internal\MethodIdentifier(
+                    $interface_method_implementers[$method_name][] = new MethodIdentifier(
                         $implemented_interface_storage->name,
                         $method_name
                     );
@@ -869,7 +827,7 @@ class Populator
         foreach ($storage->required_file_paths as $included_file_path => $_) {
             try {
                 $included_file_storage = $this->file_storage_provider->get($included_file_path);
-            } catch (\InvalidArgumentException $e) {
+            } catch (InvalidArgumentException $e) {
                 continue;
             }
 
@@ -881,7 +839,7 @@ class Populator
         foreach ($all_required_file_paths as $included_file_path => $_) {
             try {
                 $included_file_storage = $this->file_storage_provider->get($included_file_path);
-            } catch (\InvalidArgumentException $e) {
+            } catch (InvalidArgumentException $e) {
                 continue;
             }
 
@@ -899,7 +857,7 @@ class Populator
         foreach ($storage->referenced_classlikes as $fq_class_name) {
             try {
                 $classlike_storage = $this->classlike_storage_provider->get($fq_class_name);
-            } catch (\InvalidArgumentException $e) {
+            } catch (InvalidArgumentException $e) {
                 continue;
             }
 
@@ -909,14 +867,14 @@ class Populator
 
             try {
                 $included_file_storage = $this->file_storage_provider->get($classlike_storage->location->file_path);
-            } catch (\InvalidArgumentException $e) {
+            } catch (InvalidArgumentException $e) {
                 continue;
             }
 
             foreach ($classlike_storage->used_traits as $used_trait) {
                 try {
                     $trait_storage = $this->classlike_storage_provider->get($used_trait);
-                } catch (\InvalidArgumentException $e) {
+                } catch (InvalidArgumentException $e) {
                     continue;
                 }
 
@@ -928,7 +886,7 @@ class Populator
                     $included_trait_file_storage = $this->file_storage_provider->get(
                         $trait_storage->location->file_path
                     );
-                } catch (\InvalidArgumentException $e) {
+                } catch (InvalidArgumentException $e) {
                     continue;
                 }
 
@@ -949,7 +907,7 @@ class Populator
         foreach ($all_required_file_paths as $required_file_path) {
             try {
                 $required_file_storage = $this->file_storage_provider->get($required_file_path);
-            } catch (\InvalidArgumentException $e) {
+            } catch (InvalidArgumentException $e) {
                 continue;
             }
 
@@ -959,7 +917,7 @@ class Populator
         foreach ($storage->required_classes as $required_classlike) {
             try {
                 $classlike_storage = $this->classlike_storage_provider->get($required_classlike);
-            } catch (\InvalidArgumentException $e) {
+            } catch (InvalidArgumentException $e) {
                 continue;
             }
 
@@ -969,7 +927,7 @@ class Populator
 
             try {
                 $required_file_storage = $this->file_storage_provider->get($classlike_storage->location->file_path);
-            } catch (\InvalidArgumentException $e) {
+            } catch (InvalidArgumentException $e) {
                 continue;
             }
 
@@ -977,65 +935,6 @@ class Populator
         }
 
         $storage->populated = true;
-    }
-
-    private function convertPhpStormGenericToPsalmGeneric(Type\Union $candidate, bool $is_property = false): void
-    {
-        if (!$candidate->from_docblock) {
-            //never convert a type that comes from a signature
-            return;
-        }
-
-        $atomic_types = $candidate->getAtomicTypes();
-
-        if (isset($atomic_types['array']) && count($atomic_types) > 1 && !isset($atomic_types['null'])) {
-            $iterator_name = null;
-            $generic_params = null;
-            $iterator_key = null;
-
-            try {
-                foreach ($atomic_types as $type_key => $type) {
-                    if ($type instanceof Type\Atomic\TIterable
-                        || ($type instanceof Type\Atomic\TNamedObject
-                            && (!$type->from_docblock || $is_property)
-                            && (
-                                strtolower($type->value) === 'traversable'
-                                || $this->classlikes->interfaceExtends(
-                                    $type->value,
-                                    'Traversable'
-                                )
-                                || $this->classlikes->classImplements(
-                                    $type->value,
-                                    'Traversable'
-                                )
-                            ))
-                    ) {
-                        $iterator_name = $type->value;
-                        $iterator_key = $type_key;
-                    } elseif ($type instanceof Type\Atomic\TArray) {
-                        $generic_params = $type->type_params;
-                    }
-                }
-            } catch (\InvalidArgumentException $e) {
-                // ignore class-not-found issues
-            }
-
-            if ($iterator_name && $iterator_key && $generic_params) {
-                if ($iterator_name === 'iterable') {
-                    $generic_iterator = new Type\Atomic\TIterable($generic_params);
-                } else {
-                    if (strtolower($iterator_name) === 'generator') {
-                        $generic_params[] = Type::getMixed();
-                        $generic_params[] = Type::getMixed();
-                    }
-                    $generic_iterator = new Type\Atomic\TGenericObject($iterator_name, $generic_params);
-                }
-
-                $candidate->removeType('array');
-                $candidate->removeType($iterator_key);
-                $candidate->addType($generic_iterator);
-            }
-        }
     }
 
     protected function inheritMethodsFromParent(
@@ -1067,7 +966,7 @@ class Populator
                     continue;
                 }
 
-                $implemented_method_id = new \Psalm\Internal\MethodIdentifier(
+                $implemented_method_id = new MethodIdentifier(
                     $fq_class_name,
                     $aliased_method_name
                 );

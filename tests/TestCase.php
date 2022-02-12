@@ -1,8 +1,10 @@
 <?php
+
 namespace Psalm\Tests;
 
 use PHPUnit\Framework\TestCase as BaseTestCase;
 use Psalm\Config;
+use Psalm\Context;
 use Psalm\Internal\Analyzer\FileAnalyzer;
 use Psalm\Internal\Analyzer\ProjectAnalyzer;
 use Psalm\Internal\Provider\FakeFileProvider;
@@ -10,9 +12,9 @@ use Psalm\Internal\Provider\Providers;
 use Psalm\Internal\RuntimeCaches;
 use Psalm\Internal\Type\TypeParser;
 use Psalm\Internal\Type\TypeTokenizer;
-use Psalm\Tests\Internal\Provider;
+use Psalm\IssueBuffer;
+use Psalm\Tests\Internal\Provider\FakeParserCacheProvider;
 use Psalm\Type\Union;
-use RuntimeException;
 use Throwable;
 
 use function array_filter;
@@ -41,7 +43,7 @@ class TestCase extends BaseTestCase
     /** @var Config */
     protected $testConfig;
 
-    public static function setUpBeforeClass() : void
+    public static function setUpBeforeClass(): void
     {
         ini_set('memory_limit', '-1');
 
@@ -57,12 +59,12 @@ class TestCase extends BaseTestCase
         self::$src_dir_path = getcwd() . DIRECTORY_SEPARATOR . 'src' . DIRECTORY_SEPARATOR;
     }
 
-    protected function makeConfig() : Config
+    protected function makeConfig(): Config
     {
         return new TestConfig();
     }
 
-    public function setUp() : void
+    public function setUp(): void
     {
         parent::setUp();
 
@@ -74,7 +76,7 @@ class TestCase extends BaseTestCase
 
         $providers = new Providers(
             $this->file_provider,
-            new Provider\FakeParserCacheProvider()
+            new FakeParserCacheProvider()
         );
 
         $this->project_analyzer = new ProjectAnalyzer(
@@ -82,10 +84,10 @@ class TestCase extends BaseTestCase
             $providers
         );
 
-        $this->project_analyzer->setPhpVersion('7.4');
+        $this->project_analyzer->setPhpVersion('7.4', 'tests');
     }
 
-    public function tearDown() : void
+    public function tearDown(): void
     {
         unset($this->project_analyzer, $this->file_provider, $this->testConfig);
         RuntimeCaches::clearAll();
@@ -106,7 +108,7 @@ class TestCase extends BaseTestCase
      * @param  string         $file_path
      *
      */
-    public function analyzeFile($file_path, \Psalm\Context $context, bool $track_unused_suppressions = true, bool $taint_flow_tracking = false): void
+    public function analyzeFile($file_path, Context $context, bool $track_unused_suppressions = true, bool $taint_flow_tracking = false): void
     {
         $codebase = $this->project_analyzer->getCodebase();
 
@@ -138,7 +140,7 @@ class TestCase extends BaseTestCase
         }
 
         if ($track_unused_suppressions) {
-            \Psalm\IssueBuffer::processUnusedSuppressions($codebase->file_provider);
+            IssueBuffer::processUnusedSuppressions($codebase->file_provider);
         }
     }
 
@@ -148,15 +150,7 @@ class TestCase extends BaseTestCase
      */
     protected function getTestName($withDataSet = true): string
     {
-        $name = parent::getName($withDataSet);
-        /**
-         * @psalm-suppress TypeDoesNotContainNull PHPUnit 8.2 made it non-nullable again
-         */
-        if (null === $name) {
-            throw new RuntimeException('anonymous test - shouldn\'t happen');
-        }
-
-        return $name;
+        return $this->getName($withDataSet);
     }
 
     /**
@@ -180,34 +174,32 @@ class TestCase extends BaseTestCase
             parent::assertRegExp($pattern, $string, $message);
         }
     }
-    
+
     public static function assertArrayKeysAreStrings(array $array, string $message = ''): void
     {
         $validKeys = array_filter($array, 'is_string', ARRAY_FILTER_USE_KEY);
         self::assertTrue(count($array) === count($validKeys), $message);
     }
-    
+
     public static function assertArrayKeysAreZeroOrString(array $array, string $message = ''): void
     {
-        $isZeroOrString = /** @param mixed $key */ function ($key): bool {
-            return $key === 0 || is_string($key);
-        };
+        $isZeroOrString = /** @param mixed $key */ fn($key): bool => $key === 0 || is_string($key);
         $validKeys = array_filter($array, $isZeroOrString, ARRAY_FILTER_USE_KEY);
         self::assertTrue(count($array) === count($validKeys), $message);
     }
-    
+
     public static function assertArrayValuesAreArrays(array $array, string $message = ''): void
     {
         $validValues = array_filter($array, 'is_array');
         self::assertTrue(count($array) === count($validValues), $message);
     }
-    
+
     public static function assertArrayValuesAreStrings(array $array, string $message = ''): void
     {
         $validValues = array_filter($array, 'is_string');
         self::assertTrue(count($array) === count($validValues), $message);
     }
-    
+
     public static function assertStringIsParsableType(string $type, string $message = ''): void
     {
         if ($type === '') {

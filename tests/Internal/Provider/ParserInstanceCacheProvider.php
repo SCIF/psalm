@@ -1,11 +1,13 @@
 <?php
+
 namespace Psalm\Tests\Internal\Provider;
 
 use PhpParser;
+use Psalm\Internal\Provider\ParserCacheProvider;
 
 use function microtime;
 
-class ParserInstanceCacheProvider extends \Psalm\Internal\Provider\ParserCacheProvider
+class ParserInstanceCacheProvider extends ParserCacheProvider
 {
     /**
      * @var array<string, string>

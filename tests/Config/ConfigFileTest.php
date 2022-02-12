@@ -1,9 +1,11 @@
 <?php
+
 namespace Psalm\Tests\Config;
 
 use Psalm\Config;
 use Psalm\Internal\PluginManager\ConfigFile;
 use Psalm\Internal\RuntimeCaches;
+use Psalm\Tests\TestCase;
 
 use function file_get_contents;
 use function file_put_contents;
@@ -16,18 +18,18 @@ use function unlink;
 use const PHP_EOL;
 
 /** @group PluginManager */
-class ConfigFileTest extends \Psalm\Tests\TestCase
+class ConfigFileTest extends TestCase
 {
     /** @var string */
     private $file_path;
 
-    public function setUp() : void
+    public function setUp(): void
     {
         RuntimeCaches::clearAll();
         $this->file_path = tempnam(sys_get_temp_dir(), 'psalm-test-config');
     }
 
-    public function tearDown() : void
+    public function tearDown(): void
     {
         @unlink($this->file_path);
     }
@@ -69,7 +71,7 @@ class ConfigFileTest extends \Psalm\Tests\TestCase
             <psalm
                 name="bar"
             >
-                <plugins><pluginClass xmlns="' . ConfigFile::NS . '" class="a\b\c"/></plugins>
+                <plugins><pluginClass xmlns="' . Config::CONFIG_NAMESPACE . '" class="a\b\c"/></plugins>
             </psalm>',
             file_get_contents($this->file_path)
         ));
@@ -91,7 +93,7 @@ class ConfigFileTest extends \Psalm\Tests\TestCase
 
         $this->assertTrue(static::compareContentWithTemplateAndTrailingLineEnding(
             '<?xml version="1.0"?>
-            <psalm><plugins><pluginClass xmlns="' . ConfigFile::NS . '" class="a\b\c"/></plugins></psalm>',
+            <psalm><plugins><pluginClass xmlns="' . Config::CONFIG_NAMESPACE . '" class="a\b\c"/></plugins></psalm>',
             file_get_contents($this->file_path)
         ));
     }

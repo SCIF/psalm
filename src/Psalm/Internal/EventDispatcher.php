@@ -2,24 +2,54 @@
 
 namespace Psalm\Internal;
 
-use Psalm\Plugin\EventHandler;
-use Psalm\Plugin\EventHandler\Event;
-use Psalm\Plugin\Hook;
+use Psalm\Plugin\EventHandler\AddTaintsInterface;
+use Psalm\Plugin\EventHandler\AfterAnalysisInterface;
+use Psalm\Plugin\EventHandler\AfterClassLikeAnalysisInterface;
+use Psalm\Plugin\EventHandler\AfterClassLikeExistenceCheckInterface;
+use Psalm\Plugin\EventHandler\AfterClassLikeVisitInterface;
+use Psalm\Plugin\EventHandler\AfterCodebasePopulatedInterface;
+use Psalm\Plugin\EventHandler\AfterEveryFunctionCallAnalysisInterface;
+use Psalm\Plugin\EventHandler\AfterExpressionAnalysisInterface;
+use Psalm\Plugin\EventHandler\AfterFileAnalysisInterface;
+use Psalm\Plugin\EventHandler\AfterFunctionCallAnalysisInterface;
+use Psalm\Plugin\EventHandler\AfterFunctionLikeAnalysisInterface;
+use Psalm\Plugin\EventHandler\AfterMethodCallAnalysisInterface;
+use Psalm\Plugin\EventHandler\AfterStatementAnalysisInterface;
+use Psalm\Plugin\EventHandler\BeforeFileAnalysisInterface;
+use Psalm\Plugin\EventHandler\Event\AddRemoveTaintsEvent;
+use Psalm\Plugin\EventHandler\Event\AfterAnalysisEvent;
+use Psalm\Plugin\EventHandler\Event\AfterClassLikeAnalysisEvent;
+use Psalm\Plugin\EventHandler\Event\AfterClassLikeExistenceCheckEvent;
+use Psalm\Plugin\EventHandler\Event\AfterClassLikeVisitEvent;
+use Psalm\Plugin\EventHandler\Event\AfterCodebasePopulatedEvent;
+use Psalm\Plugin\EventHandler\Event\AfterEveryFunctionCallAnalysisEvent;
+use Psalm\Plugin\EventHandler\Event\AfterExpressionAnalysisEvent;
+use Psalm\Plugin\EventHandler\Event\AfterFileAnalysisEvent;
+use Psalm\Plugin\EventHandler\Event\AfterFunctionCallAnalysisEvent;
+use Psalm\Plugin\EventHandler\Event\AfterFunctionLikeAnalysisEvent;
+use Psalm\Plugin\EventHandler\Event\AfterMethodCallAnalysisEvent;
+use Psalm\Plugin\EventHandler\Event\AfterStatementAnalysisEvent;
+use Psalm\Plugin\EventHandler\Event\BeforeFileAnalysisEvent;
+use Psalm\Plugin\EventHandler\Event\StringInterpreterEvent;
+use Psalm\Plugin\EventHandler\RemoveTaintsInterface;
+use Psalm\Plugin\EventHandler\StringInterpreterInterface;
 use Psalm\Type\Atomic\TLiteralString;
 
+use function array_merge;
 use function count;
 use function is_subclass_of;
 
+/**
+ * @internal
+ */
 class EventDispatcher
 {
     /**
      * Static methods to be called after method checks have completed
      *
-     * @var list<class-string<EventHandler\AfterMethodCallAnalysisInterface>>
+     * @var list<class-string<AfterMethodCallAnalysisInterface>>
      */
     private $after_method_checks = [];
-    /** @var list<class-string<Hook\AfterMethodCallAnalysisInterface>> */
-    private $legacy_after_method_checks = [];
 
     /**
      * Static methods to be called after project function checks have completed
@@ -28,11 +58,9 @@ class EventDispatcher
      *
      * Allows influencing the return type and adding of modifications.
      *
-     * @var list<class-string<EventHandler\AfterFunctionCallAnalysisInterface>>
+     * @var list<class-string<AfterFunctionCallAnalysisInterface>>
      */
     public $after_function_checks = [];
-    /** @var list<class-string<Hook\AfterFunctionCallAnalysisInterface>> */
-    public $legacy_after_function_checks = [];
 
     /**
      * Static methods to be called after every function call
@@ -41,122 +69,98 @@ class EventDispatcher
      *
      * Cannot change the call or influence its return type
      *
-     * @var list<class-string<EventHandler\AfterEveryFunctionCallAnalysisInterface>>
+     * @var list<class-string<AfterEveryFunctionCallAnalysisInterface>>
      */
     public $after_every_function_checks = [];
-    /** @var list<class-string<Hook\AfterEveryFunctionCallAnalysisInterface>> */
-    public $legacy_after_every_function_checks = [];
 
     /**
      * Static methods to be called after expression checks have completed
      *
-     * @var list<class-string<EventHandler\AfterExpressionAnalysisInterface>>
+     * @var list<class-string<AfterExpressionAnalysisInterface>>
      */
     public $after_expression_checks = [];
-    /** @var list<class-string<Hook\AfterExpressionAnalysisInterface>> */
-    public $legacy_after_expression_checks = [];
 
     /**
      * Static methods to be called after statement checks have completed
      *
-     * @var list<class-string<EventHandler\AfterStatementAnalysisInterface>>
+     * @var list<class-string<AfterStatementAnalysisInterface>>
      */
     public $after_statement_checks = [];
-    /** @var list<class-string<Hook\AfterStatementAnalysisInterface>> */
-    public $legacy_after_statement_checks = [];
 
     /**
      * Static methods to be called after method checks have completed
      *
-     * @var list<class-string<EventHandler\StringInterpreterInterface>>
+     * @var list<class-string<StringInterpreterInterface>>
      */
     public $string_interpreters = [];
-    /** @var list<class-string<Hook\StringInterpreterInterface>> */
-    public $legacy_string_interpreters = [];
 
     /**
      * Static methods to be called after classlike exists checks have completed
      *
-     * @var list<class-string<EventHandler\AfterClassLikeExistenceCheckInterface>>
+     * @var list<class-string<AfterClassLikeExistenceCheckInterface>>
      */
     public $after_classlike_exists_checks = [];
-    /** @var list<class-string<Hook\AfterClassLikeExistenceCheckInterface>> */
-    public $legacy_after_classlike_exists_checks = [];
 
     /**
      * Static methods to be called after classlike checks have completed
      *
-     * @var list<class-string<EventHandler\AfterClassLikeAnalysisInterface>>
+     * @var list<class-string<AfterClassLikeAnalysisInterface>>
      */
     public $after_classlike_checks = [];
-    /** @var list<class-string<Hook\AfterClassLikeAnalysisInterface>> */
-    public $legacy_after_classlike_checks = [];
 
     /**
      * Static methods to be called after classlikes have been scanned
      *
-     * @var list<class-string<EventHandler\AfterClassLikeVisitInterface>>
+     * @var list<class-string<AfterClassLikeVisitInterface>>
      */
     private $after_visit_classlikes = [];
-    /** @var list<class-string<Hook\AfterClassLikeVisitInterface>> */
-    private $legacy_after_visit_classlikes = [];
 
     /**
      * Static methods to be called after codebase has been populated
      *
-     * @var list<class-string<EventHandler\AfterCodebasePopulatedInterface>>
+     * @var list<class-string<AfterCodebasePopulatedInterface>>
      */
     public $after_codebase_populated = [];
-    /** @var list<class-string<Hook\AfterCodebasePopulatedInterface>> */
-    public $legacy_after_codebase_populated = [];
 
     /**
      * Static methods to be called after codebase has been populated
      *
-     * @var list<class-string<EventHandler\AfterAnalysisInterface>>
+     * @var list<class-string<AfterAnalysisInterface>>
      */
     public $after_analysis = [];
-    /** @var list<class-string<Hook\AfterAnalysisInterface>> */
-    public $legacy_after_analysis = [];
 
     /**
      * Static methods to be called after a file has been analyzed
      *
-     * @var list<class-string<EventHandler\AfterFileAnalysisInterface>>
+     * @var list<class-string<AfterFileAnalysisInterface>>
      */
     public $after_file_checks = [];
-    /** @var list<class-string<Hook\AfterFileAnalysisInterface>> */
-    public $legacy_after_file_checks = [];
 
     /**
      * Static methods to be called before a file is analyzed
      *
-     * @var list<class-string<EventHandler\BeforeFileAnalysisInterface>>
+     * @var list<class-string<BeforeFileAnalysisInterface>>
      */
     public $before_file_checks = [];
-    /** @var list<class-string<Hook\BeforeFileAnalysisInterface>> */
-    public $legacy_before_file_checks = [];
 
     /**
      * Static methods to be called after functionlike checks have completed
      *
-     * @var list<class-string<EventHandler\AfterFunctionLikeAnalysisInterface>>
+     * @var list<class-string<AfterFunctionLikeAnalysisInterface>>
      */
     public $after_functionlike_checks = [];
-    /** @var list<class-string<Hook\AfterFunctionLikeAnalysisInterface>> */
-    public $legacy_after_functionlike_checks = [];
 
     /**
      * Static methods to be called to see if taints should be added
      *
-     * @var list<class-string<EventHandler\AddTaintsInterface>>
+     * @var list<class-string<AddTaintsInterface>>
      */
     public $add_taints_checks = [];
 
     /**
      * Static methods to be called to see if taints should be removed
      *
-     * @var list<class-string<EventHandler\RemoveTaintsInterface>>
+     * @var list<class-string<RemoveTaintsInterface>>
      */
     public $remove_taints_checks = [];
 
@@ -165,168 +169,98 @@ class EventDispatcher
      */
     public function registerClass(string $class): void
     {
-        if (is_subclass_of($class, Hook\AfterMethodCallAnalysisInterface::class)) {
-            $this->legacy_after_method_checks[] = $class;
-        } elseif (is_subclass_of($class, EventHandler\AfterMethodCallAnalysisInterface::class)) {
+        if (is_subclass_of($class, AfterMethodCallAnalysisInterface::class)) {
             $this->after_method_checks[] = $class;
         }
 
-        if (is_subclass_of($class, Hook\AfterFunctionCallAnalysisInterface::class)) {
-            $this->legacy_after_function_checks[] = $class;
-        } elseif (is_subclass_of($class, EventHandler\AfterFunctionCallAnalysisInterface::class)) {
+        if (is_subclass_of($class, AfterFunctionCallAnalysisInterface::class)) {
             $this->after_function_checks[] = $class;
         }
 
-        if (is_subclass_of($class, Hook\AfterEveryFunctionCallAnalysisInterface::class)) {
-            $this->legacy_after_every_function_checks[] = $class;
-        } elseif (is_subclass_of($class, EventHandler\AfterEveryFunctionCallAnalysisInterface::class)) {
+        if (is_subclass_of($class, AfterEveryFunctionCallAnalysisInterface::class)) {
             $this->after_every_function_checks[] = $class;
         }
 
-        if (is_subclass_of($class, Hook\AfterExpressionAnalysisInterface::class)) {
-            $this->legacy_after_expression_checks[] = $class;
-        } elseif (is_subclass_of($class, EventHandler\AfterExpressionAnalysisInterface::class)) {
+        if (is_subclass_of($class, AfterExpressionAnalysisInterface::class)) {
             $this->after_expression_checks[] = $class;
         }
 
-        if (is_subclass_of($class, Hook\AfterStatementAnalysisInterface::class)) {
-            $this->legacy_after_statement_checks[] = $class;
-        } elseif (is_subclass_of($class, EventHandler\AfterStatementAnalysisInterface::class)) {
+        if (is_subclass_of($class, AfterStatementAnalysisInterface::class)) {
             $this->after_statement_checks[] = $class;
         }
 
-        if (is_subclass_of($class, Hook\StringInterpreterInterface::class)) {
-            $this->legacy_string_interpreters[] = $class;
-        } elseif (is_subclass_of($class, EventHandler\StringInterpreterInterface::class)) {
+        if (is_subclass_of($class, StringInterpreterInterface::class)) {
             $this->string_interpreters[] = $class;
         }
 
-        if (is_subclass_of($class, Hook\AfterClassLikeExistenceCheckInterface::class)) {
-            $this->legacy_after_classlike_exists_checks[] = $class;
-        } elseif (is_subclass_of($class, EventHandler\AfterClassLikeExistenceCheckInterface::class)) {
+        if (is_subclass_of($class, AfterClassLikeExistenceCheckInterface::class)) {
             $this->after_classlike_exists_checks[] = $class;
         }
 
-        if (is_subclass_of($class, Hook\AfterClassLikeAnalysisInterface::class)) {
-            $this->legacy_after_classlike_checks[] = $class;
-        } elseif (is_subclass_of($class, EventHandler\AfterClassLikeAnalysisInterface::class)) {
+        if (is_subclass_of($class, AfterClassLikeAnalysisInterface::class)) {
             $this->after_classlike_checks[] = $class;
         }
 
-        if (is_subclass_of($class, Hook\AfterClassLikeVisitInterface::class)) {
-            $this->legacy_after_visit_classlikes[] = $class;
-        } elseif (is_subclass_of($class, EventHandler\AfterClassLikeVisitInterface::class)) {
+        if (is_subclass_of($class, AfterClassLikeVisitInterface::class)) {
             $this->after_visit_classlikes[] = $class;
         }
 
-        if (is_subclass_of($class, Hook\AfterCodebasePopulatedInterface::class)) {
-            $this->legacy_after_codebase_populated[] = $class;
-        } elseif (is_subclass_of($class, EventHandler\AfterCodebasePopulatedInterface::class)) {
+        if (is_subclass_of($class, AfterCodebasePopulatedInterface::class)) {
             $this->after_codebase_populated[] = $class;
         }
 
-        if (is_subclass_of($class, Hook\AfterAnalysisInterface::class)) {
-            $this->legacy_after_analysis[] = $class;
-        } elseif (is_subclass_of($class, EventHandler\AfterAnalysisInterface::class)) {
+        if (is_subclass_of($class, AfterAnalysisInterface::class)) {
             $this->after_analysis[] = $class;
         }
 
-        if (is_subclass_of($class, Hook\AfterFileAnalysisInterface::class)) {
-            $this->legacy_after_file_checks[] = $class;
-        } elseif (is_subclass_of($class, EventHandler\AfterFileAnalysisInterface::class)) {
+        if (is_subclass_of($class, AfterFileAnalysisInterface::class)) {
             $this->after_file_checks[] = $class;
         }
 
-        if (is_subclass_of($class, Hook\BeforeFileAnalysisInterface::class)) {
-            $this->legacy_before_file_checks[] = $class;
-        } elseif (is_subclass_of($class, EventHandler\BeforeFileAnalysisInterface::class)) {
+        if (is_subclass_of($class, BeforeFileAnalysisInterface::class)) {
             $this->before_file_checks[] = $class;
         }
 
-        if (is_subclass_of($class, Hook\AfterFunctionLikeAnalysisInterface::class)) {
-            $this->legacy_after_functionlike_checks[] = $class;
-        } elseif (is_subclass_of($class, EventHandler\AfterFunctionLikeAnalysisInterface::class)) {
+        if (is_subclass_of($class, AfterFunctionLikeAnalysisInterface::class)) {
             $this->after_functionlike_checks[] = $class;
         }
 
-        if (is_subclass_of($class, EventHandler\AddTaintsInterface::class)) {
+        if (is_subclass_of($class, AddTaintsInterface::class)) {
             $this->add_taints_checks[] = $class;
         }
 
-        if (is_subclass_of($class, EventHandler\RemoveTaintsInterface::class)) {
+        if (is_subclass_of($class, RemoveTaintsInterface::class)) {
             $this->remove_taints_checks[] = $class;
         }
     }
 
     public function hasAfterMethodCallAnalysisHandlers(): bool
     {
-        return count($this->after_method_checks) || count($this->legacy_after_method_checks);
+        return count($this->after_method_checks) > 0;
     }
 
-    public function dispatchAfterMethodCallAnalysis(Event\AfterMethodCallAnalysisEvent $event): void
+    public function dispatchAfterMethodCallAnalysis(AfterMethodCallAnalysisEvent $event): void
     {
         foreach ($this->after_method_checks as $handler) {
             $handler::afterMethodCallAnalysis($event);
         }
-
-        foreach ($this->legacy_after_method_checks as $handler) {
-            $file_replacements = $event->getFileReplacements();
-            $return_type_candidate = $event->getReturnTypeCandidate();
-            $handler::afterMethodCallAnalysis(
-                $event->getExpr(),
-                $event->getMethodId(),
-                $event->getAppearingMethodId(),
-                $event->getDeclaringMethodId(),
-                $event->getContext(),
-                $event->getStatementsSource(),
-                $event->getCodebase(),
-                $file_replacements,
-                $return_type_candidate
-            );
-            $event->setFileReplacements($file_replacements);
-            $event->setReturnTypeCandidate($return_type_candidate);
-        }
     }
 
-    public function dispatchAfterFunctionCallAnalysis(Event\AfterFunctionCallAnalysisEvent $event): void
+    public function dispatchAfterFunctionCallAnalysis(AfterFunctionCallAnalysisEvent $event): void
     {
         foreach ($this->after_function_checks as $handler) {
             $handler::afterFunctionCallAnalysis($event);
         }
-
-        foreach ($this->legacy_after_function_checks as $handler) {
-            $file_replacements = $event->getFileReplacements();
-            $handler::afterFunctionCallAnalysis(
-                $event->getExpr(),
-                $event->getFunctionId(),
-                $event->getContext(),
-                $event->getStatementsSource(),
-                $event->getCodebase(),
-                $event->getReturnTypeCandidate(),
-                $file_replacements
-            );
-            $event->setFileReplacements($file_replacements);
-        }
     }
 
-    public function dispatchAfterEveryFunctionCallAnalysis(Event\AfterEveryFunctionCallAnalysisEvent $event): void
+    public function dispatchAfterEveryFunctionCallAnalysis(AfterEveryFunctionCallAnalysisEvent $event): void
     {
         foreach ($this->after_every_function_checks as $handler) {
             $handler::afterEveryFunctionCallAnalysis($event);
         }
-
-        foreach ($this->legacy_after_every_function_checks as $handler) {
-            $handler::afterEveryFunctionCallAnalysis(
-                $event->getExpr(),
-                $event->getFunctionId(),
-                $event->getContext(),
-                $event->getStatementsSource(),
-                $event->getCodebase()
-            );
-        }
     }
 
-    public function dispatchAfterExpressionAnalysis(Event\AfterExpressionAnalysisEvent $event): ?bool
+    public function dispatchAfterExpressionAnalysis(AfterExpressionAnalysisEvent $event): ?bool
     {
         foreach ($this->after_expression_checks as $handler) {
             if ($handler::afterExpressionAnalysis($event) === false) {
@@ -334,24 +268,10 @@ class EventDispatcher
             }
         }
 
-        foreach ($this->legacy_after_expression_checks as $handler) {
-            $file_replacements = $event->getFileReplacements();
-            if ($handler::afterExpressionAnalysis(
-                $event->getExpr(),
-                $event->getContext(),
-                $event->getStatementsSource(),
-                $event->getCodebase(),
-                $file_replacements
-            ) === false) {
-                return false;
-            }
-            $event->setFileReplacements($file_replacements);
-        }
-
         return null;
     }
 
-    public function dispatchAfterStatementAnalysis(Event\AfterStatementAnalysisEvent $event): ?bool
+    public function dispatchAfterStatementAnalysis(AfterStatementAnalysisEvent $event): ?bool
     {
         foreach ($this->after_statement_checks as $handler) {
             if ($handler::afterStatementAnalysis($event) === false) {
@@ -359,24 +279,10 @@ class EventDispatcher
             }
         }
 
-        foreach ($this->legacy_after_statement_checks as $handler) {
-            $file_replacements = $event->getFileReplacements();
-            if ($handler::afterStatementAnalysis(
-                $event->getStmt(),
-                $event->getContext(),
-                $event->getStatementsSource(),
-                $event->getCodebase(),
-                $file_replacements
-            ) === false) {
-                return false;
-            }
-            $event->setFileReplacements($file_replacements);
-        }
-
         return null;
     }
 
-    public function dispatchStringInterpreter(Event\StringInterpreterEvent $event): ?TLiteralString
+    public function dispatchStringInterpreter(StringInterpreterEvent $event): ?TLiteralString
     {
         foreach ($this->string_interpreters as $handler) {
             if ($type = $handler::getTypeFromValue($event)) {
@@ -384,35 +290,17 @@ class EventDispatcher
             }
         }
 
-        foreach ($this->legacy_string_interpreters as $handler) {
-            if ($type = $handler::getTypeFromValue($event->getValue())) {
-                return $type;
-            }
-        }
-
         return null;
     }
 
-    public function dispatchAfterClassLikeExistenceCheck(Event\AfterClassLikeExistenceCheckEvent $event): void
+    public function dispatchAfterClassLikeExistenceCheck(AfterClassLikeExistenceCheckEvent $event): void
     {
         foreach ($this->after_classlike_exists_checks as $handler) {
             $handler::afterClassLikeExistenceCheck($event);
         }
-
-        foreach ($this->legacy_after_classlike_exists_checks as $handler) {
-            $file_replacements = $event->getFileReplacements();
-            $handler::afterClassLikeExistenceCheck(
-                $event->getFqClassName(),
-                $event->getCodeLocation(),
-                $event->getStatementsSource(),
-                $event->getCodebase(),
-                $file_replacements
-            );
-            $event->setFileReplacements($file_replacements);
-        }
     }
 
-    public function dispatchAfterClassLikeAnalysis(Event\AfterClassLikeAnalysisEvent $event): ?bool
+    public function dispatchAfterClassLikeAnalysis(AfterClassLikeAnalysisEvent $event): ?bool
     {
         foreach ($this->after_classlike_checks as $handler) {
             if ($handler::afterStatementAnalysis($event) === false) {
@@ -420,129 +308,55 @@ class EventDispatcher
             }
         }
 
-        foreach ($this->legacy_after_classlike_checks as $handler) {
-            $file_replacements = $event->getFileReplacements();
-            if ($handler::afterStatementAnalysis(
-                $event->getStmt(),
-                $event->getClasslikeStorage(),
-                $event->getStatementsSource(),
-                $event->getCodebase(),
-                $file_replacements
-            ) === false) {
-                return false;
-            }
-            $event->setFileReplacements($file_replacements);
-        }
-
         return null;
     }
 
     public function hasAfterClassLikeVisitHandlers(): bool
     {
-        return count($this->after_visit_classlikes) || count($this->legacy_after_visit_classlikes);
+        return count($this->after_visit_classlikes) > 0;
     }
 
-    public function dispatchAfterClassLikeVisit(Event\AfterClassLikeVisitEvent $event): void
+    public function dispatchAfterClassLikeVisit(AfterClassLikeVisitEvent $event): void
     {
         foreach ($this->after_visit_classlikes as $handler) {
             $handler::afterClassLikeVisit($event);
         }
-
-        foreach ($this->legacy_after_visit_classlikes as $handler) {
-            $file_replacements = $event->getFileReplacements();
-            $handler::afterClassLikeVisit(
-                $event->getStmt(),
-                $event->getStorage(),
-                $event->getStatementsSource(),
-                $event->getCodebase(),
-                $file_replacements
-            );
-            $event->setFileReplacements($file_replacements);
-        }
     }
 
-    public function dispatchAfterCodebasePopulated(Event\AfterCodebasePopulatedEvent $event): void
+    public function dispatchAfterCodebasePopulated(AfterCodebasePopulatedEvent $event): void
     {
         foreach ($this->after_codebase_populated as $handler) {
             $handler::afterCodebasePopulated($event);
         }
-
-        foreach ($this->legacy_after_codebase_populated as $handler) {
-            $handler::afterCodebasePopulated(
-                $event->getCodebase()
-            );
-        }
     }
 
-    public function dispatchAfterAnalysis(Event\AfterAnalysisEvent $event): void
+    public function dispatchAfterAnalysis(AfterAnalysisEvent $event): void
     {
         foreach ($this->after_analysis as $handler) {
             $handler::afterAnalysis($event);
         }
-
-        foreach ($this->legacy_after_analysis as $handler) {
-            /** @psalm-suppress MixedArgumentTypeCoercion due to Psalm bug */
-            $handler::afterAnalysis(
-                $event->getCodebase(),
-                $event->getIssues(),
-                $event->getBuildInfo(),
-                $event->getSourceControlInfo()
-            );
-        }
     }
 
-    public function dispatchAfterFileAnalysis(Event\AfterFileAnalysisEvent $event): void
+    public function dispatchAfterFileAnalysis(AfterFileAnalysisEvent $event): void
     {
         foreach ($this->after_file_checks as $handler) {
             $handler::afterAnalyzeFile($event);
         }
-
-        foreach ($this->legacy_after_file_checks as $handler) {
-            $handler::afterAnalyzeFile(
-                $event->getStatementsSource(),
-                $event->getFileContext(),
-                $event->getFileStorage(),
-                $event->getCodebase()
-            );
-        }
     }
 
-    public function dispatchBeforeFileAnalysis(Event\BeforeFileAnalysisEvent $event): void
+    public function dispatchBeforeFileAnalysis(BeforeFileAnalysisEvent $event): void
     {
         foreach ($this->before_file_checks as $handler) {
             $handler::beforeAnalyzeFile($event);
         }
-
-        foreach ($this->legacy_before_file_checks as $handler) {
-            $handler::beforeAnalyzeFile(
-                $event->getStatementsSource(),
-                $event->getFileContext(),
-                $event->getFileStorage(),
-                $event->getCodebase()
-            );
-        }
     }
 
-    public function dispatchAfterFunctionLikeAnalysis(Event\AfterFunctionLikeAnalysisEvent $event): ?bool
+    public function dispatchAfterFunctionLikeAnalysis(AfterFunctionLikeAnalysisEvent $event): ?bool
     {
         foreach ($this->after_functionlike_checks as $handler) {
             if ($handler::afterStatementAnalysis($event) === false) {
                 return false;
             }
-        }
-
-        foreach ($this->legacy_after_functionlike_checks as $handler) {
-            $file_replacements = $event->getFileReplacements();
-            if ($handler::afterStatementAnalysis(
-                $event->getStmt(),
-                $event->getClasslikeStorage(),
-                $event->getStatementsSource(),
-                $event->getCodebase(),
-                $file_replacements
-            ) === false) {
-                return false;
-            }
-            $event->setFileReplacements($file_replacements);
         }
 
         return null;
@@ -551,12 +365,12 @@ class EventDispatcher
     /**
      * @return list<string>
      */
-    public function dispatchAddTaints(Event\AddRemoveTaintsEvent $event): array
+    public function dispatchAddTaints(AddRemoveTaintsEvent $event): array
     {
         $added_taints = [];
 
         foreach ($this->add_taints_checks as $handler) {
-            $added_taints = \array_merge($added_taints, $handler::addTaints($event));
+            $added_taints = array_merge($added_taints, $handler::addTaints($event));
         }
 
         return $added_taints;
@@ -565,12 +379,12 @@ class EventDispatcher
     /**
      * @return list<string>
      */
-    public function dispatchRemoveTaints(Event\AddRemoveTaintsEvent $event): array
+    public function dispatchRemoveTaints(AddRemoveTaintsEvent $event): array
     {
         $removed_taints = [];
 
         foreach ($this->remove_taints_checks as $handler) {
-            $removed_taints = \array_merge($removed_taints, $handler::removeTaints($event));
+            $removed_taints = array_merge($removed_taints, $handler::removeTaints($event));
         }
 
         return $removed_taints;

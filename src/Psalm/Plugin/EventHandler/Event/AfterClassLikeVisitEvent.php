@@ -1,6 +1,5 @@
 <?php
 
-
 namespace Psalm\Plugin\EventHandler\Event;
 
 use PhpParser\Node\Stmt\ClassLike;
@@ -34,8 +33,6 @@ class AfterClassLikeVisitEvent
 
     /**
      * @param  FileManipulation[] $file_replacements
-     *
-     * @return void
      */
     public function __construct(
         ClassLike $stmt,

@@ -1,10 +1,21 @@
 <?php
+
 namespace Psalm;
 
+use InvalidArgumentException;
+use LogicException;
 use Psalm\Internal\Analyzer\FileAnalyzer;
 use Psalm\Internal\Scanner\FileScanner;
-use Psalm\Plugin\EventHandler;
-use Psalm\Plugin\Hook;
+use Psalm\Plugin\EventHandler\FunctionExistenceProviderInterface;
+use Psalm\Plugin\EventHandler\FunctionParamsProviderInterface;
+use Psalm\Plugin\EventHandler\FunctionReturnTypeProviderInterface;
+use Psalm\Plugin\EventHandler\MethodExistenceProviderInterface;
+use Psalm\Plugin\EventHandler\MethodParamsProviderInterface;
+use Psalm\Plugin\EventHandler\MethodReturnTypeProviderInterface;
+use Psalm\Plugin\EventHandler\MethodVisibilityProviderInterface;
+use Psalm\Plugin\EventHandler\PropertyExistenceProviderInterface;
+use Psalm\Plugin\EventHandler\PropertyTypeProviderInterface;
+use Psalm\Plugin\EventHandler\PropertyVisibilityProviderInterface;
 use Psalm\Plugin\RegistrationInterface;
 
 use function class_exists;
@@ -53,68 +64,48 @@ class PluginRegistrationSocket implements RegistrationInterface
     public function registerHooksFromClass(string $handler): void
     {
         if (!class_exists($handler, false)) {
-            throw new \InvalidArgumentException('Plugins must be loaded before registration');
+            throw new InvalidArgumentException('Plugins must be loaded before registration');
         }
 
         $this->config->eventDispatcher->registerClass($handler);
 
-        if (is_subclass_of($handler, Hook\PropertyExistenceProviderInterface::class) ||
-            is_subclass_of($handler, EventHandler\PropertyExistenceProviderInterface::class)
-        ) {
+        if (is_subclass_of($handler, PropertyExistenceProviderInterface::class)) {
             $this->codebase->properties->property_existence_provider->registerClass($handler);
         }
 
-        if (is_subclass_of($handler, Hook\PropertyVisibilityProviderInterface::class) ||
-            is_subclass_of($handler, EventHandler\PropertyVisibilityProviderInterface::class)
-        ) {
+        if (is_subclass_of($handler, PropertyVisibilityProviderInterface::class)) {
             $this->codebase->properties->property_visibility_provider->registerClass($handler);
         }
 
-        if (is_subclass_of($handler, Hook\PropertyTypeProviderInterface::class) ||
-            is_subclass_of($handler, EventHandler\PropertyTypeProviderInterface::class)
-        ) {
+        if (is_subclass_of($handler, PropertyTypeProviderInterface::class)) {
             $this->codebase->properties->property_type_provider->registerClass($handler);
         }
 
-        if (is_subclass_of($handler, Hook\MethodExistenceProviderInterface::class) ||
-            is_subclass_of($handler, EventHandler\MethodExistenceProviderInterface::class)
-        ) {
+        if (is_subclass_of($handler, MethodExistenceProviderInterface::class)) {
             $this->codebase->methods->existence_provider->registerClass($handler);
         }
 
-        if (is_subclass_of($handler, Hook\MethodVisibilityProviderInterface::class) ||
-            is_subclass_of($handler, EventHandler\MethodVisibilityProviderInterface::class)
-        ) {
+        if (is_subclass_of($handler, MethodVisibilityProviderInterface::class)) {
             $this->codebase->methods->visibility_provider->registerClass($handler);
         }
 
-        if (is_subclass_of($handler, Hook\MethodReturnTypeProviderInterface::class) ||
-            is_subclass_of($handler, EventHandler\MethodReturnTypeProviderInterface::class)
-        ) {
+        if (is_subclass_of($handler, MethodReturnTypeProviderInterface::class)) {
             $this->codebase->methods->return_type_provider->registerClass($handler);
         }
 
-        if (is_subclass_of($handler, Hook\MethodParamsProviderInterface::class) ||
-            is_subclass_of($handler, EventHandler\MethodParamsProviderInterface::class)
-        ) {
+        if (is_subclass_of($handler, MethodParamsProviderInterface::class)) {
             $this->codebase->methods->params_provider->registerClass($handler);
         }
 
-        if (is_subclass_of($handler, Hook\FunctionExistenceProviderInterface::class) ||
-            is_subclass_of($handler, EventHandler\FunctionExistenceProviderInterface::class)
-        ) {
+        if (is_subclass_of($handler, FunctionExistenceProviderInterface::class)) {
             $this->codebase->functions->existence_provider->registerClass($handler);
         }
 
-        if (is_subclass_of($handler, Hook\FunctionParamsProviderInterface::class) ||
-            is_subclass_of($handler, EventHandler\FunctionParamsProviderInterface::class)
-        ) {
+        if (is_subclass_of($handler, FunctionParamsProviderInterface::class)) {
             $this->codebase->functions->params_provider->registerClass($handler);
         }
 
-        if (is_subclass_of($handler, Hook\FunctionReturnTypeProviderInterface::class) ||
-            is_subclass_of($handler, EventHandler\FunctionReturnTypeProviderInterface::class)
-        ) {
+        if (is_subclass_of($handler, FunctionReturnTypeProviderInterface::class)) {
             $this->codebase->functions->return_type_provider->registerClass($handler);
         }
     }
@@ -126,21 +117,21 @@ class PluginRegistrationSocket implements RegistrationInterface
     public function addFileTypeScanner(string $fileExtension, string $className): void
     {
         if (!class_exists($className) || !is_a($className, FileScanner::class, true)) {
-            throw new \LogicException(
+            throw new LogicException(
                 sprintf(
                     'Class %s must be of type %s',
                     $className,
                     FileScanner::class
                 ),
-                1622727271
+                1_622_727_271
             );
         }
         if (!empty($this->config->getFiletypeScanners()[$fileExtension])
             || !empty($this->additionalFileTypeScanners[$fileExtension])
         ) {
-            throw new \LogicException(
+            throw new LogicException(
                 sprintf('Cannot redeclare scanner for file-type %s', $fileExtension),
-                1622727272
+                1_622_727_272
             );
         }
         $this->additionalFileTypeScanners[$fileExtension] = $className;
@@ -162,21 +153,21 @@ class PluginRegistrationSocket implements RegistrationInterface
     public function addFileTypeAnalyzer(string $fileExtension, string $className): void
     {
         if (!class_exists($className) || !is_a($className, FileAnalyzer::class, true)) {
-            throw new \LogicException(
+            throw new LogicException(
                 sprintf(
                     'Class %s must be of type %s',
                     $className,
                     FileAnalyzer::class
                 ),
-                1622727281
+                1_622_727_281
             );
         }
         if (!empty($this->config->getFiletypeAnalyzers()[$fileExtension])
             || !empty($this->additionalFileTypeAnalyzers[$fileExtension])
         ) {
-            throw new \LogicException(
+            throw new LogicException(
                 sprintf('Cannot redeclare analyzer for file-type %s', $fileExtension),
-                1622727282
+                1_622_727_282
             );
         }
         $this->additionalFileTypeAnalyzers[$fileExtension] = $className;

@@ -1,10 +1,14 @@
 <?php
+
 namespace Psalm\Type\Atomic;
+
+use Psalm\Type;
+use Psalm\Type\Atomic;
 
 /**
  * Denotes a class constant whose value might not yet be known.
  */
-class TClassConstant extends \Psalm\Type\Atomic
+class TClassConstant extends Atomic
 {
     /** @var string */
     public $fq_classlike_name;
@@ -33,7 +37,7 @@ class TClassConstant extends \Psalm\Type\Atomic
         return $this->fq_classlike_name . '::' . $this->const_name;
     }
 
-    public function getAssertionString(bool $exact = false): string
+    public function getAssertionString(): string
     {
         return 'class-constant(' . $this->fq_classlike_name . '::' . $this->const_name . ')';
     }
@@ -45,13 +49,12 @@ class TClassConstant extends \Psalm\Type\Atomic
         ?string $namespace,
         array $aliased_classes,
         ?string $this_class,
-        int $php_major_version,
-        int $php_minor_version
+        int $analysis_php_version_id
     ): ?string {
         return null;
     }
 
-    public function canBeFullyExpressedInPhp(int $php_major_version, int $php_minor_version): bool
+    public function canBeFullyExpressedInPhp(int $analysis_php_version_id): bool
     {
         return false;
     }
@@ -70,7 +73,7 @@ class TClassConstant extends \Psalm\Type\Atomic
             return 'static::' . $this->const_name;
         }
 
-        return \Psalm\Type::getStringFromFQCLN($this->fq_classlike_name, $namespace, $aliased_classes, $this_class)
+        return Type::getStringFromFQCLN($this->fq_classlike_name, $namespace, $aliased_classes, $this_class)
             . '::'
             . $this->const_name;
     }

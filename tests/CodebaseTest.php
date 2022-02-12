@@ -1,10 +1,12 @@
 <?php
+
 namespace Psalm\Tests;
 
 use PhpParser\Node\Name;
 use PhpParser\Node\Stmt\Class_;
 use Psalm\Codebase;
 use Psalm\Context;
+use Psalm\Exception\UnpopulatedClasslikeException;
 use Psalm\Plugin\EventHandler\AfterClassLikeVisitInterface;
 use Psalm\Plugin\EventHandler\Event\AfterClassLikeVisitEvent;
 use Psalm\PluginRegistrationSocket;
@@ -20,7 +22,7 @@ class CodebaseTest extends TestCase
     /** @var Codebase */
     private $codebase;
 
-    public function setUp() : void
+    public function setUp(): void
     {
         parent::setUp();
         $this->codebase = $this->project_analyzer->getCodebase();
@@ -45,7 +47,7 @@ class CodebaseTest extends TestCase
     }
 
     /** @return iterable<int,array{string,string,bool}> */
-    public function typeContainments()
+    public function typeContainments(): iterable
     {
         yield ['int', 'int|string', true];
         yield ['int|string', 'int', false];
@@ -75,7 +77,7 @@ class CodebaseTest extends TestCase
     }
 
     /** @return iterable<int,array{string,string,bool}> */
-    public function typeIntersections()
+    public function typeIntersections(): iterable
     {
         yield ['int', 'int|string', true];
         yield ['int|string', 'int', true];
@@ -114,7 +116,7 @@ class CodebaseTest extends TestCase
     }
 
     /** @return iterable<int,array{string,array{string,string}}> */
-    public function iterableParams()
+    public function iterableParams(): iterable
     {
         yield ['iterable<int,string>', ['int', 'string']];
         yield ['iterable<int|string,bool|float>', ['int|string', 'bool|float']];
@@ -145,6 +147,7 @@ class CodebaseTest extends TestCase
         $hook = new class implements AfterClassLikeVisitInterface {
             /**
              * @return void
+             * @phpcsSuppress SlevomatCodingStandard.TypeHints.ReturnTypeHint
              */
             public static function afterClassLikeVisit(AfterClassLikeVisitEvent $event)
             {
@@ -152,14 +155,12 @@ class CodebaseTest extends TestCase
                 $storage = $event->getStorage();
                 $codebase = $event->getCodebase();
                 if ($storage->name === 'Psalm\\CurrentTest\\C' && $stmt instanceof Class_) {
-                    $storage->custom_metadata['fqcn'] = (string)($stmt->namespacedName ?? $stmt->name);
+                    $storage->custom_metadata['fqcn'] = (string)($stmt->getAttribute('namespacedName') ?? $stmt->name);
                     $storage->custom_metadata['extends'] = $stmt->extends instanceof Name
                         ? (string)$stmt->extends->getAttribute('resolvedName')
                         : '';
                     $storage->custom_metadata['implements'] = array_map(
-                        function (Name $aspect): string {
-                            return (string)$aspect->getAttribute('resolvedName');
-                        },
+                        fn(Name $aspect): string => (string)$aspect->getAttribute('resolvedName'),
                         $stmt->implements
                     );
                     $storage->custom_metadata['a'] = 'b';
@@ -202,7 +203,7 @@ class CodebaseTest extends TestCase
         $this->codebase->classlike_storage_provider->create('A');
         $this->codebase->classlike_storage_provider->create('B');
 
-        $this->expectException(\Psalm\Exception\UnpopulatedClasslikeException::class);
+        $this->expectException(UnpopulatedClasslikeException::class);
 
         $this->codebase->classExtends('A', 'B');
     }

@@ -1,26 +1,35 @@
 <?php
+
 namespace Psalm\Internal\Provider\ReturnTypeProvider;
 
+use Psalm\Internal\Analyzer\StatementsAnalyzer;
 use Psalm\Plugin\EventHandler\Event\FunctionReturnTypeProviderEvent;
+use Psalm\Plugin\EventHandler\FunctionReturnTypeProviderInterface;
 use Psalm\Type;
+use Psalm\Type\Atomic\TFalse;
+use Psalm\Type\Atomic\TInt;
+use Psalm\Type\Union;
 
-class MktimeReturnTypeProvider implements \Psalm\Plugin\EventHandler\FunctionReturnTypeProviderInterface
+/**
+ * @internal
+ */
+class MktimeReturnTypeProvider implements FunctionReturnTypeProviderInterface
 {
     /**
      * @return array<lowercase-string>
      */
-    public static function getFunctionIds() : array
+    public static function getFunctionIds(): array
     {
         return [
             'mktime',
         ];
     }
 
-    public static function getFunctionReturnType(FunctionReturnTypeProviderEvent $event) : Type\Union
+    public static function getFunctionReturnType(FunctionReturnTypeProviderEvent $event): Union
     {
         $statements_source = $event->getStatementsSource();
         $call_args = $event->getCallArgs();
-        if (!$statements_source instanceof \Psalm\Internal\Analyzer\StatementsAnalyzer) {
+        if (!$statements_source instanceof StatementsAnalyzer) {
             return Type::getMixed();
         }
 
@@ -28,7 +37,7 @@ class MktimeReturnTypeProvider implements \Psalm\Plugin\EventHandler\FunctionRet
             if (!($call_arg_type = $statements_source->node_data->getType($call_arg->value))
                 || !$call_arg_type->isInt()
             ) {
-                $value_type = new Type\Union([new Type\Atomic\TInt, new Type\Atomic\TFalse]);
+                $value_type = new Union([new TInt, new TFalse]);
 
                 $codebase = $statements_source->getCodebase();
 

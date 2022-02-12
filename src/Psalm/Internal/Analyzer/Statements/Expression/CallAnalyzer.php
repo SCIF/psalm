@@ -1,30 +1,54 @@
 <?php
+
 namespace Psalm\Internal\Analyzer\Statements\Expression;
 
 use PhpParser;
+use PhpParser\Node\Identifier;
+use PhpParser\Node\Name;
 use Psalm\CodeLocation;
+use Psalm\Codebase;
 use Psalm\Context;
+use Psalm\FileSource;
+use Psalm\Internal\Algebra;
 use Psalm\Internal\Algebra\FormulaGenerator;
 use Psalm\Internal\Analyzer\ClassLikeAnalyzer;
 use Psalm\Internal\Analyzer\FunctionLikeAnalyzer;
+use Psalm\Internal\Analyzer\Statements\Expression\Call\ArgumentsAnalyzer;
 use Psalm\Internal\Analyzer\StatementsAnalyzer;
+use Psalm\Internal\Analyzer\TraitAnalyzer;
+use Psalm\Internal\MethodIdentifier;
+use Psalm\Internal\Type\Comparator\TypeComparisonResult;
 use Psalm\Internal\Type\Comparator\UnionTypeComparator;
 use Psalm\Internal\Type\TemplateBound;
+use Psalm\Internal\Type\TemplateInferredTypeReplacer;
 use Psalm\Internal\Type\TemplateResult;
 use Psalm\Internal\Type\TemplateStandinTypeReplacer;
+use Psalm\Internal\Type\TypeExpander;
 use Psalm\Issue\ArgumentTypeCoercion;
 use Psalm\Issue\InvalidArgument;
 use Psalm\Issue\InvalidDocblock;
 use Psalm\Issue\InvalidScalarArgument;
 use Psalm\Issue\MixedArgumentTypeCoercion;
+use Psalm\Issue\TypeDoesNotContainType;
 use Psalm\Issue\UndefinedFunction;
 use Psalm\IssueBuffer;
 use Psalm\Node\Expr\BinaryOp\VirtualIdentical;
 use Psalm\Node\Expr\VirtualConstFetch;
 use Psalm\Node\VirtualName;
+use Psalm\Storage\Assertion\Falsy;
+use Psalm\Storage\Assertion\IsIdentical;
+use Psalm\Storage\Assertion\IsType;
+use Psalm\Storage\Assertion\Truthy;
 use Psalm\Storage\ClassLikeStorage;
+use Psalm\Storage\Possibilities;
 use Psalm\Type;
 use Psalm\Type\Atomic\TNamedObject;
+use Psalm\Type\Atomic\TObjectWithProperties;
+use Psalm\Type\Atomic\TTemplateParam;
+use Psalm\Type\Atomic\TTrue;
+use Psalm\Type\Reconciler;
+use Psalm\Type\Union;
+use UnexpectedValueException;
 
 use function array_filter;
 use function array_map;
@@ -36,12 +60,13 @@ use function implode;
 use function in_array;
 use function is_int;
 use function is_numeric;
+use function mt_rand;
 use function preg_match;
 use function preg_replace;
+use function spl_object_id;
 use function str_replace;
 use function strpos;
 use function strtolower;
-use function substr;
 
 /**
  * @internal
@@ -69,7 +94,7 @@ class CallAnalyzer
                 )
             )
         ) {
-            $method_id = new \Psalm\Internal\MethodIdentifier(
+            $method_id = new MethodIdentifier(
                 $fq_class_name,
                 $method_name_lc
             );
@@ -105,7 +130,7 @@ class CallAnalyzer
             ) &&
             $source->getMethodName() !== $method_name
         ) {
-            $method_id = new \Psalm\Internal\MethodIdentifier($fq_class_name, $method_name_lc);
+            $method_id = new MethodIdentifier($fq_class_name, $method_name_lc);
 
             $declaring_method_id = $codebase->methods->getDeclaringMethodId($method_id);
 
@@ -117,7 +142,7 @@ class CallAnalyzer
                         } else {
                             $fq_class_name = $atomic_type->value;
 
-                            $method_id = new \Psalm\Internal\MethodIdentifier(
+                            $method_id = new MethodIdentifier(
                                 $fq_class_name,
                                 $method_name_lc
                             );
@@ -137,7 +162,7 @@ class CallAnalyzer
                         foreach ($atomic_type->extra_types as $intersection_type) {
                             if ($intersection_type instanceof TNamedObject) {
                                 $fq_class_name = $intersection_type->value;
-                                $method_id = new \Psalm\Internal\MethodIdentifier(
+                                $method_id = new MethodIdentifier(
                                     $fq_class_name,
                                     $method_name_lc
                                 );
@@ -247,17 +272,17 @@ class CallAnalyzer
      * @param  list<PhpParser\Node\Arg>   $args
      */
     public static function checkMethodArgs(
-        ?\Psalm\Internal\MethodIdentifier $method_id,
+        ?MethodIdentifier $method_id,
         array $args,
         ?TemplateResult $class_template_result,
         Context $context,
         CodeLocation $code_location,
         StatementsAnalyzer $statements_analyzer
-    ) : bool {
+    ): bool {
         $codebase = $statements_analyzer->getCodebase();
 
         if (!$method_id) {
-            return Call\ArgumentsAnalyzer::analyze(
+            return ArgumentsAnalyzer::analyze(
                 $statements_analyzer,
                 $args,
                 null,
@@ -292,7 +317,7 @@ class CallAnalyzer
             }
 
             if (!isset($declaring_class_storage->methods[$declaring_method_name])) {
-                throw new \UnexpectedValueException('Storage should not be empty here');
+                throw new UnexpectedValueException('Storage should not be empty here');
             }
 
             $method_storage = $declaring_class_storage->methods[$declaring_method_name];
@@ -315,7 +340,7 @@ class CallAnalyzer
             }
         }
 
-        if (Call\ArgumentsAnalyzer::analyze(
+        if (ArgumentsAnalyzer::analyze(
             $statements_analyzer,
             $args,
             $method_params,
@@ -327,7 +352,7 @@ class CallAnalyzer
             return false;
         }
 
-        if (Call\ArgumentsAnalyzer::checkArgumentsMatch(
+        if (ArgumentsAnalyzer::checkArgumentsMatch(
             $statements_analyzer,
             $args,
             $method_id,
@@ -357,18 +382,18 @@ class CallAnalyzer
      * This gets all the template params (and their types) that we think
      * we'll need to know about
      *
-     * @return array<string, array<string, Type\Union>>
-     * @param array<string, non-empty-array<string, Type\Union>> $existing_template_types
-     * @param array<string, array<string, Type\Union>> $class_template_params
+     * @return array<string, array<string, Union>>
+     * @param array<string, non-empty-array<string, Union>> $existing_template_types
+     * @param array<string, array<string, Union>> $class_template_params
      */
     public static function getTemplateTypesForCall(
-        \Psalm\Codebase $codebase,
+        Codebase $codebase,
         ?ClassLikeStorage $declaring_class_storage,
         ?string $appearing_class_name,
         ?ClassLikeStorage $calling_class_storage,
         array $existing_template_types = [],
         array $class_template_params = []
-    ) : array {
+    ): array {
         $template_types = $existing_template_types;
 
         if ($declaring_class_storage) {
@@ -382,7 +407,7 @@ class CallAnalyzer
                             $output_type = null;
 
                             foreach ($type->getAtomicTypes() as $atomic_type) {
-                                if ($atomic_type instanceof Type\Atomic\TTemplateParam) {
+                                if ($atomic_type instanceof TTemplateParam) {
                                     $output_type_candidate = self::getGenericParamForOffset(
                                         $atomic_type->defining_class,
                                         $atomic_type->param_name,
@@ -390,7 +415,7 @@ class CallAnalyzer
                                         $class_template_params + $template_types
                                     );
                                 } else {
-                                    $output_type_candidate = new Type\Union([$atomic_type]);
+                                    $output_type_candidate = new Union([$atomic_type]);
                                 }
 
                                 $output_type = Type::combineUnionTypes(
@@ -415,7 +440,7 @@ class CallAnalyzer
 
         foreach ($template_types as $key => $type_map) {
             foreach ($type_map as $class => $type) {
-                $template_types[$key][$class] = \Psalm\Internal\Type\TypeExpander::expandUnion(
+                $template_types[$key][$class] = TypeExpander::expandUnion(
                     $codebase,
                     $type,
                     $appearing_class_name,
@@ -432,15 +457,15 @@ class CallAnalyzer
     }
 
     /**
-     * @param  array<string, array<string, Type\Union>>  $template_extended_params
-     * @param  array<string, array<string, Type\Union>>  $found_generic_params
+     * @param  array<string, array<string, Union>>  $template_extended_params
+     * @param  array<string, array<string, Union>>  $found_generic_params
      */
     public static function getGenericParamForOffset(
         string $fq_class_name,
         string $template_name,
         array $template_extended_params,
         array $found_generic_params
-    ): Type\Union {
+    ): Union {
         if (isset($found_generic_params[$template_name][$fq_class_name])) {
             return $found_generic_params[$template_name][$fq_class_name];
         }
@@ -448,7 +473,7 @@ class CallAnalyzer
         foreach ($template_extended_params as $extended_class_name => $type_map) {
             foreach ($type_map as $extended_template_name => $extended_type) {
                 foreach ($extended_type->getAtomicTypes() as $extended_atomic_type) {
-                    if ($extended_atomic_type instanceof Type\Atomic\TTemplateParam
+                    if ($extended_atomic_type instanceof TTemplateParam
                         && $extended_atomic_type->param_name === $template_name
                         && $extended_atomic_type->defining_class === $fq_class_name
                     ) {
@@ -475,13 +500,13 @@ class CallAnalyzer
      * @psalm-suppress MoreSpecificReturnType
      */
     public static function getFunctionIdsFromCallableArg(
-        \Psalm\FileSource $file_source,
+        FileSource $file_source,
         PhpParser\Node\Expr $callable_arg
     ): array {
         if ($callable_arg instanceof PhpParser\Node\Expr\BinaryOp\Concat) {
             if ($callable_arg->left instanceof PhpParser\Node\Expr\ClassConstFetch
-                && $callable_arg->left->class instanceof PhpParser\Node\Name
-                && $callable_arg->left->name instanceof PhpParser\Node\Identifier
+                && $callable_arg->left->class instanceof Name
+                && $callable_arg->left->name instanceof Identifier
                 && strtolower($callable_arg->left->name->name) === 'class'
                 && !in_array(strtolower($callable_arg->left->class->parts[0]), ['self', 'static', 'parent'])
                 && $callable_arg->right instanceof PhpParser\Node\Scalar\String_
@@ -515,7 +540,7 @@ class CallAnalyzer
         }
 
         if (!isset($callable_arg->items[0]) || !isset($callable_arg->items[1])) {
-            throw new \UnexpectedValueException('These should never be unset');
+            throw new UnexpectedValueException('These should never be unset');
         }
 
         $class_arg = $callable_arg->items[0]->value;
@@ -530,9 +555,9 @@ class CallAnalyzer
         }
 
         if ($class_arg instanceof PhpParser\Node\Expr\ClassConstFetch
-            && $class_arg->name instanceof PhpParser\Node\Identifier
+            && $class_arg->name instanceof Identifier
             && strtolower($class_arg->name->name) === 'class'
-            && $class_arg->class instanceof PhpParser\Node\Name
+            && $class_arg->class instanceof Name
         ) {
             $fq_class_name = ClassLikeAnalyzer::getFQCLNFromNameObject(
                 $class_arg->class,
@@ -556,10 +581,10 @@ class CallAnalyzer
 
                 if ($type_part->extra_types) {
                     foreach ($type_part->extra_types as $extra_type) {
-                        if ($extra_type instanceof Type\Atomic\TTemplateParam
-                            || $extra_type instanceof Type\Atomic\TObjectWithProperties
+                        if ($extra_type instanceof TTemplateParam
+                            || $extra_type instanceof TObjectWithProperties
                         ) {
-                            throw new \UnexpectedValueException('Shouldn’t get a generic param here');
+                            throw new UnexpectedValueException('Shouldn’t get a generic param here');
                         }
 
                         $method_id .= '&' . $extra_type->value . '::' . $method_name_arg->value;
@@ -599,16 +624,14 @@ class CallAnalyzer
             ) {
                 $function_id = $root_function_id;
             } else {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new UndefinedFunction(
                         'Function ' . $cased_function_id . ' does not exist',
                         $code_location,
                         $function_id
                     ),
                     $statements_analyzer->getSuppressedIssues()
-                )) {
-                    // fall through
-                }
+                );
 
                 return false;
             }
@@ -618,18 +641,17 @@ class CallAnalyzer
     }
 
     /**
-     * @param PhpParser\Node\Identifier|PhpParser\Node\Name $expr
-     * @param  \Psalm\Storage\Assertion[] $assertions
+     * @param Identifier|Name $expr
+     * @param  Possibilities[] $var_assertions
      * @param  list<PhpParser\Node\Arg> $args
-     * @param  array<string, array<string, non-empty-list<TemplateBound>>> $inferred_lower_bounds,
      *
      */
     public static function applyAssertionsToContext(
         PhpParser\NodeAbstract $expr,
         ?string $thisName,
-        array $assertions,
+        array $var_assertions,
         array $args,
-        array $inferred_lower_bounds,
+        TemplateResult $template_result,
         Context $context,
         StatementsAnalyzer $statements_analyzer
     ): void {
@@ -637,36 +659,36 @@ class CallAnalyzer
 
         $asserted_keys = [];
 
-        foreach ($assertions as $assertion) {
+        foreach ($var_assertions as $var_possibilities) {
             $assertion_var_id = null;
 
             $arg_value = null;
 
-            if (is_int($assertion->var_id)) {
-                if (!isset($args[$assertion->var_id])) {
+            if (is_int($var_possibilities->var_id)) {
+                if (!isset($args[$var_possibilities->var_id])) {
                     continue;
                 }
 
-                $arg_value = $args[$assertion->var_id]->value;
+                $arg_value = $args[$var_possibilities->var_id]->value;
 
                 $arg_var_id = ExpressionIdentifier::getArrayVarId($arg_value, null, $statements_analyzer);
 
                 if ($arg_var_id) {
                     $assertion_var_id = $arg_var_id;
                 }
-            } elseif ($assertion->var_id === '$this' && $thisName !== null) {
+            } elseif ($var_possibilities->var_id === '$this' && $thisName !== null) {
                 $assertion_var_id = $thisName;
-            } elseif (strpos($assertion->var_id, '$this->') === 0 && $thisName !== null) {
-                $assertion_var_id = $thisName . str_replace('$this->', '->', $assertion->var_id);
-            } elseif (strpos($assertion->var_id, 'self::') === 0 && $context->self) {
-                $assertion_var_id = $context->self . str_replace('self::', '::', $assertion->var_id);
-            } elseif (strpos($assertion->var_id, '::$') !== false) {
+            } elseif (strpos($var_possibilities->var_id, '$this->') === 0 && $thisName !== null) {
+                $assertion_var_id = $thisName . str_replace('$this->', '->', $var_possibilities->var_id);
+            } elseif (strpos($var_possibilities->var_id, 'self::') === 0 && $context->self) {
+                $assertion_var_id = $context->self . str_replace('self::', '::', $var_possibilities->var_id);
+            } elseif (strpos($var_possibilities->var_id, '::$') !== false) {
                 // allow assertions to bring external static props into scope
-                $assertion_var_id = $assertion->var_id;
-            } elseif (isset($context->vars_in_scope[$assertion->var_id])) {
-                $assertion_var_id = $assertion->var_id;
-            } elseif (strpos($assertion->var_id, '->') !== false) {
-                $exploded = explode('->', $assertion->var_id);
+                $assertion_var_id = $var_possibilities->var_id;
+            } elseif (isset($context->vars_in_scope[$var_possibilities->var_id])) {
+                $assertion_var_id = $var_possibilities->var_id;
+            } elseif (strpos($var_possibilities->var_id, '->') !== false) {
+                $exploded = explode('->', $var_possibilities->var_id);
 
                 if (count($exploded) < 2) {
                     IssueBuffer::add(
@@ -723,133 +745,123 @@ class CallAnalyzer
                     }
                 }
 
-                $assertion_var_id = str_replace((string) $var_id, $arg_var_id, $assertion->var_id);
+                $assertion_var_id = str_replace((string) $var_id, $arg_var_id, $var_possibilities->var_id);
             }
 
             $codebase = $statements_analyzer->getCodebase();
 
             if ($assertion_var_id) {
-                $rule = $assertion->rule[0][0];
+                $orred_rules = [];
 
-                $prefix = '';
-                if ($rule[0] === '!') {
-                    $prefix .= '!';
-                    $rule = substr($rule, 1);
-                }
-                if ($rule[0] === '=') {
-                    $prefix .= '=';
-                    $rule = substr($rule, 1);
-                }
-                if ($rule[0] === '~') {
-                    $prefix .= '~';
-                    $rule = substr($rule, 1);
-                }
+                foreach ($var_possibilities->rule as $assertion_rule) {
+                    $assertion_type = $assertion_rule->getAtomicType();
 
-                if (isset($inferred_lower_bounds[$rule])) {
-                    foreach ($inferred_lower_bounds[$rule] as $lower_bounds) {
-                        $lower_bound_type = TemplateStandinTypeReplacer::getMostSpecificTypeFromBounds(
-                            $lower_bounds,
+                    if ($assertion_type) {
+                        $union = new Union([clone $assertion_type]);
+                        TemplateInferredTypeReplacer::replace(
+                            $union,
+                            $template_result,
                             $codebase
                         );
 
-                        if ($lower_bound_type->hasMixed()) {
-                            continue 2;
-                        }
-
-                        $replacement_atomic_types = $lower_bound_type->getAtomicTypes();
-
-                        if (count($replacement_atomic_types) > 1) {
-                            continue 2;
-                        }
-
-                        $ored_type_assertions = [];
-
-                        foreach ($replacement_atomic_types as $replacement_atomic_type) {
-                            if ($replacement_atomic_type instanceof Type\Atomic\TMixed) {
-                                continue 3;
+                        if ($union->isSingle()) {
+                            foreach ($union->getAtomicTypes() as $atomic_type) {
+                                if ($assertion_type instanceof TTemplateParam
+                                    && $assertion_type->as->getId() === $atomic_type->getId()
+                                ) {
+                                    continue;
+                                }
+                                $assertion_rule = clone $assertion_rule;
+                                $assertion_rule->setAtomicType($atomic_type);
+                                $orred_rules[] = $assertion_rule;
                             }
+                        } elseif (isset($context->vars_in_scope[$var_possibilities->var_id])) {
+                            $other_type = $context->vars_in_scope[$var_possibilities->var_id];
 
-                            if ($replacement_atomic_type instanceof Type\Atomic\TArray
-                                || $replacement_atomic_type instanceof Type\Atomic\TKeyedArray
+                            if ($assertion_rule instanceof IsIdentical
+                                || $assertion_rule instanceof IsType
                             ) {
-                                $ored_type_assertions[] = $prefix . 'array';
-                            } elseif ($replacement_atomic_type instanceof Type\Atomic\TNamedObject) {
-                                $ored_type_assertions[] = $prefix . $replacement_atomic_type->value;
-                            } elseif ($replacement_atomic_type instanceof Type\Atomic\Scalar) {
-                                $ored_type_assertions[] = $prefix . $replacement_atomic_type->getAssertionString();
-                            } elseif ($replacement_atomic_type instanceof Type\Atomic\TNull) {
-                                $ored_type_assertions[] = $prefix . 'null';
-                            } elseif ($replacement_atomic_type instanceof Type\Atomic\TTemplateParam) {
-                                $ored_type_assertions[] = $prefix . $replacement_atomic_type->param_name;
+                                if (!UnionTypeComparator::canExpressionTypesBeIdentical(
+                                    $codebase,
+                                    $union,
+                                    $context->vars_in_scope[$var_possibilities->var_id]
+                                )) {
+                                    IssueBuffer::maybeAdd(
+                                        new TypeDoesNotContainType(
+                                            $union->getId() . ' cannot be identical to ' . $other_type->getId(),
+                                            new CodeLocation($statements_analyzer->getSource(), $expr),
+                                            $union->getId() . ' ' . $other_type->getId()
+                                        ),
+                                        $statements_analyzer->getSuppressedIssues()
+                                    );
+                                }
                             }
                         }
-
-                        if ($ored_type_assertions) {
-                            $type_assertions[$assertion_var_id] = [$ored_type_assertions];
-                        }
+                    } else {
+                        $orred_rules[] = $assertion_rule;
                     }
-                } else {
+                }
+
+                if ($orred_rules) {
                     if (isset($type_assertions[$assertion_var_id])) {
                         $type_assertions[$assertion_var_id] = array_merge(
                             $type_assertions[$assertion_var_id],
-                            $assertion->rule
+                            [$orred_rules]
                         );
                     } else {
-                        $type_assertions[$assertion_var_id] = $assertion->rule;
+                        $type_assertions[$assertion_var_id] = [$orred_rules];
                     }
                 }
-            } elseif ($arg_value && ($assertion->rule === [['!falsy']] || $assertion->rule === [['true']])) {
-                if ($assertion->rule === [['true']]) {
+            } elseif ($arg_value
+                && count($var_possibilities->rule) === 1
+            ) {
+                $assert_clauses = [];
+
+                $single_rule = $var_possibilities->rule[0];
+
+                if ($single_rule instanceof Truthy) {
+                    $assert_clauses = FormulaGenerator::getFormula(
+                        spl_object_id($arg_value),
+                        spl_object_id($arg_value),
+                        $arg_value,
+                        $context->self,
+                        $statements_analyzer,
+                        $statements_analyzer->getCodebase()
+                    );
+                } elseif ($single_rule instanceof Falsy) {
+                    $assert_clauses = Algebra::negateFormula(
+                        FormulaGenerator::getFormula(
+                            spl_object_id($arg_value),
+                            spl_object_id($arg_value),
+                            $arg_value,
+                            $context->self,
+                            $statements_analyzer,
+                            $codebase
+                        )
+                    );
+                } elseif ($single_rule instanceof IsType
+                    && $single_rule->type instanceof TTrue
+                ) {
                     $conditional = new VirtualIdentical(
                         $arg_value,
                         new VirtualConstFetch(new VirtualName('true'))
                     );
 
                     $assert_clauses = FormulaGenerator::getFormula(
-                        \mt_rand(0, 1000000),
-                        \mt_rand(0, 1000000),
+                        mt_rand(0, 1_000_000),
+                        mt_rand(0, 1_000_000),
                         $conditional,
                         $context->self,
                         $statements_analyzer,
                         $codebase
                     );
-                } else {
-                    $assert_clauses = FormulaGenerator::getFormula(
-                        \spl_object_id($arg_value),
-                        \spl_object_id($arg_value),
-                        $arg_value,
-                        $context->self,
-                        $statements_analyzer,
-                        $statements_analyzer->getCodebase()
-                    );
                 }
 
-                $simplified_clauses = \Psalm\Internal\Algebra::simplifyCNF(
+                $simplified_clauses = Algebra::simplifyCNF(
                     array_merge($context->clauses, $assert_clauses)
                 );
 
-                $assert_type_assertions = \Psalm\Internal\Algebra::getTruthsFromFormula(
-                    $simplified_clauses
-                );
-
-                $type_assertions = array_merge($type_assertions, $assert_type_assertions);
-            } elseif ($arg_value && $assertion->rule === [['falsy']]) {
-                $assert_clauses = \Psalm\Internal\Algebra::negateFormula(
-                    FormulaGenerator::getFormula(
-                        \spl_object_id($arg_value),
-                        \spl_object_id($arg_value),
-                        $arg_value,
-                        $context->self,
-                        $statements_analyzer,
-                        $codebase
-                    )
-                );
-
-                $simplified_clauses = \Psalm\Internal\Algebra::simplifyCNF(
-                    array_merge($context->clauses, $assert_clauses)
-                );
-
-                $assert_type_assertions = \Psalm\Internal\Algebra::getTruthsFromFormula(
+                $assert_type_assertions = Algebra::getTruthsFromFormula(
                     $simplified_clauses
                 );
 
@@ -866,36 +878,11 @@ class CallAnalyzer
         $codebase = $statements_analyzer->getCodebase();
 
         if ($type_assertions) {
-            $template_type_map = array_map(
-                static function ($type_map) use ($codebase) {
-                    return array_map(
-                        static function ($bounds) use ($codebase) {
-                            return TemplateStandinTypeReplacer::getMostSpecificTypeFromBounds(
-                                $bounds,
-                                $codebase
-                            );
-                        },
-                        $type_map
-                    );
-                },
-                $inferred_lower_bounds
-            );
-
-            foreach (($statements_analyzer->getTemplateTypeMap() ?: []) as $template_name => $map) {
-                foreach ($map as $ref => $type) {
-                    $template_type_map[$template_name][$ref] = new Type\Union([
-                        new Type\Atomic\TTemplateParam(
-                            $template_name,
-                            $type,
-                            $ref
-                        )
-                    ]);
-                }
-            }
+            $template_type_map = [];
 
             // while in an and, we allow scope to boil over to support
             // statements of the form if ($x && $x->foo())
-            $op_vars_in_scope = \Psalm\Type\Reconciler::reconcileKeyedTypes(
+            $op_vars_in_scope = Reconciler::reconcileKeyedTypes(
                 $type_assertions,
                 $type_assertions,
                 $context->vars_in_scope,
@@ -919,8 +906,8 @@ class CallAnalyzer
                             && !$context->collect_mutations
                             && $statements_analyzer->getFilePath() === $statements_analyzer->getRootFilePath()
                             && (!(($parent_source = $statements_analyzer->getSource())
-                                        instanceof \Psalm\Internal\Analyzer\FunctionLikeAnalyzer)
-                                    || !$parent_source->getSource() instanceof \Psalm\Internal\Analyzer\TraitAnalyzer)
+                                        instanceof FunctionLikeAnalyzer)
+                                    || !$parent_source->getSource() instanceof TraitAnalyzer)
                         ) {
                             $codebase->analyzer->decrementMixedCount($statements_analyzer->getFilePath());
                         }
@@ -932,22 +919,12 @@ class CallAnalyzer
                         );
                     }
 
-                    if ($template_type_map) {
-                        $readonly_template_result = new TemplateResult($template_type_map, $template_type_map);
-
-                         \Psalm\Internal\Type\TemplateInferredTypeReplacer::replace(
-                             $op_vars_in_scope[$var_id],
-                             $readonly_template_result,
-                             $codebase
-                         );
-                    }
-
                     $op_vars_in_scope[$var_id]->from_docblock = true;
 
                     foreach ($op_vars_in_scope[$var_id]->getAtomicTypes() as $changed_atomic_type) {
                         $changed_atomic_type->from_docblock = true;
 
-                        if ($changed_atomic_type instanceof Type\Atomic\TNamedObject
+                        if ($changed_atomic_type instanceof TNamedObject
                             && $changed_atomic_type->extra_types
                         ) {
                             foreach ($changed_atomic_type->extra_types as $extra_type) {
@@ -993,7 +970,7 @@ class CallAnalyzer
         TemplateResult $template_result,
         CodeLocation $code_location,
         ?string $function_id
-    ) : void {
+    ): void {
         if ($template_result->lower_bounds && $template_result->upper_bounds) {
             foreach ($template_result->upper_bounds as $template_name => $defining_map) {
                 foreach ($defining_map as $defining_id => $upper_bound) {
@@ -1005,7 +982,7 @@ class CallAnalyzer
 
                         $upper_bound_type = $upper_bound->type;
 
-                        $union_comparison_result = new \Psalm\Internal\Type\Comparator\TypeComparisonResult();
+                        $union_comparison_result = new TypeComparisonResult();
 
                         if (count($template_result->upper_bounds_unintersectable_types) > 1) {
                             [$lower_bound_type, $upper_bound_type]
@@ -1022,7 +999,7 @@ class CallAnalyzer
                         )) {
                             if ($union_comparison_result->type_coerced) {
                                 if ($union_comparison_result->type_coerced_from_mixed) {
-                                    if (IssueBuffer::accepts(
+                                    IssueBuffer::maybeAdd(
                                         new MixedArgumentTypeCoercion(
                                             'Type ' . $lower_bound_type->getId() . ' should be a subtype of '
                                                 . $upper_bound_type->getId(),
@@ -1030,11 +1007,9 @@ class CallAnalyzer
                                             $function_id
                                         ),
                                         $statements_analyzer->getSuppressedIssues()
-                                    )) {
-                                        // continue
-                                    }
+                                    );
                                 } else {
-                                    if (IssueBuffer::accepts(
+                                    IssueBuffer::maybeAdd(
                                         new ArgumentTypeCoercion(
                                             'Type ' . $lower_bound_type->getId() . ' should be a subtype of '
                                                 . $upper_bound_type->getId(),
@@ -1042,12 +1017,10 @@ class CallAnalyzer
                                             $function_id
                                         ),
                                         $statements_analyzer->getSuppressedIssues()
-                                    )) {
-                                        // continue
-                                    }
+                                    );
                                 }
                             } elseif ($union_comparison_result->scalar_type_match_found) {
-                                if (IssueBuffer::accepts(
+                                IssueBuffer::maybeAdd(
                                     new InvalidScalarArgument(
                                         'Type ' . $lower_bound_type->getId() . ' should be a subtype of '
                                                 . $upper_bound_type->getId(),
@@ -1055,11 +1028,9 @@ class CallAnalyzer
                                         $function_id
                                     ),
                                     $statements_analyzer->getSuppressedIssues()
-                                )) {
-                                    // continue
-                                }
+                                );
                             } else {
-                                if (IssueBuffer::accepts(
+                                IssueBuffer::maybeAdd(
                                     new InvalidArgument(
                                         'Type ' . $lower_bound_type->getId() . ' should be a subtype of '
                                                 . $upper_bound_type->getId(),
@@ -1067,9 +1038,7 @@ class CallAnalyzer
                                         $function_id
                                     ),
                                     $statements_analyzer->getSuppressedIssues()
-                                )) {
-                                    // continue
-                                }
+                                );
                             }
                         }
                     } else {
@@ -1089,9 +1058,7 @@ class CallAnalyzer
                 if (count($lower_bounds) > 1) {
                     $bounds_with_equality = array_filter(
                         $lower_bounds,
-                        static function ($lower_bound) {
-                            return (bool)$lower_bound->equality_bound_classlike;
-                        }
+                        static fn($lower_bound): bool => (bool)$lower_bound->equality_bound_classlike
                     );
 
                     if (!$bounds_with_equality) {
@@ -1100,15 +1067,13 @@ class CallAnalyzer
 
                     $equality_types = array_unique(
                         array_map(
-                            static function ($bound_with_equality) {
-                                return $bound_with_equality->type->getId();
-                            },
+                            static fn($bound_with_equality) => $bound_with_equality->type->getId(),
                             $bounds_with_equality
                         )
                     );
 
                     if (count($equality_types) > 1) {
-                        if (IssueBuffer::accepts(
+                        IssueBuffer::maybeAdd(
                             new InvalidArgument(
                                 'Incompatible types found for ' . $template_name . ' (must have only one of ' .
                                 implode(', ', $equality_types) . ')',
@@ -1116,14 +1081,12 @@ class CallAnalyzer
                                 $function_id
                             ),
                             $statements_analyzer->getSuppressedIssues()
-                        )) {
-                            // continue
-                        }
+                        );
                     } else {
                         foreach ($lower_bounds as $lower_bound) {
                             if ($lower_bound->equality_bound_classlike === null) {
                                 if (!in_array($lower_bound->type->getId(), $equality_types, true)) {
-                                    if (IssueBuffer::accepts(
+                                    IssueBuffer::maybeAdd(
                                         new InvalidArgument(
                                             'Incompatible types found for ' . $template_name . ' (' .
                                             $lower_bound->type->getId() . ' is not in ' .
@@ -1132,9 +1095,7 @@ class CallAnalyzer
                                             $function_id
                                         ),
                                         $statements_analyzer->getSuppressedIssues()
-                                    )) {
-                                        // continue
-                                    }
+                                    );
                                 }
                             }
                         }

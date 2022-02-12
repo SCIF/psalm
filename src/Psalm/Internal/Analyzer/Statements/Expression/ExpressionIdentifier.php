@@ -1,7 +1,9 @@
 <?php
+
 namespace Psalm\Internal\Analyzer\Statements\Expression;
 
 use PhpParser;
+use Psalm\Config;
 use Psalm\FileSource;
 use Psalm\Internal\Analyzer\ClassLikeAnalyzer;
 use Psalm\Internal\Analyzer\StatementsAnalyzer;
@@ -12,6 +14,9 @@ use function in_array;
 use function is_string;
 use function strtolower;
 
+/**
+ * @internal
+ */
 class ExpressionIdentifier
 {
     public static function getVarId(
@@ -197,9 +202,10 @@ class ExpressionIdentifier
 
         if ($stmt instanceof PhpParser\Node\Expr\MethodCall
             && $stmt->name instanceof PhpParser\Node\Identifier
+            && !$stmt->isFirstClassCallable()
             && !$stmt->getArgs()
         ) {
-            $config = \Psalm\Config::getInstance();
+            $config = Config::getInstance();
 
             if ($config->memoize_method_calls || $stmt->getAttribute('memoizable', false)) {
                 $lhs_var_name = self::getArrayVarId(

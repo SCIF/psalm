@@ -1,23 +1,39 @@
 <?php
+
 namespace Psalm\Internal\Provider\ReturnTypeProvider;
 
+use PDO;
 use Psalm\Plugin\EventHandler\Event\MethodReturnTypeProviderEvent;
+use Psalm\Plugin\EventHandler\MethodReturnTypeProviderInterface;
 use Psalm\Type;
+use Psalm\Type\Atomic\TArray;
+use Psalm\Type\Atomic\TFalse;
+use Psalm\Type\Atomic\TList;
+use Psalm\Type\Atomic\TNamedObject;
+use Psalm\Type\Atomic\TNull;
+use Psalm\Type\Atomic\TObject;
+use Psalm\Type\Atomic\TScalar;
+use Psalm\Type\Union;
 
-class PdoStatementReturnTypeProvider implements \Psalm\Plugin\EventHandler\MethodReturnTypeProviderInterface
+use function class_exists;
+
+/**
+ * @internal
+ */
+class PdoStatementReturnTypeProvider implements MethodReturnTypeProviderInterface
 {
-    public static function getClassLikeNames() : array
+    public static function getClassLikeNames(): array
     {
         return ['PDOStatement'];
     }
 
-    public static function getMethodReturnType(MethodReturnTypeProviderEvent $event): ?Type\Union
+    public static function getMethodReturnType(MethodReturnTypeProviderEvent $event): ?Union
     {
         $source = $event->getSource();
         $call_args = $event->getCallArgs();
         $method_name_lowercase = $event->getMethodNameLowercase();
         if ($method_name_lowercase === 'fetch'
-            && \class_exists('PDO')
+            && class_exists('PDO')
             && isset($call_args[0])
             && ($first_arg_type = $source->getNodeTypeProvider()->getType($call_args[0]->value))
             && $first_arg_type->isSingleIntLiteral()
@@ -25,74 +41,74 @@ class PdoStatementReturnTypeProvider implements \Psalm\Plugin\EventHandler\Metho
             $fetch_mode = $first_arg_type->getSingleIntLiteral()->value;
 
             switch ($fetch_mode) {
-                case \PDO::FETCH_ASSOC: // array<string,scalar|null>|false
-                    return new Type\Union([
-                        new Type\Atomic\TArray([
+                case PDO::FETCH_ASSOC: // array<string,scalar|null>|false
+                    return new Union([
+                        new TArray([
                             Type::getString(),
-                            new Type\Union([
-                                new Type\Atomic\TScalar(),
-                                new Type\Atomic\TNull()
+                            new Union([
+                                new TScalar(),
+                                new TNull()
                             ])
                         ]),
-                        new Type\Atomic\TFalse(),
+                        new TFalse(),
                     ]);
 
-                case \PDO::FETCH_BOTH: // array<array-key,scalar|null>|false
-                    return new Type\Union([
-                        new Type\Atomic\TArray([
+                case PDO::FETCH_BOTH: // array<array-key,scalar|null>|false
+                    return new Union([
+                        new TArray([
                             Type::getArrayKey(),
-                            new Type\Union([
-                                new Type\Atomic\TScalar(),
-                                new Type\Atomic\TNull()
+                            new Union([
+                                new TScalar(),
+                                new TNull()
                             ])
                         ]),
-                        new Type\Atomic\TFalse(),
+                        new TFalse(),
                     ]);
 
-                case \PDO::FETCH_BOUND: // bool
+                case PDO::FETCH_BOUND: // bool
                     return Type::getBool();
 
-                case \PDO::FETCH_CLASS: // object|false
-                    return new Type\Union([
-                        new Type\Atomic\TObject(),
-                        new Type\Atomic\TFalse(),
+                case PDO::FETCH_CLASS: // object|false
+                    return new Union([
+                        new TObject(),
+                        new TFalse(),
                     ]);
 
-                case \PDO::FETCH_LAZY: // object|false
+                case PDO::FETCH_LAZY: // object|false
                     // This actually returns a PDORow object, but that class is
                     // undocumented, and its attributes are all dynamic anyway
-                    return new Type\Union([
-                        new Type\Atomic\TObject(),
-                        new Type\Atomic\TFalse(),
+                    return new Union([
+                        new TObject(),
+                        new TFalse(),
                     ]);
 
-                case \PDO::FETCH_NAMED: // array<string, scalar|list<scalar>>|false
-                    return new Type\Union([
-                        new Type\Atomic\TArray([
+                case PDO::FETCH_NAMED: // array<string, scalar|list<scalar>>|false
+                    return new Union([
+                        new TArray([
                             Type::getString(),
-                            new Type\Union([
-                                new Type\Atomic\TScalar(),
-                                new Type\Atomic\TList(Type::getScalar())
+                            new Union([
+                                new TScalar(),
+                                new TList(Type::getScalar())
                             ])
                         ]),
-                        new Type\Atomic\TFalse(),
+                        new TFalse(),
                     ]);
 
-                case \PDO::FETCH_NUM: // list<scalar|null>|false
-                    return new Type\Union([
-                        new Type\Atomic\TList(
-                            new Type\Union([
-                                new Type\Atomic\TScalar(),
-                                new Type\Atomic\TNull()
+                case PDO::FETCH_NUM: // list<scalar|null>|false
+                    return new Union([
+                        new TList(
+                            new Union([
+                                new TScalar(),
+                                new TNull()
                             ])
                         ),
-                        new Type\Atomic\TFalse(),
+                        new TFalse(),
                     ]);
 
-                case \PDO::FETCH_OBJ: // stdClass|false
-                    return new Type\Union([
-                        new Type\Atomic\TNamedObject('stdClass'),
-                        new Type\Atomic\TFalse(),
+                case PDO::FETCH_OBJ: // stdClass|false
+                    return new Union([
+                        new TNamedObject('stdClass'),
+                        new TFalse(),
                     ]);
             }
         }

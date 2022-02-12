@@ -1,4 +1,5 @@
 <?php
+
 namespace Psalm\Type\Atomic;
 
 use Psalm\Codebase;
@@ -18,7 +19,7 @@ use function get_class;
  * - they start at 0
  * - they are consecutive and go upwards (no negative int)
  */
-class TList extends \Psalm\Type\Atomic
+class TList extends Atomic
 {
     /**
      * @var Union
@@ -91,13 +92,12 @@ class TList extends \Psalm\Type\Atomic
         ?string $namespace,
         array $aliased_classes,
         ?string $this_class,
-        int $php_major_version,
-        int $php_minor_version
+        int $analysis_php_version_id
     ): string {
         return 'array';
     }
 
-    public function canBeFullyExpressedInPhp(int $php_major_version, int $php_minor_version): bool
+    public function canBeFullyExpressedInPhp(int $analysis_php_version_id): bool
     {
         return false;
     }
@@ -109,7 +109,7 @@ class TList extends \Psalm\Type\Atomic
 
     public function replaceTemplateTypesWithStandins(
         TemplateResult $template_result,
-        ?Codebase $codebase = null,
+        Codebase $codebase,
         ?StatementsAnalyzer $statements_analyzer = null,
         ?Atomic $input_type = null,
         ?int $input_arg_offset = null,
@@ -118,26 +118,26 @@ class TList extends \Psalm\Type\Atomic
         bool $replace = true,
         bool $add_lower_bound = false,
         int $depth = 0
-    ) : Atomic {
+    ): Atomic {
         $list = clone $this;
 
         foreach ([Type::getInt(), $list->type_param] as $offset => $type_param) {
             $input_type_param = null;
 
-            if (($input_type instanceof Atomic\TGenericObject
-                    || $input_type instanceof Atomic\TIterable
-                    || $input_type instanceof Atomic\TArray)
+            if (($input_type instanceof TGenericObject
+                    || $input_type instanceof TIterable
+                    || $input_type instanceof TArray)
                 &&
                     isset($input_type->type_params[$offset])
             ) {
                 $input_type_param = clone $input_type->type_params[$offset];
-            } elseif ($input_type instanceof Atomic\TKeyedArray) {
+            } elseif ($input_type instanceof TKeyedArray) {
                 if ($offset === 0) {
                     $input_type_param = $input_type->getGenericKeyType();
                 } else {
                     $input_type_param = $input_type->getGenericValueType();
                 }
-            } elseif ($input_type instanceof Atomic\TList) {
+            } elseif ($input_type instanceof TList) {
                 if ($offset === 0) {
                     continue;
                 }
@@ -171,7 +171,7 @@ class TList extends \Psalm\Type\Atomic
     public function replaceTemplateTypesWithArgTypes(
         TemplateResult $template_result,
         ?Codebase $codebase
-    ) : void {
+    ): void {
         TemplateInferredTypeReplacer::replace(
             $this->type_param,
             $template_result,
@@ -192,16 +192,16 @@ class TList extends \Psalm\Type\Atomic
         return true;
     }
 
-    public function getAssertionString(bool $exact = false): string
+    public function getAssertionString(): string
     {
-        if (!$exact || $this->type_param->isMixed()) {
+        if ($this->type_param->isMixed()) {
             return 'list';
         }
 
-        return $this->toNamespacedString(null, [], null, false);
+        return $this->getId();
     }
 
-    public function getChildNodes() : array
+    public function getChildNodes(): array
     {
         return [$this->type_param];
     }

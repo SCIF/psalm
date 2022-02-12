@@ -2,22 +2,36 @@
 
 namespace Psalm\Internal\Type\Comparator;
 
+use Exception;
+use PhpParser\Node\Arg;
+use PhpParser\Node\Expr\Variable;
 use Psalm\Codebase;
 use Psalm\Internal\Analyzer\StatementsAnalyzer;
 use Psalm\Internal\Codebase\InternalCallMapHandler;
+use Psalm\Internal\MethodIdentifier;
+use Psalm\Internal\Provider\NodeDataProvider;
+use Psalm\Internal\Type\TemplateInferredTypeReplacer;
+use Psalm\Internal\Type\TemplateResult;
+use Psalm\Internal\Type\TemplateStandinTypeReplacer;
+use Psalm\Internal\Type\TypeExpander;
 use Psalm\Type;
 use Psalm\Type\Atomic;
 use Psalm\Type\Atomic\TArray;
 use Psalm\Type\Atomic\TCallable;
+use Psalm\Type\Atomic\TCallableArray;
+use Psalm\Type\Atomic\TCallableList;
 use Psalm\Type\Atomic\TClassString;
 use Psalm\Type\Atomic\TClosure;
 use Psalm\Type\Atomic\TKeyedArray;
 use Psalm\Type\Atomic\TList;
 use Psalm\Type\Atomic\TLiteralString;
 use Psalm\Type\Atomic\TNamedObject;
+use Psalm\Type\Atomic\TTemplateParam;
+use UnexpectedValueException;
 
 use function end;
 use function strtolower;
+use function substr;
 
 /**
  * @internal
@@ -25,15 +39,15 @@ use function strtolower;
 class CallableTypeComparator
 {
     /**
-     * @param  TCallable|Type\Atomic\TClosure   $input_type_part
-     * @param  TCallable|Type\Atomic\TClosure   $container_type_part
+     * @param  TCallable|TClosure   $input_type_part
+     * @param  TCallable|TClosure   $container_type_part
      */
     public static function isContainedBy(
         Codebase $codebase,
-        Type\Atomic $input_type_part,
-        Type\Atomic $container_type_part,
+        Atomic $input_type_part,
+        Atomic $container_type_part,
         ?TypeComparisonResult $atomic_comparison_result
-    ) : bool {
+    ): bool {
         if ($container_type_part->is_pure && !$input_type_part->is_pure) {
             if ($atomic_comparison_result) {
                 $atomic_comparison_result->type_coerced = $input_type_part->is_pure === null;
@@ -124,10 +138,10 @@ class CallableTypeComparator
 
     public static function isNotExplicitlyCallableTypeCallable(
         Codebase $codebase,
-        Type\Atomic $input_type_part,
+        Atomic $input_type_part,
         TCallable $container_type_part,
         ?TypeComparisonResult $atomic_comparison_result
-    ) : bool {
+    ): bool {
         if ($input_type_part instanceof TList) {
             if ($input_type_part->type_param->isMixed()
                 || $input_type_part->type_param->hasScalar()
@@ -144,7 +158,7 @@ class CallableTypeComparator
                 return false;
             }
 
-            if (!$input_type_part instanceof Type\Atomic\TCallableList) {
+            if (!$input_type_part instanceof TCallableList) {
                 if ($atomic_comparison_result) {
                     $atomic_comparison_result->type_coerced_from_mixed = true;
                     $atomic_comparison_result->type_coerced = true;
@@ -170,7 +184,7 @@ class CallableTypeComparator
                 return false;
             }
 
-            if (!$input_type_part instanceof Type\Atomic\TCallableArray) {
+            if (!$input_type_part instanceof TCallableArray) {
                 if ($atomic_comparison_result) {
                     $atomic_comparison_result->type_coerced_from_mixed = true;
                     $atomic_comparison_result->type_coerced = true;
@@ -197,7 +211,7 @@ class CallableTypeComparator
                 }
 
                 $codebase->methods->getStorage($method_id);
-            } catch (\Exception $e) {
+            } catch (Exception $e) {
                 return false;
             }
         }
@@ -224,7 +238,7 @@ class CallableTypeComparator
      */
     public static function getCallableFromAtomic(
         Codebase $codebase,
-        Type\Atomic $input_type_part,
+        Atomic $input_type_part,
         ?TCallable $container_type_part = null,
         ?StatementsAnalyzer $statements_analyzer = null,
         bool $expand_callable = false
@@ -247,7 +261,7 @@ class CallableTypeComparator
                         $param = clone $param;
 
                         if ($param->type) {
-                            $param->type = \Psalm\Internal\Type\TypeExpander::expandUnion(
+                            $param->type = TypeExpander::expandUnion(
                                 $codebase,
                                 $param->type,
                                 null,
@@ -267,7 +281,7 @@ class CallableTypeComparator
                     $return_type = null;
 
                     if ($function_storage->return_type) {
-                        $return_type = \Psalm\Internal\Type\TypeExpander::expandUnion(
+                        $return_type = TypeExpander::expandUnion(
                             $codebase,
                             $function_storage->return_type,
                             null,
@@ -291,16 +305,16 @@ class CallableTypeComparator
                     $return_type,
                     $function_storage->pure
                 );
-            } catch (\UnexpectedValueException $e) {
+            } catch (UnexpectedValueException $e) {
                 if (InternalCallMapHandler::inCallMap($input_type_part->value)) {
                     $args = [];
 
-                    $nodes = new \Psalm\Internal\Provider\NodeDataProvider();
+                    $nodes = new NodeDataProvider();
 
                     if ($container_type_part && $container_type_part->params) {
                         foreach ($container_type_part->params as $i => $param) {
-                            $arg = new \PhpParser\Node\Arg(
-                                new \PhpParser\Node\Expr\Variable('_' . $i)
+                            $arg = new Arg(
+                                new Variable('_' . $i)
                             );
 
                             if ($param->type) {
@@ -311,7 +325,7 @@ class CallableTypeComparator
                         }
                     }
 
-                    $matching_callable = \Psalm\Internal\Codebase\InternalCallMapHandler::getCallableFromCallMapById(
+                    $matching_callable = InternalCallMapHandler::getCallableFromCallMapById(
                         $codebase,
                         $input_type_part->value,
                         $args,
@@ -341,7 +355,7 @@ class CallableTypeComparator
                     $converted_return_type = null;
 
                     if ($method_storage->return_type) {
-                        $converted_return_type = \Psalm\Internal\Type\TypeExpander::expandUnion(
+                        $converted_return_type = TypeExpander::expandUnion(
                             $codebase,
                             $method_storage->return_type,
                             $method_fqcln,
@@ -356,7 +370,7 @@ class CallableTypeComparator
                         $converted_return_type,
                         $method_storage->pure
                     );
-                } catch (\UnexpectedValueException $e) {
+                } catch (UnexpectedValueException $e) {
                     // do nothing
                 }
             }
@@ -367,20 +381,49 @@ class CallableTypeComparator
         } elseif ($input_type_part instanceof TNamedObject
             && $codebase->classExists($input_type_part->value)
         ) {
-            $invoke_id = new \Psalm\Internal\MethodIdentifier(
+            $invoke_id = new MethodIdentifier(
                 $input_type_part->value,
                 '__invoke'
             );
 
             if ($codebase->methods->methodExists($invoke_id)) {
                 $declaring_method_id = $codebase->methods->getDeclaringMethodId($invoke_id);
+                $template_result = null;
+
+                if ($input_type_part instanceof Atomic\TGenericObject) {
+                    $invokable_storage = $codebase->methods->getClassLikeStorageForMethod(
+                        $declaring_method_id ?? $invoke_id
+                    );
+                    $type_params = [];
+
+                    foreach ($invokable_storage->template_types ?? [] as $template => $for_class) {
+                        foreach ($for_class as $type) {
+                            $type_params[] = new Type\Union([
+                                new TTemplateParam($template, $type, $input_type_part->value)
+                            ]);
+                        }
+                    }
+
+                    if (!empty($type_params)) {
+                        $input_with_templates = new Atomic\TGenericObject($input_type_part->value, $type_params);
+                        $template_result = new TemplateResult($invokable_storage->template_types ?? [], []);
+
+                        TemplateStandinTypeReplacer::replace(
+                            new Type\Union([$input_with_templates]),
+                            $template_result,
+                            $codebase,
+                            null,
+                            new Type\Union([$input_type_part])
+                        );
+                    }
+                }
 
                 if ($declaring_method_id) {
                     $method_storage = $codebase->methods->getStorage($declaring_method_id);
                     $method_fqcln = $invoke_id->fq_class_name;
                     $converted_return_type = null;
                     if ($method_storage->return_type) {
-                        $converted_return_type = \Psalm\Internal\Type\TypeExpander::expandUnion(
+                        $converted_return_type = TypeExpander::expandUnion(
                             $codebase,
                             $method_storage->return_type,
                             $method_fqcln,
@@ -389,12 +432,26 @@ class CallableTypeComparator
                         );
                     }
 
-                    return new TCallable(
+                    $callable = new TCallable(
                         'callable',
                         $method_storage->params,
                         $converted_return_type,
                         $method_storage->pure
                     );
+
+                    if ($template_result) {
+                        $replaced_callable = clone $callable;
+
+                        TemplateInferredTypeReplacer::replace(
+                            new Type\Union([$replaced_callable]),
+                            $template_result,
+                            $codebase
+                        );
+
+                        $callable = $replaced_callable;
+                    }
+
+                    return $callable;
                 }
             }
         }
@@ -402,7 +459,7 @@ class CallableTypeComparator
         return null;
     }
 
-    /** @return null|'not-callable'|\Psalm\Internal\MethodIdentifier */
+    /** @return null|'not-callable'|MethodIdentifier */
     public static function getCallableMethodIdFromTKeyedArray(
         TKeyedArray $input_type_part,
         ?Codebase $codebase = null,
@@ -431,7 +488,7 @@ class CallableTypeComparator
                             strtolower($lhs_atomic_type->value) . '::',
                             $calling_method_id ?: $file_name
                         );
-                    } elseif ($lhs_atomic_type instanceof Atomic\TTemplateParam) {
+                    } elseif ($lhs_atomic_type instanceof TTemplateParam) {
                         $lhs_template_type = $lhs_atomic_type->as;
                         if ($lhs_template_type->isSingle()) {
                             $lhs_template_atomic_type = $lhs_template_type->getSingleAtomic();
@@ -463,13 +520,13 @@ class CallableTypeComparator
         if ($lhs->isSingleStringLiteral()) {
             $class_name = $lhs->getSingleStringLiteral()->value;
             if ($class_name[0] === '\\') {
-                $class_name = \substr($class_name, 1);
+                $class_name = substr($class_name, 1);
             }
         } elseif ($lhs->isSingle()) {
             foreach ($lhs->getAtomicTypes() as $lhs_atomic_type) {
                 if ($lhs_atomic_type instanceof TNamedObject) {
                     $class_name = $lhs_atomic_type->value;
-                } elseif ($lhs_atomic_type instanceof Atomic\TTemplateParam) {
+                } elseif ($lhs_atomic_type instanceof TTemplateParam) {
                     $lhs_template_type = $lhs_atomic_type->as;
                     if ($lhs_template_type->isSingle()) {
                         $lhs_template_atomic_type = $lhs_template_type->getSingleAtomic();
@@ -479,7 +536,7 @@ class CallableTypeComparator
                             $class_name = $lhs_template_atomic_type->as;
                         }
                     }
-                } elseif ($lhs_atomic_type instanceof Type\Atomic\TClassString
+                } elseif ($lhs_atomic_type instanceof TClassString
                     && $lhs_atomic_type->as
                 ) {
                     $class_name = $lhs_atomic_type->as;
@@ -505,7 +562,7 @@ class CallableTypeComparator
             return null;
         }
 
-        return new \Psalm\Internal\MethodIdentifier(
+        return new MethodIdentifier(
             $class_name,
             strtolower($method_name)
         );

@@ -1,6 +1,9 @@
 <?php
+
 namespace Psalm\Exception;
 
-class ComplicatedExpressionException extends \Exception
+use Exception;
+
+class ComplicatedExpressionException extends Exception
 {
 }

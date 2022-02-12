@@ -1,7 +1,9 @@
 <?php
+
 namespace Psalm\Internal\PhpVisitor;
 
 use PhpParser;
+use Psalm\Internal\Provider\NodeDataProvider;
 
 /**
  * @internal
@@ -10,7 +12,7 @@ class NodeCleanerVisitor extends PhpParser\NodeVisitorAbstract
 {
     private $type_provider;
 
-    public function __construct(\Psalm\Internal\Provider\NodeDataProvider $type_provider)
+    public function __construct(NodeDataProvider $type_provider)
     {
         $this->type_provider = $type_provider;
     }

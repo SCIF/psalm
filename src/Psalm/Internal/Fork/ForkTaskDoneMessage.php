@@ -1,8 +1,11 @@
 <?php
+
 namespace Psalm\Internal\Fork;
 
 /**
  * @psalm-immutable
+ *
+ * @internal
  */
 class ForkTaskDoneMessage implements ForkMessage
 {

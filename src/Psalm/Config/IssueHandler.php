@@ -1,6 +1,9 @@
 <?php
+
 namespace Psalm\Config;
 
+use Psalm\Config;
+use Psalm\Exception\ConfigException;
 use SimpleXMLElement;
 
 use function array_filter;
@@ -18,7 +21,7 @@ class IssueHandler
     /**
      * @var string
      */
-    private $error_level = \Psalm\Config::REPORT_ERROR;
+    private $error_level = Config::REPORT_ERROR;
 
     /**
      * @var array<ErrorLevelFileFilter>
@@ -32,12 +35,12 @@ class IssueHandler
         if (isset($e['errorLevel'])) {
             $handler->error_level = (string) $e['errorLevel'];
 
-            if (!in_array($handler->error_level, \Psalm\Config::$ERROR_LEVELS, true)) {
-                throw new \Psalm\Exception\ConfigException('Unexpected error level ' . $handler->error_level);
+            if (!in_array($handler->error_level, Config::$ERROR_LEVELS, true)) {
+                throw new ConfigException('Unexpected error level ' . $handler->error_level);
             }
         }
 
-        /** @var \SimpleXMLElement $error_level */
+        /** @var SimpleXMLElement $error_level */
         foreach ($e->errorLevel as $error_level) {
             $handler->custom_levels[] = ErrorLevelFileFilter::loadFromXMLElement($error_level, $base_dir, true);
         }
@@ -55,8 +58,8 @@ class IssueHandler
 
     public function setErrorLevel(string $error_level): void
     {
-        if (!in_array($error_level, \Psalm\Config::$ERROR_LEVELS, true)) {
-            throw new \Psalm\Exception\ConfigException('Unexpected error level ' . $error_level);
+        if (!in_array($error_level, Config::$ERROR_LEVELS, true)) {
+            throw new ConfigException('Unexpected error level ' . $error_level);
         }
 
         $this->error_level = $error_level;
@@ -146,26 +149,22 @@ class IssueHandler
     {
         return array_filter(
             array_map(
-                static function (string $file_name): string {
-                    return substr($file_name, 0, -4);
-                },
+                static fn(string $file_name): string => substr($file_name, 0, -4),
                 scandir(dirname(__DIR__) . '/Issue', SCANDIR_SORT_NONE)
             ),
-            static function (string $issue_name): bool {
-                return $issue_name !== ''
-                    && $issue_name !== 'MethodIssue'
-                    && $issue_name !== 'PropertyIssue'
-                    && $issue_name !== 'FunctionIssue'
-                    && $issue_name !== 'ArgumentIssue'
-                    && $issue_name !== 'VariableIssue'
-                    && $issue_name !== 'ClassIssue'
-                    && $issue_name !== 'CodeIssue'
-                    && $issue_name !== 'PsalmInternalError'
-                    && $issue_name !== 'ParseError'
-                    && $issue_name !== 'PluginIssue'
-                    && $issue_name !== 'MixedIssue'
-                    && $issue_name !== 'MixedIssueTrait';
-            }
+            static fn(string $issue_name): bool => $issue_name !== ''
+                && $issue_name !== 'MethodIssue'
+                && $issue_name !== 'PropertyIssue'
+                && $issue_name !== 'FunctionIssue'
+                && $issue_name !== 'ArgumentIssue'
+                && $issue_name !== 'VariableIssue'
+                && $issue_name !== 'ClassIssue'
+                && $issue_name !== 'CodeIssue'
+                && $issue_name !== 'PsalmInternalError'
+                && $issue_name !== 'ParseError'
+                && $issue_name !== 'PluginIssue'
+                && $issue_name !== 'MixedIssue'
+                && $issue_name !== 'MixedIssueTrait'
         );
     }
 }

@@ -1,14 +1,22 @@
 <?php
+
 namespace Psalm;
 
 use Psalm\Internal\Analyzer\ClassLikeAnalyzer;
 use Psalm\Internal\Scanner\FileScanner;
+use Psalm\Plugin\PluginEntryPointInterface;
+use Psalm\Plugin\RegistrationInterface;
 use SimpleXMLElement;
+use UnexpectedValueException;
 
+use function assert;
 use function class_exists;
 use function reset;
+use function str_replace;
 
-class FileBasedPluginAdapter implements Plugin\PluginEntryPointInterface
+use const DIRECTORY_SEPARATOR;
+
+class FileBasedPluginAdapter implements PluginEntryPointInterface
 {
     /** @var string */
     private $path;
@@ -22,7 +30,7 @@ class FileBasedPluginAdapter implements Plugin\PluginEntryPointInterface
     public function __construct(string $path, Config $config, Codebase $codebase)
     {
         if (!$path) {
-            throw new \UnexpectedValueException('$path cannot be empty');
+            throw new UnexpectedValueException('$path cannot be empty');
         }
 
         $this->path = $path;
@@ -30,17 +38,14 @@ class FileBasedPluginAdapter implements Plugin\PluginEntryPointInterface
         $this->codebase = $codebase;
     }
 
-    /**
-     * @psalm-suppress PossiblyUnusedParam
-     */
-    public function __invoke(Plugin\RegistrationInterface $registration, ?SimpleXMLElement $config = null): void
+    public function __invoke(RegistrationInterface $registration, ?SimpleXMLElement $config = null): void
     {
         $fq_class_name = $this->getPluginClassForPath($this->path);
 
         /** @psalm-suppress UnresolvableInclude */
         require_once($this->path);
 
-        \assert(class_exists($fq_class_name));
+        assert(class_exists($fq_class_name));
 
         $registration->registerHooksFromClass($fq_class_name);
     }
@@ -49,7 +54,7 @@ class FileBasedPluginAdapter implements Plugin\PluginEntryPointInterface
     {
         $codebase = $this->codebase;
 
-        $path = \str_replace(['/', '\\'], \DIRECTORY_SEPARATOR, $path);
+        $path = str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $path);
 
         $file_storage = $codebase->createFileStorageForPath($path);
         $file_to_scan = new FileScanner($path, $this->config->shortenFileName($path), true);

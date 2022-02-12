@@ -134,15 +134,6 @@ If true we force strict typing on numerical and string operations (see https://g
 ```
 Setting this to `false` means that any function calls will cause Psalm to forget anything it knew about object properties within the scope of the function it's currently analysing. This duplicates functionality that Hack has. Defaults to `true`.
 
-#### allowPhpStormGenerics
-
-```xml
-<psalm
-  allowPhpStormGenerics="[bool]"
->
-```
-Allows you to specify whether or not to use the typed iterator docblock format supported by PHP Storm e.g. `ArrayIterator|string[]`, which Psalm transforms to `ArrayIterator<string>`. Defaults to `false`.
-
 #### allowStringToStandInForClass
 
 ```xml
@@ -303,6 +294,16 @@ This defaults to `false`.
 
 When `true`, Psalm will treat all classes as if they had sealed methods, meaning that if you implement the magic method `__call`, you also have to add `@method` for each magic method. Defaults to false.
 
+#### sealAllProperties
+
+```xml
+<psalm
+  sealAllProperties="[bool]"
+>
+```
+
+When `true`, Psalm will treat all classes as if they had sealed properties, meaning that Psalm will disallow getting and setting any properties not contained in a list of `@property` (or `@property-read`/`@property-write`) annotations and not explicitly defined as a `property`. Defaults to false.
+
 #### runTaintAnalysis
 
 ```xml
@@ -395,6 +396,13 @@ Whether or not to allow `require`/`include` calls in your PHP. Defaults to `true
 ```
 Allows you to hard-code a serializer for Psalm to use when caching data. By default, Psalm uses `ext-igbinary` *if* the version is greater than or equal to 2.0.5, otherwise it defaults to PHP's built-in serializer.
 
+#### threads
+```xml
+<psalm
+        threads="[int]"
+>
+```
+Allows you to hard-code the number of threads Psalm will use (similar to `--threads` on the command line). This value will be used in place of detecting threads from the host machine, but will be overridden by using `--threads` or `--debug` (which sets threads to 1) on the command line
 
 ## Project settings
 

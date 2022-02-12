@@ -1,9 +1,13 @@
 <?php
-declare(strict_types = 1);
+
+declare(strict_types=1);
+
 namespace Psalm\Internal\LanguageServer;
 
 /**
  * Generates unique, incremental IDs for use as request IDs
+ *
+ * @internal
  */
 class IdGenerator
 {

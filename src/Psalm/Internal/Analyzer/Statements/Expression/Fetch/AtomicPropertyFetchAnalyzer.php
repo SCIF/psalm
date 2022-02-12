@@ -1,19 +1,29 @@
 <?php
+
 namespace Psalm\Internal\Analyzer\Statements\Expression\Fetch;
 
+use InvalidArgumentException;
 use PhpParser;
+use PhpParser\Node\Expr\PropertyFetch;
+use PhpParser\Node\Expr\StaticPropertyFetch;
 use Psalm\CodeLocation;
+use Psalm\Codebase;
 use Psalm\Config;
 use Psalm\Context;
+use Psalm\FileManipulation;
 use Psalm\Internal\Analyzer\ClassLikeAnalyzer;
+use Psalm\Internal\Analyzer\FunctionLikeAnalyzer;
 use Psalm\Internal\Analyzer\NamespaceAnalyzer;
 use Psalm\Internal\Analyzer\Statements\Expression\Assignment\InstancePropertyAssignmentAnalyzer;
+use Psalm\Internal\Analyzer\Statements\Expression\Call\MethodCallAnalyzer;
 use Psalm\Internal\Analyzer\Statements\Expression\CallAnalyzer;
 use Psalm\Internal\Analyzer\Statements\Expression\ExpressionIdentifier;
 use Psalm\Internal\Analyzer\Statements\ExpressionAnalyzer;
 use Psalm\Internal\Analyzer\StatementsAnalyzer;
 use Psalm\Internal\Codebase\TaintFlowGraph;
 use Psalm\Internal\DataFlow\DataFlowNode;
+use Psalm\Internal\FileManipulation\FileManipulationBuffer;
+use Psalm\Internal\MethodIdentifier;
 use Psalm\Internal\Type\TemplateInferredTypeReplacer;
 use Psalm\Internal\Type\TemplateResult;
 use Psalm\Internal\Type\TypeExpander;
@@ -35,13 +45,22 @@ use Psalm\Node\VirtualIdentifier;
 use Psalm\Plugin\EventHandler\Event\AddRemoveTaintsEvent;
 use Psalm\Storage\ClassLikeStorage;
 use Psalm\Type;
+use Psalm\Type\Atomic;
+use Psalm\Type\Atomic\TEnumCase;
+use Psalm\Type\Atomic\TFalse;
 use Psalm\Type\Atomic\TGenericObject;
+use Psalm\Type\Atomic\TLiteralInt;
+use Psalm\Type\Atomic\TLiteralString;
+use Psalm\Type\Atomic\TMixed;
 use Psalm\Type\Atomic\TNamedObject;
 use Psalm\Type\Atomic\TNull;
 use Psalm\Type\Atomic\TObject;
 use Psalm\Type\Atomic\TObjectWithProperties;
+use Psalm\Type\Atomic\TTemplateParam;
+use Psalm\Type\Union;
 
 use function array_keys;
+use function array_search;
 use function array_values;
 use function in_array;
 use function is_int;
@@ -63,23 +82,23 @@ class AtomicPropertyFetchAnalyzer
         bool $in_assignment,
         ?string $var_id,
         ?string $stmt_var_id,
-        Type\Union $stmt_var_type,
-        Type\Atomic $lhs_type_part,
+        Union $stmt_var_type,
+        Atomic $lhs_type_part,
         string $prop_name,
         bool &$has_valid_fetch_type,
         array &$invalid_fetch_types,
         bool $is_static_access = false
-    ) : void {
+    ): void {
         if ($lhs_type_part instanceof TNull) {
             return;
         }
 
-        if ($lhs_type_part instanceof Type\Atomic\TMixed) {
+        if ($lhs_type_part instanceof TMixed) {
             $statements_analyzer->node_data->setType($stmt, Type::getMixed());
             return;
         }
 
-        if ($lhs_type_part instanceof Type\Atomic\TFalse && $stmt_var_type->ignore_falsable_issues) {
+        if ($lhs_type_part instanceof TFalse && $stmt_var_type->ignore_falsable_issues) {
             return;
         }
 
@@ -165,11 +184,36 @@ class AtomicPropertyFetchAnalyzer
 
         $property_id = $fq_class_name . '::$' . $prop_name;
 
-        if ($lhs_type_part instanceof Type\Atomic\TEnumCase) {
-            if ($prop_name !== 'value'
-                || $class_storage->enum_type === null
-                || !$class_storage->enum_cases
-            ) {
+        if ($class_storage->is_enum) {
+            if ($prop_name === 'value' && $class_storage->enum_type !== null && $class_storage->enum_cases) {
+                $case_values = [];
+
+                foreach ($class_storage->enum_cases as $enum_case) {
+                    if (is_string($enum_case->value)) {
+                        $case_values[] = new TLiteralString($enum_case->value);
+                    } elseif (is_int($enum_case->value)) {
+                        $case_values[] = new TLiteralInt($enum_case->value);
+                    } else {
+                        // this should never happen
+                        $case_values[] = new TMixed();
+                    }
+                }
+
+                // todo: this is suboptimal when we reference enum directly, e.g. Status::Open->value
+                $statements_analyzer->node_data->setType(
+                    $stmt,
+                    new Union($case_values)
+                );
+            } elseif ($prop_name === 'name') {
+                if ($lhs_type_part instanceof TEnumCase) {
+                    $statements_analyzer->node_data->setType(
+                        $stmt,
+                        new Union([new TLiteralString($lhs_type_part->case_name)])
+                    );
+                } else {
+                    $statements_analyzer->node_data->setType($stmt, Type::getNonEmptyString());
+                }
+            } else {
                 self::handleNonExistentProperty(
                     $statements_analyzer,
                     $codebase,
@@ -186,25 +230,6 @@ class AtomicPropertyFetchAnalyzer
                     $has_magic_getter,
                     $var_id
                 );
-            } else {
-                $case_values = [];
-
-                foreach ($class_storage->enum_cases as $enum_case) {
-                    if (is_string($enum_case->value)) {
-                        $case_values[] = new Type\Atomic\TLiteralString($enum_case->value);
-                    } elseif (is_int($enum_case->value)) {
-                        $case_values[] = new Type\Atomic\TLiteralInt($enum_case->value);
-                    } else {
-                        // this should never happen
-                        $case_values[] = new Type\Atomic\TMixed();
-                    }
-                }
-
-                // todo: this is suboptimal when we reference enum directly, e.g. Status::Open->value
-                $statements_analyzer->node_data->setType(
-                    $stmt,
-                    new Type\Union($case_values)
-                );
             }
 
             return;
@@ -212,14 +237,14 @@ class AtomicPropertyFetchAnalyzer
 
         $naive_property_exists = $codebase->properties->propertyExists(
             $property_id,
-            true,
+            !$in_assignment,
             $statements_analyzer,
             $context,
             $codebase->collect_locations ? new CodeLocation($statements_analyzer->getSource(), $stmt) : null
         );
 
         // add method before changing fq_class_name
-        $get_method_id = new \Psalm\Internal\MethodIdentifier($fq_class_name, '__get');
+        $get_method_id = new MethodIdentifier($fq_class_name, '__get');
 
         if (!$naive_property_exists
             && $class_storage->namedMixins
@@ -229,14 +254,14 @@ class AtomicPropertyFetchAnalyzer
 
                 try {
                     $new_class_storage = $codebase->classlike_storage_provider->get($mixin->value);
-                } catch (\InvalidArgumentException $e) {
+                } catch (InvalidArgumentException $e) {
                     $new_class_storage = null;
                 }
 
                 if ($new_class_storage
                     && ($codebase->properties->propertyExists(
                         $new_property_id,
-                        true,
+                        !$in_assignment,
                         $statements_analyzer,
                         $context,
                         $codebase->collect_locations
@@ -370,14 +395,14 @@ class AtomicPropertyFetchAnalyzer
             foreach ($codebase->properties_to_rename as $original_property_id => $new_property_name) {
                 if ($declaring_property_id === $original_property_id) {
                     $file_manipulations = [
-                        new \Psalm\FileManipulation(
+                        new FileManipulation(
                             (int) $stmt->name->getAttribute('startFilePos'),
                             (int) $stmt->name->getAttribute('endFilePos') + 1,
                             $new_property_name
                         )
                     ];
 
-                    \Psalm\Internal\FileManipulation\FileManipulationBuffer::add(
+                    FileManipulationBuffer::add(
                         $statements_analyzer->getFilePath(),
                         $file_manipulations
                     );
@@ -395,7 +420,7 @@ class AtomicPropertyFetchAnalyzer
             $property_storage = $declaring_class_storage->properties[$prop_name];
 
             if ($context->self && !NamespaceAnalyzer::isWithin($context->self, $property_storage->internal)) {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new InternalProperty(
                         $property_id . ' is internal to ' . $property_storage->internal
                             . ' but called from ' . $context->self,
@@ -403,9 +428,7 @@ class AtomicPropertyFetchAnalyzer
                         $property_id
                     ),
                     $statements_analyzer->getSuppressedIssues()
-                )) {
-                    // fall through
-                }
+                );
             }
 
             if ($context->inside_unset) {
@@ -440,16 +463,14 @@ class AtomicPropertyFetchAnalyzer
                 && $class_property_type->allow_mutations)
         ) {
             if ($context->pure) {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new ImpurePropertyFetch(
                         'Cannot access a property on a mutable object from a pure context',
                         new CodeLocation($statements_analyzer, $stmt)
                     ),
                     $statements_analyzer->getSuppressedIssues()
-                )) {
-                    // fall through
-                }
-            } elseif ($statements_analyzer->getSource() instanceof \Psalm\Internal\Analyzer\FunctionLikeAnalyzer
+                );
+            } elseif ($statements_analyzer->getSource() instanceof FunctionLikeAnalyzer
                 && $statements_analyzer->getSource()->track_mutations
             ) {
                 $statements_analyzer->getSource()->inferred_impure = true;
@@ -477,10 +498,13 @@ class AtomicPropertyFetchAnalyzer
         );
     }
 
+    /**
+     * @param PropertyFetch|StaticPropertyFetch $stmt
+     */
     public static function checkPropertyDeprecation(
         string $prop_name,
         string $declaring_property_class,
-        PhpParser\Node\Expr\PropertyFetch $stmt,
+        PhpParser\Node\Expr $stmt,
         StatementsAnalyzer $statements_analyzer
     ): void {
         $property_id = $declaring_property_class . '::$' . $prop_name;
@@ -493,28 +517,26 @@ class AtomicPropertyFetchAnalyzer
             $property_storage = $declaring_class_storage->properties[$prop_name];
 
             if ($property_storage->deprecated) {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new DeprecatedProperty(
                         $property_id . ' is marked deprecated',
                         new CodeLocation($statements_analyzer->getSource(), $stmt),
                         $property_id
                     ),
                     $statements_analyzer->getSuppressedIssues()
-                )) {
-                    // fall through
-                }
+                );
             }
         }
     }
 
     private static function propertyFetchCanBeAnalyzed(
         StatementsAnalyzer $statements_analyzer,
-        \Psalm\Codebase $codebase,
+        Codebase $codebase,
         PhpParser\Node\Expr\PropertyFetch $stmt,
         Context $context,
         string $fq_class_name,
         string $prop_name,
-        Type\Atomic\TNamedObject $lhs_type_part,
+        TNamedObject $lhs_type_part,
         string &$property_id,
         bool &$has_magic_getter,
         ?string $stmt_var_id,
@@ -522,10 +544,10 @@ class AtomicPropertyFetchAnalyzer
         bool $override_property_visibility,
         bool $class_exists,
         ?string $declaring_property_class,
-        \Psalm\Storage\ClassLikeStorage $class_storage,
-        \Psalm\Internal\MethodIdentifier $get_method_id,
+        ClassLikeStorage $class_storage,
+        MethodIdentifier $get_method_id,
         bool $in_assignment
-    ) : bool {
+    ): bool {
         if ((!$naive_property_exists
                 || ($stmt_var_id !== '$this'
                     && $fq_class_name !== $context->self
@@ -604,7 +626,7 @@ class AtomicPropertyFetchAnalyzer
 
             $statements_analyzer->node_data = clone $statements_analyzer->node_data;
 
-            $statements_analyzer->node_data->setType($stmt->var, new Type\Union([$lhs_type_part]));
+            $statements_analyzer->node_data->setType($stmt->var, new Union([$lhs_type_part]));
 
             $fake_method_call = new VirtualMethodCall(
                 $stmt->var,
@@ -625,7 +647,7 @@ class AtomicPropertyFetchAnalyzer
                 $statements_analyzer->addSuppressedIssues(['InternalMethod']);
             }
 
-            \Psalm\Internal\Analyzer\Statements\Expression\Call\MethodCallAnalyzer::analyze(
+            MethodCallAnalyzer::analyze(
                 $statements_analyzer,
                 $fake_method_call,
                 $context,
@@ -650,29 +672,27 @@ class AtomicPropertyFetchAnalyzer
                 $statements_analyzer->node_data->setType($stmt, Type::getMixed());
             }
 
-            $property_id = $lhs_type_part->value . '::$' . $prop_name;
-
             /*
              * If we have an explicit list of all allowed magic properties on the class, and we're
              * not in that list, fall through
              */
-            if (!$class_storage->sealed_properties && !$override_property_visibility) {
+            if (!($class_storage->sealed_properties || $codebase->config->seal_all_properties)
+                && !$override_property_visibility
+            ) {
                 return false;
             }
 
             if (!$class_exists) {
                 $property_id = $lhs_type_part->value . '::$' . $prop_name;
 
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new UndefinedMagicPropertyFetch(
                         'Magic instance property ' . $property_id . ' is not defined',
                         new CodeLocation($statements_analyzer->getSource(), $stmt),
                         $property_id
                     ),
                     $statements_analyzer->getSuppressedIssues()
-                )) {
-                    // fall through
-                }
+                );
 
                 return false;
             }
@@ -682,12 +702,12 @@ class AtomicPropertyFetchAnalyzer
     }
 
     public static function localizePropertyType(
-        \Psalm\Codebase $codebase,
-        Type\Union $class_property_type,
+        Codebase $codebase,
+        Union $class_property_type,
         TGenericObject $lhs_type_part,
         ClassLikeStorage $property_class_storage,
         ClassLikeStorage $property_declaring_class_storage
-    ) : Type\Union {
+    ): Union {
         $template_types = CallAnalyzer::getTemplateTypesForCall(
             $codebase,
             $property_declaring_class_storage,
@@ -719,7 +739,7 @@ class AtomicPropertyFetchAnalyzer
                     $mapped_type = $extended_types[$property_declaring_class_storage->name][$type_name];
 
                     foreach ($mapped_type->getAtomicTypes() as $mapped_type_atomic) {
-                        if (!$mapped_type_atomic instanceof Type\Atomic\TTemplateParam) {
+                        if (!$mapped_type_atomic instanceof TTemplateParam) {
                             continue;
                         }
 
@@ -728,7 +748,7 @@ class AtomicPropertyFetchAnalyzer
                         $position = false;
 
                         if (isset($property_class_storage->template_types[$param_name])) {
-                            $position = \array_search(
+                            $position = array_search(
                                 $param_name,
                                 array_keys($property_class_storage->template_types)
                             );
@@ -755,12 +775,12 @@ class AtomicPropertyFetchAnalyzer
     public static function processTaints(
         StatementsAnalyzer $statements_analyzer,
         PhpParser\Node\Expr\PropertyFetch $stmt,
-        Type\Union $type,
+        Union $type,
         string $property_id,
-        \Psalm\Storage\ClassLikeStorage $class_storage,
+        ClassLikeStorage $class_storage,
         bool $in_assignment,
         ?Context $context = null
-    ) : void {
+    ): void {
         if (!$statements_analyzer->data_flow_graph) {
             return;
         }
@@ -799,7 +819,7 @@ class AtomicPropertyFetchAnalyzer
 
                 if ($statements_analyzer->data_flow_graph instanceof TaintFlowGraph
                     && $var_type
-                    && \in_array('TaintedInput', $statements_analyzer->getSuppressedIssues())
+                    && in_array('TaintedInput', $statements_analyzer->getSuppressedIssues())
                 ) {
                     $var_type->parent_nodes = [];
                     return;
@@ -899,18 +919,16 @@ class AtomicPropertyFetchAnalyzer
     ): void {
         if ($context->inside_isset || $context->collect_initializations) {
             if ($context->pure) {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new ImpurePropertyFetch(
                         'Cannot access a property on a mutable object from a pure context',
                         new CodeLocation($statements_analyzer, $stmt)
                     ),
                     $statements_analyzer->getSuppressedIssues()
-                )) {
-                    // fall through
-                }
+                );
             } elseif ($context->inside_isset
                 && $statements_analyzer->getSource()
-                instanceof \Psalm\Internal\Analyzer\FunctionLikeAnalyzer
+                instanceof FunctionLikeAnalyzer
                 && $statements_analyzer->getSource()->track_mutations
             ) {
                 $statements_analyzer->getSource()->inferred_impure = true;
@@ -920,39 +938,33 @@ class AtomicPropertyFetchAnalyzer
         }
 
         if ($stmt_var_id === '$this') {
-            if (IssueBuffer::accepts(
+            IssueBuffer::maybeAdd(
                 new UndefinedThisPropertyFetch(
                     'Instance property ' . $property_id . ' is not defined',
                     new CodeLocation($statements_analyzer->getSource(), $stmt),
                     $property_id
                 ),
                 $statements_analyzer->getSuppressedIssues()
-            )) {
-                // fall through
-            }
+            );
         } else {
             if ($has_magic_getter) {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new UndefinedMagicPropertyFetch(
                         'Magic instance property ' . $property_id . ' is not defined',
                         new CodeLocation($statements_analyzer->getSource(), $stmt),
                         $property_id
                     ),
                     $statements_analyzer->getSuppressedIssues()
-                )) {
-                    // fall through
-                }
+                );
             } else {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new UndefinedPropertyFetch(
                         'Instance property ' . $property_id . ' is not defined',
                         new CodeLocation($statements_analyzer->getSource(), $stmt),
                         $property_id
                     ),
                     $statements_analyzer->getSuppressedIssues()
-                )) {
-                    // fall through
-                }
+                );
             }
         }
 
@@ -966,11 +978,11 @@ class AtomicPropertyFetchAnalyzer
     }
 
     /**
-     * @param  array<Type\Atomic>     $intersection_types
+     * @param  array<Atomic>     $intersection_types
      */
     private static function handleNonExistentClass(
         StatementsAnalyzer $statements_analyzer,
-        \Psalm\Codebase $codebase,
+        Codebase $codebase,
         PhpParser\Node\Expr\PropertyFetch $stmt,
         TNamedObject $lhs_type_part,
         array $intersection_types,
@@ -1015,34 +1027,30 @@ class AtomicPropertyFetchAnalyzer
 
         if (!$class_exists && !$interface_exists) {
             if ($lhs_type_part->from_docblock) {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new UndefinedDocblockClass(
                         'Cannot get properties of undefined docblock class ' . $lhs_type_part->value,
                         new CodeLocation($statements_analyzer->getSource(), $stmt),
                         $lhs_type_part->value
                     ),
                     $statements_analyzer->getSuppressedIssues()
-                )) {
-                    // fall through
-                }
+                );
             } else {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new UndefinedClass(
                         'Cannot get properties of undefined class ' . $lhs_type_part->value,
                         new CodeLocation($statements_analyzer->getSource(), $stmt),
                         $lhs_type_part->value
                     ),
                     $statements_analyzer->getSuppressedIssues()
-                )) {
-                    // fall through
-                }
+                );
             }
         }
     }
 
     private static function handleNonExistentProperty(
         StatementsAnalyzer $statements_analyzer,
-        \Psalm\Codebase $codebase,
+        Codebase $codebase,
         PhpParser\Node\Expr\PropertyFetch $stmt,
         Context $context,
         Config $config,
@@ -1116,7 +1124,7 @@ class AtomicPropertyFetchAnalyzer
 
     private static function getClassPropertyType(
         StatementsAnalyzer $statements_analyzer,
-        \Psalm\Codebase $codebase,
+        Codebase $codebase,
         Config $config,
         Context $context,
         PhpParser\Node\Expr\PropertyFetch $stmt,
@@ -1126,7 +1134,7 @@ class AtomicPropertyFetchAnalyzer
         string $fq_class_name,
         string $prop_name,
         TNamedObject $lhs_type_part
-    ): Type\Union {
+    ): Union {
         $class_property_type = $codebase->properties->getPropertyType(
             $property_id,
             false,
@@ -1140,7 +1148,7 @@ class AtomicPropertyFetchAnalyzer
                     $declaring_class_storage->location->file_path
                 )
             ) {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new MissingPropertyType(
                         'Property ' . $fq_class_name . '::$' . $prop_name
                         . ' does not have a declared type',
@@ -1148,14 +1156,12 @@ class AtomicPropertyFetchAnalyzer
                         $property_id
                     ),
                     $statements_analyzer->getSuppressedIssues()
-                )) {
-                    // fall through
-                }
+                );
             }
 
             $class_property_type = Type::getMixed();
         } else {
-            $class_property_type = \Psalm\Internal\Type\TypeExpander::expandUnion(
+            $class_property_type = TypeExpander::expandUnion(
                 $codebase,
                 clone $class_property_type,
                 $declaring_class_storage->name,

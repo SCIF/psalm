@@ -1,34 +1,47 @@
 <?php
+
 namespace Psalm\Internal\Provider\ReturnTypeProvider;
 
 use Psalm\Internal\Analyzer\Statements\Block\ForeachAnalyzer;
+use Psalm\Internal\Analyzer\StatementsAnalyzer;
 use Psalm\Internal\Codebase\InternalCallMapHandler;
 use Psalm\Internal\Type\Comparator\AtomicTypeComparator;
 use Psalm\Plugin\EventHandler\Event\FunctionReturnTypeProviderEvent;
+use Psalm\Plugin\EventHandler\FunctionReturnTypeProviderInterface;
 use Psalm\Type;
+use Psalm\Type\Atomic\TArray;
+use Psalm\Type\Atomic\TIterable;
+use Psalm\Type\Atomic\TList;
+use Psalm\Type\Atomic\TNamedObject;
+use Psalm\Type\Atomic\TTemplateParam;
+use Psalm\Type\Union;
 
+use function array_merge;
 use function array_shift;
 use function assert;
 
-class IteratorToArrayReturnTypeProvider implements \Psalm\Plugin\EventHandler\FunctionReturnTypeProviderInterface
+/**
+ * @internal
+ */
+class IteratorToArrayReturnTypeProvider implements FunctionReturnTypeProviderInterface
 {
     /**
      * @return array<lowercase-string>
      */
-    public static function getFunctionIds() : array
+    public static function getFunctionIds(): array
     {
         return [
             'iterator_to_array',
         ];
     }
 
-    public static function getFunctionReturnType(FunctionReturnTypeProviderEvent $event) : Type\Union
+    public static function getFunctionReturnType(FunctionReturnTypeProviderEvent $event): Union
     {
         $statements_source = $event->getStatementsSource();
         $call_args = $event->getCallArgs();
         $function_id = $event->getFunctionId();
         $context = $event->getContext();
-        if (!$statements_source instanceof \Psalm\Internal\Analyzer\StatementsAnalyzer
+        if (!$statements_source instanceof StatementsAnalyzer
             || !$call_args
         ) {
             return Type::getMixed();
@@ -43,16 +56,16 @@ class IteratorToArrayReturnTypeProvider implements \Psalm\Plugin\EventHandler\Fu
             $atomic_types = $first_arg_type->getAtomicTypes();
 
             while ($call_arg_atomic_type = array_shift($atomic_types)) {
-                if ($call_arg_atomic_type instanceof Type\Atomic\TTemplateParam) {
-                    $atomic_types = \array_merge($atomic_types, $call_arg_atomic_type->as->getAtomicTypes());
+                if ($call_arg_atomic_type instanceof TTemplateParam) {
+                    $atomic_types = array_merge($atomic_types, $call_arg_atomic_type->as->getAtomicTypes());
                     continue;
                 }
 
-                if ($call_arg_atomic_type instanceof Type\Atomic\TNamedObject
+                if ($call_arg_atomic_type instanceof TNamedObject
                     && AtomicTypeComparator::isContainedBy(
                         $codebase,
                         $call_arg_atomic_type,
-                        new Type\Atomic\TIterable([Type::getMixed(), Type::getMixed()])
+                        new TIterable([Type::getMixed(), Type::getMixed()])
                     )
                 ) {
                     $has_valid_iterator = true;
@@ -77,8 +90,8 @@ class IteratorToArrayReturnTypeProvider implements \Psalm\Plugin\EventHandler\Fu
                 if ($second_arg_type
                     && ((string) $second_arg_type === 'false')
                 ) {
-                    return new Type\Union([
-                        new Type\Atomic\TList($value_type),
+                    return new Union([
+                        new TList($value_type),
                     ]);
                 }
 
@@ -97,12 +110,12 @@ class IteratorToArrayReturnTypeProvider implements \Psalm\Plugin\EventHandler\Fu
                     $template_type = array_shift($template_types);
                     if ($template_type->as->hasMixed()) {
                         $template_type->as = Type::getArrayKey();
-                        $key_type = new Type\Union([$template_type]);
+                        $key_type = new Union([$template_type]);
                     }
                 }
 
-                return new Type\Union([
-                    new Type\Atomic\TArray([
+                return new Union([
+                    new TArray([
                         $key_type,
                         $value_type,
                     ]),

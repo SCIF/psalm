@@ -1,4 +1,5 @@
 <?php
+
 namespace Psalm\Type\Atomic;
 
 /**
@@ -14,9 +15,9 @@ class TAnonymousClassInstance extends TNamedObject
     /**
      * @param string $value the name of the object
      */
-    public function __construct(string $value, bool $was_static = false, ?string $extends = null)
+    public function __construct(string $value, bool $is_static = false, ?string $extends = null)
     {
-        parent::__construct($value, $was_static);
+        parent::__construct($value, $is_static);
 
         $this->extends = $extends;
     }
@@ -25,12 +26,9 @@ class TAnonymousClassInstance extends TNamedObject
         ?string $namespace,
         array $aliased_classes,
         ?string $this_class,
-        int $php_major_version,
-        int $php_minor_version
+        int $analysis_php_version_id
     ): ?string {
-        return $php_major_version > 7
-            || ($php_major_version === 7 && $php_minor_version >= 2)
-            ? ($this->extends ?? 'object') : null;
+        return $analysis_php_version_id >= 7_02_00 ? ($this->extends ?? 'object') : null;
     }
 
     /**

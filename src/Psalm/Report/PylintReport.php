@@ -1,7 +1,9 @@
 <?php
+
 namespace Psalm\Report;
 
 use Psalm\Config;
+use Psalm\Internal\Analyzer\IssueData;
 use Psalm\Report;
 
 use function sprintf;
@@ -18,7 +20,7 @@ class PylintReport extends Report
         return $output;
     }
 
-    private function format(\Psalm\Internal\Analyzer\IssueData $issue_data): string
+    private function format(IssueData $issue_data): string
     {
         $message = sprintf(
             '%s: %s',

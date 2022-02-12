@@ -1,21 +1,25 @@
 <?php
+
 namespace Psalm\Tests;
+
+use Psalm\Tests\Traits\InvalidCodeAnalysisTestTrait;
+use Psalm\Tests\Traits\ValidCodeAnalysisTestTrait;
 
 use const DIRECTORY_SEPARATOR;
 
 class SwitchTypeTest extends TestCase
 {
-    use Traits\InvalidCodeAnalysisTestTrait;
-    use Traits\ValidCodeAnalysisTestTrait;
+    use InvalidCodeAnalysisTestTrait;
+    use ValidCodeAnalysisTestTrait;
 
     /**
-     * @return iterable<string,array{string,assertions?:array<string,string>,error_levels?:string[]}>
+     * @return iterable<string,array{code:string,assertions?:array<string,string>,ignored_issues?:list<string>}>
      */
     public function providerValidCodeParse(): iterable
     {
         return [
             'getClassConstArg' => [
-                '<?php
+                'code' => '<?php
                     class A {
                         /**
                          * @return void
@@ -34,7 +38,7 @@ class SwitchTypeTest extends TestCase
                         }
                     }
 
-                    $a = rand(0, 10) ? new A(): new B();
+                    $a = rand(0, 10) ? new A() : new B();
 
                     switch (get_class($a)) {
                         case A::class:
@@ -47,7 +51,7 @@ class SwitchTypeTest extends TestCase
                     }',
             ],
             'getClassExteriorArgClassConsts' => [
-                '<?php
+                'code' => '<?php
                     /** @return void */
                     function foo(Exception $e) {
                         switch (get_class($e)) {
@@ -64,7 +68,7 @@ class SwitchTypeTest extends TestCase
                     ',
             ],
             'switchGetClassVar' => [
-                '<?php
+                'code' => '<?php
                     class A {}
                     class B extends A {
                         public function foo(): void {}
@@ -80,7 +84,7 @@ class SwitchTypeTest extends TestCase
                     }',
             ],
             'getTypeArg' => [
-                '<?php
+                'code' => '<?php
                     function testInt(int $var): void {
 
                     }
@@ -102,7 +106,7 @@ class SwitchTypeTest extends TestCase
                     }',
             ],
             'switchTruthy' => [
-                '<?php
+                'code' => '<?php
                     class A {
                        /**
                         * @var ?string
@@ -125,7 +129,7 @@ class SwitchTypeTest extends TestCase
                     }',
             ],
             'switchMoTruthy' => [
-                '<?php
+                'code' => '<?php
                     class A {
                        /**
                         * @var ?string
@@ -148,7 +152,7 @@ class SwitchTypeTest extends TestCase
                     }',
             ],
             'switchWithBadBreak' => [
-                '<?php
+                'code' => '<?php
                     class A {}
 
                     function foo(): A {
@@ -162,7 +166,7 @@ class SwitchTypeTest extends TestCase
                     }',
             ],
             'switchCaseExpression' => [
-                '<?php
+                'code' => '<?php
                     switch (true) {
                         case preg_match("/(d)ata/", "some data in subject string", $matches):
                             return $matches[1];
@@ -171,7 +175,7 @@ class SwitchTypeTest extends TestCase
                     }',
             ],
             'switchBools' => [
-                '<?php
+                'code' => '<?php
                     $x = false;
                     $y = false;
 
@@ -193,7 +197,7 @@ class SwitchTypeTest extends TestCase
                 ],
             ],
             'continueIsBreak' => [
-                '<?php
+                'code' => '<?php
                     switch(2) {
                         case 2:
                             echo "two\n";
@@ -201,7 +205,7 @@ class SwitchTypeTest extends TestCase
                     }',
             ],
             'defaultAboveCase' => [
-                '<?php
+                'code' => '<?php
                     function foo(string $a) : string {
                       switch ($a) {
                         case "a":
@@ -214,7 +218,7 @@ class SwitchTypeTest extends TestCase
                     }',
             ],
             'dontResolveTypesBadly' => [
-                '<?php
+                'code' => '<?php
                     $a = new A;
 
                     switch (rand(0,1)) {
@@ -234,7 +238,7 @@ class SwitchTypeTest extends TestCase
                     }',
             ],
             'issetInFallthrough' => [
-                '<?php
+                'code' => '<?php
                     function foo() : void {
                         switch(rand() % 4) {
                             case 0:
@@ -251,7 +255,7 @@ class SwitchTypeTest extends TestCase
                     }',
             ],
             'switchManyGetClass' => [
-                '<?php
+                'code' => '<?php
                     class A {}
                     class B extends A {}
                     class C extends A {}
@@ -267,7 +271,7 @@ class SwitchTypeTest extends TestCase
                     }',
             ],
             'switchManyStrings' => [
-                '<?php
+                'code' => '<?php
                     function foo(string $s) : void {
                         switch($s) {
                             case "a":
@@ -278,7 +282,7 @@ class SwitchTypeTest extends TestCase
                     }',
             ],
             'allSwitchesMet' => [
-                '<?php
+                'code' => '<?php
                     $a = rand(0, 1) ? "a" : "b";
 
                     switch ($a) {
@@ -294,7 +298,7 @@ class SwitchTypeTest extends TestCase
                     echo $foo;',
             ],
             'impossibleCaseDefaultWithThrow' => [
-                '<?php
+                'code' => '<?php
                     $a = rand(0, 1) ? "a" : "b";
 
                     switch ($a) {
@@ -309,7 +313,7 @@ class SwitchTypeTest extends TestCase
                     }',
             ],
             'switchOnUnknownInts' => [
-                '<?php
+                'code' => '<?php
                     function foo(int $a, int $b, int $c) : void {
                         switch ($a) {
                             case $b:
@@ -320,7 +324,7 @@ class SwitchTypeTest extends TestCase
                     }',
             ],
             'switchNullable1' => [
-                '<?php
+                'code' => '<?php
                     function foo(?string $s) : void {
                         switch ($s) {
                             case "hello":
@@ -334,7 +338,7 @@ class SwitchTypeTest extends TestCase
                     }',
             ],
             'switchNullable2' => [
-                '<?php
+                'code' => '<?php
                     function foo(?string $s) : void {
                         switch ($s) {
                             case "hello":
@@ -349,7 +353,7 @@ class SwitchTypeTest extends TestCase
                     }',
             ],
             'switchNullable3' => [
-                '<?php
+                'code' => '<?php
                     function foo(?string $s) : void {
                         switch ($s) {
                             case "hello":
@@ -365,7 +369,7 @@ class SwitchTypeTest extends TestCase
                     }',
             ],
             'switchNullable4' => [
-                '<?php
+                'code' => '<?php
                     function foo(?string $s, string $a, string $b) : void {
                         switch ($s) {
                             case $a:
@@ -375,7 +379,7 @@ class SwitchTypeTest extends TestCase
                     }',
             ],
             'removeChangedVarsFromReasonableClauses' => [
-                '<?php
+                'code' => '<?php
                     function r() : bool {
                         return (bool)rand(0, 1);
                     }
@@ -400,7 +404,7 @@ class SwitchTypeTest extends TestCase
                     }',
             ],
             'preventBadClausesFromBleeding' => [
-                '<?php
+                'code' => '<?php
                     function foo (string $s) : void {
                         if ($s === "a" && rand(0, 1)) {
 
@@ -421,7 +425,7 @@ class SwitchTypeTest extends TestCase
                     }',
             ],
             'alwaysReturns' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param "a"|"b" $s
                      */
@@ -436,7 +440,7 @@ class SwitchTypeTest extends TestCase
                     }',
             ],
             'switchVarConditionalAssignment' => [
-                '<?php
+                'code' => '<?php
                     switch (rand(0, 4)) {
                         case 0:
                             $b = 2;
@@ -455,7 +459,7 @@ class SwitchTypeTest extends TestCase
                 ],
             ],
             'switchVarConditionalReAssignment' => [
-                '<?php
+                'code' => '<?php
                     $a = false;
                     switch (rand(0, 4)) {
                         case 0:
@@ -473,7 +477,7 @@ class SwitchTypeTest extends TestCase
                 ],
             ],
             'moreThan30Cases' => [
-                '<?php
+                'code' => '<?php
                     function f(string $a) : void {
                         switch ($a) {
                             case "a":
@@ -512,7 +516,7 @@ class SwitchTypeTest extends TestCase
                     }',
             ],
             'anotherLongSwitch' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @param  ?string  $fq_const_name
                      * @param  string   $const_name
@@ -557,7 +561,7 @@ class SwitchTypeTest extends TestCase
                     }'
             ],
             'evenLongerSwitch' => [
-                '<?php
+                'code' => '<?php
                     function foo(string $f) : string {
                         switch ($f) {
                             case "str1";
@@ -862,7 +866,7 @@ class SwitchTypeTest extends TestCase
                     }'
             ],
             'switchTruthyWithBoolean' => [
-                '<?php
+                'code' => '<?php
                     $a = rand(0,1) ? new \DateTime() : null;
 
                     switch(true) {
@@ -871,7 +875,7 @@ class SwitchTypeTest extends TestCase
                     }'
             ],
             'evenWorseSwitch' => [
-                '<?php
+                'code' => '<?php
                     function foo(string $locale) : int {
                         switch ($locale) {
                             case "af":
@@ -924,7 +928,7 @@ class SwitchTypeTest extends TestCase
                     }'
             ],
             'suppressParadox' => [
-                '<?php
+                'code' => '<?php
                     /** @psalm-var 1|2|3 $i */
                     $i = rand(1, 3);
 
@@ -938,7 +942,7 @@ class SwitchTypeTest extends TestCase
                     }'
             ],
             'switchGetClassProperty' => [
-                '<?php
+                'code' => '<?php
                     class A {}
                     class B {}
 
@@ -960,7 +964,7 @@ class SwitchTypeTest extends TestCase
                     }',
             ],
             'noCrashOnComplicatedCases' => [
-                '<?php
+                'code' => '<?php
                     class A {}
                     class B {}
                     class C {}
@@ -985,7 +989,7 @@ class SwitchTypeTest extends TestCase
                     }'
             ],
             'alwaysReturnsWithConditionalReturnFirst' => [
-                '<?php
+                'code' => '<?php
                     function getRows(string $s) : int {
                         if (rand(0, 1)) {
                             return 1;
@@ -1000,7 +1004,7 @@ class SwitchTypeTest extends TestCase
                     }'
             ],
             'loopWithSwitchAlwaysReturns' => [
-                '<?php
+                'code' => '<?php
                     function b(): int {
                         foreach([1,2] as $i) {
                             continue;
@@ -1015,7 +1019,7 @@ class SwitchTypeTest extends TestCase
                     }',
             ],
             'noCrashWithComplexMethodCallSwitches' => [
-                '<?php
+                'code' => '<?php
                     function fromFoo(): int {
                        switch (true) {
                            case (rand(0, 1) && rand(0, 2)):
@@ -1032,7 +1036,7 @@ class SwitchTypeTest extends TestCase
                    }'
             ],
             'terminatesAfterContinueInsideWhile' => [
-                '<?php
+                'code' => '<?php
                     function foo(): int {
                         switch (true) {
                             default:
@@ -1047,7 +1051,7 @@ class SwitchTypeTest extends TestCase
                     }'
             ],
             'switchDoesNotReturnNever' => [
-                '<?php
+                'code' => '<?php
                     function a(int $i): ?bool {
                         switch($i) {
                             case 1:
@@ -1058,7 +1062,7 @@ class SwitchTypeTest extends TestCase
                     }'
             ],
             'nonTotalSwitchStillSometimesExits' => [
-                '<?php
+                'code' => '<?php
                     function takesAnInt(string $str): ?int{
                         switch ($str) {
                             case "a":
@@ -1071,17 +1075,29 @@ class SwitchTypeTest extends TestCase
                         throw new Exception();
                     }'
             ],
+            'switchWithLeftoverFunctionCallUsesTheFunction' => [
+                'code' => '<?php
+
+                    function bar (string $name): int {
+                        switch ($name) {
+                                case "a":
+                                case ucfirst("a"):
+                                    return 1;
+                        }
+                        return -1;
+                    }'
+            ],
         ];
     }
 
     /**
-     * @return iterable<string,array{string,error_message:string,1?:string[],2?:bool,3?:string}>
+     * @return iterable<string,array{code:string,error_message:string,ignored_issues?:list<string>,php_version?:string}>
      */
     public function providerInvalidCodeParse(): iterable
     {
         return [
             'switchReturnTypeWithFallthroughAndBreak' => [
-                '<?php
+                'code' => '<?php
                     class A {
                         /** @return bool */
                         public function fooFoo() {
@@ -1096,7 +1112,7 @@ class SwitchTypeTest extends TestCase
                 'error_message' => 'InvalidNullableReturnType',
             ],
             'switchReturnTypeWithFallthroughAndConditionalBreak' => [
-                '<?php
+                'code' => '<?php
                     class A {
                         /** @return bool */
                         public function fooFoo() {
@@ -1113,7 +1129,7 @@ class SwitchTypeTest extends TestCase
                 'error_message' => 'InvalidNullableReturnType',
             ],
             'switchReturnTypeWithNoDefault' => [
-                '<?php
+                'code' => '<?php
                     class A {
                         /** @return bool */
                         public function fooFoo() {
@@ -1127,7 +1143,7 @@ class SwitchTypeTest extends TestCase
                 'error_message' => 'InvalidNullableReturnType',
             ],
             'getClassArgWrongClass' => [
-                '<?php
+                'code' => '<?php
                     class A {
                         /** @return void */
                         public function fooFoo() {
@@ -1142,7 +1158,7 @@ class SwitchTypeTest extends TestCase
                         }
                     }
 
-                    $a = rand(0, 10) ? new A(): new B();
+                    $a = rand(0, 10) ? new A() : new B();
 
                     switch (get_class($a)) {
                         case A::class:
@@ -1152,11 +1168,11 @@ class SwitchTypeTest extends TestCase
                 'error_message' => 'UndefinedMethod',
             ],
             'getClassMissingClass' => [
-                '<?php
+                'code' => '<?php
                     class A {}
                     class B {}
 
-                    $a = rand(0, 10) ? new A(): new B();
+                    $a = rand(0, 10) ? new A() : new B();
 
                     switch (get_class($a)) {
                         case C::class:
@@ -1165,7 +1181,7 @@ class SwitchTypeTest extends TestCase
                 'error_message' => 'UndefinedClass',
             ],
             'getTypeNotAType' => [
-                '<?php
+                'code' => '<?php
                     $a = rand(0, 10) ? 1 : "two";
 
                     switch (gettype($a)) {
@@ -1175,7 +1191,7 @@ class SwitchTypeTest extends TestCase
                 'error_message' => 'UnevaluatedCode',
             ],
             'getTypeArgWrongArgs' => [
-                '<?php
+                'code' => '<?php
                     function testInt(int $var): void {
 
                     }
@@ -1196,7 +1212,7 @@ class SwitchTypeTest extends TestCase
                 'error_message' => 'InvalidScalarArgument',
             ],
             'switchBadMethodCallInCase' => [
-                '<?php
+                'code' => '<?php
                     function f(string $p): void { }
 
                     switch (true) {
@@ -1207,7 +1223,7 @@ class SwitchTypeTest extends TestCase
                 'error_message' => 'InvalidScalarArgument',
             ],
             'continueIsNotBreak' => [
-                '<?php
+                'code' => '<?php
                     switch(2) {
                         case 2:
                             echo "two\n";
@@ -1216,7 +1232,7 @@ class SwitchTypeTest extends TestCase
                 'error_message' => 'ContinueOutsideLoop',
             ],
             'defaultAboveCaseThatBreaks' => [
-                '<?php
+                'code' => '<?php
                     function foo(string $a) : string {
                       switch ($a) {
                         case "a":
@@ -1233,7 +1249,7 @@ class SwitchTypeTest extends TestCase
                 'error_message' => 'InvalidReturnType',
             ],
             'SKIPPED-switchManyGetClassWithRepetitionWithProperLineNumber' => [
-                '<?php
+                'code' => '<?php
                     class A {}
                     class B extends A {}
                     class C extends A {}
@@ -1250,10 +1266,10 @@ class SwitchTypeTest extends TestCase
                         }
                     }',
                 'error_message' => 'RedundantCondition - src' . DIRECTORY_SEPARATOR . 'somefile.php:10',
-                'error_levels' => ['ParadoxicalCondition'],
+                'ignored_issues' => ['ParadoxicalCondition'],
             ],
             'repeatedCaseValue' => [
-                '<?php
+                'code' => '<?php
                     $a = rand(0, 1);
                     switch ($a) {
                         case 0:
@@ -1265,7 +1281,7 @@ class SwitchTypeTest extends TestCase
                 'error_message' => 'ParadoxicalCondition - src' . DIRECTORY_SEPARATOR . 'somefile.php:7',
             ],
             'impossibleCaseValue' => [
-                '<?php
+                'code' => '<?php
                     $a = rand(0, 1) ? "a" : "b";
 
                     switch ($a) {
@@ -1281,7 +1297,7 @@ class SwitchTypeTest extends TestCase
                 'error_message' => 'TypeDoesNotContainType - src' . DIRECTORY_SEPARATOR . 'somefile.php:11',
             ],
             'impossibleCaseDefault' => [
-                '<?php
+                'code' => '<?php
                     $a = rand(0, 1) ? "a" : "b";
 
                     switch ($a) {
@@ -1297,7 +1313,7 @@ class SwitchTypeTest extends TestCase
                 'error_message' => 'ParadoxicalCondition - src' . DIRECTORY_SEPARATOR . 'somefile.php:11',
             ],
             'breakWithoutSettingVar' => [
-                '<?php
+                'code' => '<?php
                     function foo(int $i) : void {
                         switch ($i) {
                             case 0:
@@ -1314,7 +1330,7 @@ class SwitchTypeTest extends TestCase
                 'error_message' => 'PossiblyUndefinedVariable',
             ],
             'getClassExteriorArgStringType' => [
-                '<?php
+                'code' => '<?php
                     /** @return void */
                     function foo(Exception $e) {
                         switch (get_class($e)) {
@@ -1325,7 +1341,7 @@ class SwitchTypeTest extends TestCase
                 'error_message' => 'TypeDoesNotContainType',
             ],
             'paradoxInFunctionCall' => [
-                '<?php
+                'code' => '<?php
                     /** @psalm-return 1|2|3 */
                     function foo() {
                         /** @psalm-var 1|2|3 $bar */
@@ -1343,7 +1359,7 @@ class SwitchTypeTest extends TestCase
                 'error_message' => 'ParadoxicalCondition'
             ],
             'loopWithSwitchDoesntReturnFirstCase' => [
-                '<?php
+                'code' => '<?php
                     function b(): int {
                         switch (random_int(1, 10)) {
                             case 1:
@@ -1359,7 +1375,7 @@ class SwitchTypeTest extends TestCase
                 'error_message' => 'InvalidReturnType'
             ],
             'clearDependentTypeWhenAssigning' => [
-                '<?php
+                'code' => '<?php
                     class A {}
 
                     class AChild extends A {

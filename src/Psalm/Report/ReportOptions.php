@@ -1,4 +1,5 @@
 <?php
+
 namespace Psalm\Report;
 
 use Psalm\Report;
@@ -39,4 +40,7 @@ class ReportOptions
      * @var bool
      */
     public $show_suggestions = true;
+
+    /** @var bool */
+    public $in_ci = false;
 }

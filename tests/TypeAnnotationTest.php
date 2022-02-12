@@ -1,19 +1,23 @@
 <?php
+
 namespace Psalm\Tests;
+
+use Psalm\Tests\Traits\InvalidCodeAnalysisTestTrait;
+use Psalm\Tests\Traits\ValidCodeAnalysisTestTrait;
 
 class TypeAnnotationTest extends TestCase
 {
-    use Traits\InvalidCodeAnalysisTestTrait;
-    use Traits\ValidCodeAnalysisTestTrait;
+    use InvalidCodeAnalysisTestTrait;
+    use ValidCodeAnalysisTestTrait;
 
     /**
-     * @return iterable<string,array{string,assertions?:array<string,string>,error_levels?:string[]}>
+     * @return iterable<string,array{code:string,assertions?:array<string,string>,ignored_issues?:list<string>}>
      */
     public function providerValidCodeParse(): iterable
     {
         return [
             'typeAliasBeforeClass' => [
-                '<?php
+                'code' => '<?php
                     namespace Barrr;
 
                     /**
@@ -42,7 +46,7 @@ class TypeAnnotationTest extends TestCase
                     bar(foo());',
             ],
             'typeAliasBeforeFunction' => [
-                '<?php
+                'code' => '<?php
                     namespace Barrr;
 
                     /**
@@ -71,7 +75,7 @@ class TypeAnnotationTest extends TestCase
                     bar(foo());',
             ],
             'typeAliasInSeparateBlockBeforeFunction' => [
-                '<?php
+                'code' => '<?php
                     namespace Barrr;
 
                     /**
@@ -101,7 +105,7 @@ class TypeAnnotationTest extends TestCase
                     bar(foo());',
             ],
             'almostFreeStandingTypeAlias' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @psalm-type CoolType = A|B|null
                      */
@@ -130,7 +134,7 @@ class TypeAnnotationTest extends TestCase
                     bar(foo());',
             ],
             'typeAliasUsedTwice' => [
-                '<?php
+                'code' => '<?php
                     namespace Baz;
 
                     /** @psalm-type TA = array<int, string> */
@@ -164,7 +168,7 @@ class TypeAnnotationTest extends TestCase
                     }',
             ],
             'classTypeAliasSimple' => [
-                '<?php
+                'code' => '<?php
                     namespace Bar;
 
                     /** @psalm-type PhoneType = array{phone: string} */
@@ -200,7 +204,7 @@ class TypeAnnotationTest extends TestCase
                     }'
             ],
             'classTypeAliasImportWithAlias' => [
-                '<?php
+                'code' => '<?php
                     namespace Bar;
 
                     /** @psalm-type PhoneType = array{phone: string} */
@@ -222,7 +226,7 @@ class TypeAnnotationTest extends TestCase
                     }'
             ],
             'classTypeAliasDirectUsage' => [
-                '<?php
+                'code' => '<?php
                     namespace Bar;
 
                     /** @psalm-type PhoneType = array{phone: string} */
@@ -244,7 +248,7 @@ class TypeAnnotationTest extends TestCase
                     }'
             ],
             'classTypeAliasFromExternalNamespace' => [
-                '<?php
+                'code' => '<?php
                 namespace Foo {
                     /** @psalm-type PhoneType = array{phone: string} */
                     class Phone {
@@ -268,7 +272,7 @@ class TypeAnnotationTest extends TestCase
                 }'
             ],
             'importTypeForParam' => [
-                '<?php
+                'code' => '<?php
                     namespace Bar;
 
                     /**
@@ -306,7 +310,7 @@ class TypeAnnotationTest extends TestCase
                     }'
             ],
             'usedInVarForForeach' => [
-                '<?php
+                'code' => '<?php
                 /** @psalm-type _B=array{p1:string} */
                 function e(array $a): void
                 {
@@ -317,7 +321,7 @@ class TypeAnnotationTest extends TestCase
                 }'
             ],
             'objectWithPropertiesAlias' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @psalm-type FooStruct=string
                      */
@@ -337,7 +341,7 @@ class TypeAnnotationTest extends TestCase
                     }'
             ],
             'sameDocBlockTypeAliasAsTypeParameterForInterface' => [
-                '<?php
+                'code' => '<?php
                     /** @template T */
                     interface A {
                         /** @return T */
@@ -356,12 +360,12 @@ class TypeAnnotationTest extends TestCase
 
                     $instance = new C();
                     $output = $instance->output();',
-                [
+                'assertions' => [
                     '$output' => 'string',
                 ],
             ],
             'sameDocBlockTypeAliasAsTypeParameterForExtendedRegularClass' => [
-                '<?php
+                'code' => '<?php
                     /** @template T */
                     class A {
                         /** @var T */
@@ -381,12 +385,12 @@ class TypeAnnotationTest extends TestCase
 
                     $instance = new C("hello");
                     $output = $instance->value;',
-                [
+                'assertions' => [
                     '$output' => 'string',
                 ],
             ],
             'sameDocBlockTypeAliasAsTypeParameterForExtendedAbstractClass' => [
-                '<?php
+                'code' => '<?php
                     /** @template T */
                     abstract class A {
                         /** @var T */
@@ -406,12 +410,12 @@ class TypeAnnotationTest extends TestCase
 
                     $instance = new C("hello");
                     $output = $instance->value;',
-                [
+                'assertions' => [
                     '$output' => 'string',
                 ],
             ],
             'importedTypeAliasAsTypeParameterForImplementation' => [
-                '<?php
+                'code' => '<?php
                     namespace Bar;
 
                     /** @template T */
@@ -426,8 +430,27 @@ class TypeAnnotationTest extends TestCase
                      */
                     class C implements A {}',
             ],
+            'importedTypeAliasAsConstrainedTypeParameterForImplementation' => [
+                'code' => '<?php
+                    namespace Bar;
+
+                    /** @template T of string */
+                    interface A {}
+
+                    /**
+                     * @psalm-type Foo = "foo"
+                     */
+                    class B {}
+
+                    /**
+                     * @psalm-import-type Foo from B
+                     * @implements A<Foo>
+                     */
+                    class C implements A {}
+                '
+            ],
             'importedTypeAliasAsTypeParameterForExtendedClass' => [
-                '<?php
+                'code' => '<?php
                     namespace Bar;
 
                     /** @template T */
@@ -443,7 +466,7 @@ class TypeAnnotationTest extends TestCase
                     class C extends A {}',
             ],
             'importedTypeAliasAsTypeParameterForExtendedAbstractClass' => [
-                '<?php
+                'code' => '<?php
                     namespace Bar;
 
                     /** @template T */
@@ -459,7 +482,7 @@ class TypeAnnotationTest extends TestCase
                     class C extends A {}',
             ],
             'importedTypeAliasRenamedAsTypeParameterForImplementation' => [
-                '<?php
+                'code' => '<?php
                     namespace Bar;
 
                     /** @template T */
@@ -475,7 +498,7 @@ class TypeAnnotationTest extends TestCase
                     class C implements A {}',
             ],
             'importedTypeAliasRenamedAsTypeParameterForExtendedClass' => [
-                '<?php
+                'code' => '<?php
                     namespace Bar;
 
                     /** @template T */
@@ -491,7 +514,7 @@ class TypeAnnotationTest extends TestCase
                     class C extends A {}',
             ],
             'importedTypeAliasRenamedAsTypeParameterForExtendedAbstractClass' => [
-                '<?php
+                'code' => '<?php
                     namespace Bar;
 
                     /** @template T */
@@ -507,7 +530,7 @@ class TypeAnnotationTest extends TestCase
                     class C extends A {}',
             ],
             'importedTypeInsideLocalTypeAliasUsedAsTypeParameter' => [
-                '<?php
+                'code' => '<?php
                     /** @template T */
                     abstract class A {
                         /** @var T */
@@ -534,12 +557,12 @@ class TypeAnnotationTest extends TestCase
 
                     $instance = new C("hello");
                     $output = $instance->value;',
-                [
+                'assertions' => [
                     '$output' => 'string',
                 ],
             ],
             'importedTypeWithPhpstanAnnotation' => [
-                '<?php
+                'code' => '<?php
                     /** @template T */
                     abstract class A {
                         /** @var T */
@@ -566,7 +589,7 @@ class TypeAnnotationTest extends TestCase
 
                     $instance = new C("hello");
                     $output = $instance->value;',
-                [
+                'assertions' => [
                     '$output' => 'string',
                 ],
             ],
@@ -574,13 +597,13 @@ class TypeAnnotationTest extends TestCase
     }
 
     /**
-     * @return iterable<string,array{string,error_message:string,1?:string[],2?:bool,3?:string}>
+     * @return iterable<string,array{code:string,error_message:string,ignored_issues?:list<string>,php_version?:string}>
      */
     public function providerInvalidCodeParse(): iterable
     {
         return [
             'invalidTypeAlias' => [
-                '<?php
+                'code' => '<?php
                     namespace Barrr;
 
                     /**
@@ -591,7 +614,7 @@ class TypeAnnotationTest extends TestCase
                 'error_message' => 'InvalidDocblock',
             ],
             'typeAliasInTKeyedArray' => [
-                '<?php
+                'code' => '<?php
                     namespace Barrr;
 
                     /**
@@ -605,7 +628,7 @@ class TypeAnnotationTest extends TestCase
                 'error_message' => 'InvalidReturnStatement',
             ],
             'classTypeAliasInvalidReturn' => [
-                '<?php
+                'code' => '<?php
                     namespace Barrr;
 
                     /** @psalm-type PhoneType = array{phone: string} */
@@ -642,7 +665,7 @@ class TypeAnnotationTest extends TestCase
                 'error_message' => 'InvalidReturnStatement',
             ],
             'classTypeInvalidAliasImport' => [
-                '<?php
+                'code' => '<?php
                     namespace Barrr;
 
                     class Phone {
@@ -658,7 +681,7 @@ class TypeAnnotationTest extends TestCase
                 'error_message' => 'InvalidTypeImport',
             ],
             'classTypeAliasFromInvalidClass' => [
-                '<?php
+                'code' => '<?php
                     namespace Barrr;
 
                     /**
@@ -668,7 +691,7 @@ class TypeAnnotationTest extends TestCase
                 'error_message' => 'UndefinedDocblockClass',
             ],
             'malformedImportMissingFrom' => [
-                '<?php
+                'code' => '<?php
                     namespace Barrr;
 
                     /** @psalm-import-type Thing */
@@ -677,7 +700,7 @@ class TypeAnnotationTest extends TestCase
                 'error_message' => 'InvalidTypeImport',
             ],
             'malformedImportMissingSourceClass' => [
-                '<?php
+                'code' => '<?php
                     namespace Barrr;
 
                     /** @psalm-import-type Thing from */
@@ -686,7 +709,7 @@ class TypeAnnotationTest extends TestCase
                 'error_message' => 'InvalidTypeImport',
             ],
             'malformedImportMisspelledFrom' => [
-                '<?php
+                'code' => '<?php
                     namespace Barrr;
 
                     /** @psalm-import-type Thing morf */
@@ -695,7 +718,7 @@ class TypeAnnotationTest extends TestCase
                 'error_message' => 'InvalidTypeImport',
             ],
             'malformedImportMissingAlias' => [
-                '<?php
+                'code' => '<?php
                     namespace Barrr;
 
                     /** @psalm-import-type Thing from Somewhere as */
@@ -704,7 +727,7 @@ class TypeAnnotationTest extends TestCase
                 'error_message' => 'InvalidTypeImport',
             ],
             'noCrashWithPriorReference' => [
-                '<?php
+                'code' => '<?php
                     namespace Barrr;
 
                     /**
@@ -720,7 +743,7 @@ class TypeAnnotationTest extends TestCase
                 'error_message' => 'UndefinedDocblockClass',
             ],
             'mergeImportedTypes' => [
-                '<?php
+                'code' => '<?php
                     namespace A\B;
 
                     /**
@@ -756,7 +779,7 @@ class TypeAnnotationTest extends TestCase
                 'error_message' => 'PossiblyUndefinedArrayOffset',
             ],
             'noCrashWithSelfReferencingType' => [
-                '<?php
+                'code' => '<?php
                     /**
                      * @psalm-type SomeType = array{
                      *     parent?: SomeType,
@@ -768,7 +791,7 @@ class TypeAnnotationTest extends TestCase
                 'error_message' => 'InvalidDocblock',
             ],
             'invalidTypeWhenNotImported' => [
-                '<?php
+                'code' => '<?php
 
                     /** @psalm-type Foo = string */
                     class A {}
@@ -781,7 +804,7 @@ class TypeAnnotationTest extends TestCase
                 'error_message' => 'UndefinedDocblockClass',
             ],
             'invalidTypeWhenNotImportedInsideAnotherTypeAlias' => [
-                '<?php
+                'code' => '<?php
 
                     /** @psalm-type Foo = string */
                     class A {}

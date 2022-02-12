@@ -1,10 +1,12 @@
 <?php
+
 namespace Psalm\Internal\Analyzer\Statements\Expression;
 
 use PhpParser;
 use Psalm\CodeLocation;
 use Psalm\Context;
 use Psalm\Internal\Analyzer\FunctionLikeAnalyzer;
+use Psalm\Internal\Analyzer\Statements\Expression\Call\ArgumentAnalyzer;
 use Psalm\Internal\Analyzer\Statements\ExpressionAnalyzer;
 use Psalm\Internal\Analyzer\StatementsAnalyzer;
 use Psalm\Internal\Codebase\TaintFlowGraph;
@@ -14,14 +16,18 @@ use Psalm\Issue\ImpureFunctionCall;
 use Psalm\IssueBuffer;
 use Psalm\Storage\FunctionLikeParameter;
 use Psalm\Type;
+use Psalm\Type\TaintKind;
 
+/**
+ * @internal
+ */
 class PrintAnalyzer
 {
     public static function analyze(
         StatementsAnalyzer $statements_analyzer,
         PhpParser\Node\Expr\Print_ $stmt,
         Context $context
-    ) : bool {
+    ): bool {
         $codebase = $statements_analyzer->getCodebase();
 
         if (ExpressionAnalyzer::analyze($statements_analyzer, $stmt->expr, $context) === false) {
@@ -40,17 +46,17 @@ class PrintAnalyzer
             );
 
             $print_param_sink->taints = [
-                Type\TaintKind::INPUT_HTML,
-                Type\TaintKind::INPUT_HAS_QUOTES,
-                Type\TaintKind::USER_SECRET,
-                Type\TaintKind::SYSTEM_SECRET
+                TaintKind::INPUT_HTML,
+                TaintKind::INPUT_HAS_QUOTES,
+                TaintKind::USER_SECRET,
+                TaintKind::SYSTEM_SECRET
             ];
 
             $statements_analyzer->data_flow_graph->addSink($print_param_sink);
         }
 
         if ($stmt_expr_type = $statements_analyzer->node_data->getType($stmt->expr)) {
-            if (Call\ArgumentAnalyzer::verifyType(
+            if (ArgumentAnalyzer::verifyType(
                 $statements_analyzer,
                 $stmt_expr_type,
                 Type::getString(),
@@ -73,28 +79,24 @@ class PrintAnalyzer
         }
 
         if (isset($codebase->config->forbidden_functions['print'])) {
-            if (IssueBuffer::accepts(
+            IssueBuffer::maybeAdd(
                 new ForbiddenCode(
                     'You have forbidden the use of print',
                     new CodeLocation($statements_analyzer->getSource(), $stmt)
                 ),
                 $statements_analyzer->getSuppressedIssues()
-            )) {
-                // continue
-            }
+            );
         }
 
         if (!$context->collect_initializations && !$context->collect_mutations) {
             if ($context->mutation_free || $context->external_mutation_free) {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new ImpureFunctionCall(
                         'Cannot call print from a mutation-free context',
                         new CodeLocation($statements_analyzer, $stmt)
                     ),
                     $statements_analyzer->getSuppressedIssues()
-                )) {
-                    // fall through
-                }
+                );
             } elseif ($statements_analyzer->getSource() instanceof FunctionLikeAnalyzer
                 && $statements_analyzer->getSource()->track_mutations
             ) {

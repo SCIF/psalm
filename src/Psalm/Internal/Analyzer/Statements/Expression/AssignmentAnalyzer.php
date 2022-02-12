@@ -1,12 +1,18 @@
 <?php
+
 namespace Psalm\Internal\Analyzer\Statements\Expression;
 
 use PhpParser;
 use Psalm\CodeLocation;
+use Psalm\CodeLocation\DocblockTypeLocation;
+use Psalm\Codebase;
 use Psalm\Context;
 use Psalm\Exception\DocblockParseException;
 use Psalm\Exception\IncorrectDocblockException;
+use Psalm\Internal\Algebra;
+use Psalm\Internal\Algebra\FormulaGenerator;
 use Psalm\Internal\Analyzer\CommentAnalyzer;
+use Psalm\Internal\Analyzer\FunctionLikeAnalyzer;
 use Psalm\Internal\Analyzer\Statements\Block\ForeachAnalyzer;
 use Psalm\Internal\Analyzer\Statements\Expression\Assignment\ArrayAssignmentAnalyzer;
 use Psalm\Internal\Analyzer\Statements\Expression\Assignment\InstancePropertyAssignmentAnalyzer;
@@ -15,12 +21,17 @@ use Psalm\Internal\Analyzer\Statements\Expression\Fetch\ArrayFetchAnalyzer;
 use Psalm\Internal\Analyzer\Statements\Expression\Fetch\VariableFetchAnalyzer;
 use Psalm\Internal\Analyzer\Statements\ExpressionAnalyzer;
 use Psalm\Internal\Analyzer\StatementsAnalyzer;
+use Psalm\Internal\Analyzer\TraitAnalyzer;
+use Psalm\Internal\Clause;
+use Psalm\Internal\Codebase\DataFlowGraph;
 use Psalm\Internal\Codebase\TaintFlowGraph;
 use Psalm\Internal\Codebase\VariableUseGraph;
 use Psalm\Internal\DataFlow\DataFlowNode;
 use Psalm\Internal\FileManipulation\FileManipulationBuffer;
+use Psalm\Internal\ReferenceConstraint;
 use Psalm\Internal\Scanner\VarDocblockComment;
 use Psalm\Internal\Type\Comparator\UnionTypeComparator;
+use Psalm\Internal\Type\TypeExpander;
 use Psalm\Issue\AssignmentToVoid;
 use Psalm\Issue\ImpureByReferenceAssignment;
 use Psalm\Issue\ImpurePropertyAssignment;
@@ -33,6 +44,7 @@ use Psalm\Issue\MissingDocblockType;
 use Psalm\Issue\MixedArrayAccess;
 use Psalm\Issue\MixedAssignment;
 use Psalm\Issue\NoValue;
+use Psalm\Issue\NullReference;
 use Psalm\Issue\PossiblyInvalidArrayAccess;
 use Psalm\Issue\PossiblyNullArrayAccess;
 use Psalm\Issue\PossiblyUndefinedArrayOffset;
@@ -54,12 +66,27 @@ use Psalm\Node\Expr\BinaryOp\VirtualShiftLeft;
 use Psalm\Node\Expr\BinaryOp\VirtualShiftRight;
 use Psalm\Node\Expr\VirtualAssign;
 use Psalm\Plugin\EventHandler\Event\AddRemoveTaintsEvent;
+use Psalm\Storage\Assertion\Falsy;
 use Psalm\Type;
+use Psalm\Type\Atomic\TArray;
+use Psalm\Type\Atomic\TFalse;
+use Psalm\Type\Atomic\TKeyedArray;
+use Psalm\Type\Atomic\TList;
+use Psalm\Type\Atomic\TMixed;
+use Psalm\Type\Atomic\TNamedObject;
+use Psalm\Type\Atomic\TNonEmptyArray;
+use Psalm\Type\Atomic\TNonEmptyList;
+use Psalm\Type\Atomic\TNull;
+use Psalm\Type\Union;
+use UnexpectedValueException;
 
+use function array_filter;
 use function array_merge;
 use function count;
+use function in_array;
 use function is_string;
 use function reset;
+use function spl_object_id;
 use function strpos;
 use function strtolower;
 
@@ -71,13 +98,13 @@ class AssignmentAnalyzer
     /**
      * @param  PhpParser\Node\Expr|null $assign_value  This has to be null to support list destructuring
      *
-     * @return false|Type\Union
+     * @return false|Union
      */
     public static function analyze(
         StatementsAnalyzer $statements_analyzer,
         PhpParser\Node\Expr $assign_var,
         ?PhpParser\Node\Expr $assign_value,
-        ?Type\Union $assign_value_type,
+        ?Union $assign_value_type,
         Context $context,
         ?PhpParser\Comment\Doc $doc_comment,
         array $not_ignored_docblock_var_ids = []
@@ -137,23 +164,19 @@ class AssignmentAnalyzer
                     $file_storage->type_aliases
                 );
             } catch (IncorrectDocblockException $e) {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new MissingDocblockType(
                         $e->getMessage(),
                         new CodeLocation($statements_analyzer->getSource(), $assign_var)
                     )
-                )) {
-                    // fall through
-                }
+                );
             } catch (DocblockParseException $e) {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new InvalidDocblock(
                         $e->getMessage(),
                         new CodeLocation($statements_analyzer->getSource(), $assign_var)
                     )
-                )) {
-                    // fall through
-                }
+                );
             }
 
             foreach ($var_comments as $var_comment) {
@@ -207,13 +230,15 @@ class AssignmentAnalyzer
 
             // if we don't know where this data is going, treat as a dead-end usage
             if (!$root_expr instanceof PhpParser\Node\Expr\Variable
-                || (\is_string($root_expr->name)
-                    && \in_array('$' . $root_expr->name, VariableFetchAnalyzer::SUPER_GLOBALS, true))
+                || (is_string($root_expr->name)
+                    && in_array('$' . $root_expr->name, VariableFetchAnalyzer::SUPER_GLOBALS, true))
             ) {
                 $context->inside_general_use = true;
             }
 
             if (ExpressionAnalyzer::analyze($statements_analyzer, $assign_value, $context) === false) {
+                $context->inside_general_use = $was_inside_general_use;
+
                 if ($var_id) {
                     if ($array_var_id) {
                         $context->removeDescendents($array_var_id, null, $assign_value_type);
@@ -296,15 +321,13 @@ class AssignmentAnalyzer
         if ($array_var_id && isset($context->vars_in_scope[$array_var_id])) {
             if ($context->vars_in_scope[$array_var_id]->by_ref) {
                 if ($context->mutation_free) {
-                    if (IssueBuffer::accepts(
+                    IssueBuffer::maybeAdd(
                         new ImpureByReferenceAssignment(
                             'Variable ' . $array_var_id . ' cannot be assigned to as it is passed by reference',
                             new CodeLocation($statements_analyzer->getSource(), $assign_var)
                         )
-                    )) {
-                        // fall through
-                    }
-                } elseif ($statements_analyzer->getSource() instanceof \Psalm\Internal\Analyzer\FunctionLikeAnalyzer
+                    );
+                } elseif ($statements_analyzer->getSource() instanceof FunctionLikeAnalyzer
                     && $statements_analyzer->getSource()->track_mutations
                 ) {
                     $statements_analyzer->getSource()->inferred_impure = true;
@@ -350,8 +373,8 @@ class AssignmentAnalyzer
                 && !$context->collect_mutations
                 && $statements_analyzer->getFilePath() === $statements_analyzer->getRootFilePath()
                 && (!(($parent_source = $statements_analyzer->getSource())
-                            instanceof \Psalm\Internal\Analyzer\FunctionLikeAnalyzer)
-                        || !$parent_source->getSource() instanceof \Psalm\Internal\Analyzer\TraitAnalyzer)
+                            instanceof FunctionLikeAnalyzer)
+                        || !$parent_source->getSource() instanceof TraitAnalyzer)
             ) {
                 $codebase->analyzer->incrementMixedCount($statements_analyzer->getFilePath());
             }
@@ -384,24 +407,22 @@ class AssignmentAnalyzer
                     $origin_location = null;
                 }
 
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new MixedAssignment(
                         $message,
                         $issue_location,
                         $origin_location
                     ),
                     $statements_analyzer->getSuppressedIssues()
-                )) {
-                    // fall through
-                }
+                );
             }
         } else {
             if (!$context->collect_initializations
                 && !$context->collect_mutations
                 && $statements_analyzer->getFilePath() === $statements_analyzer->getRootFilePath()
                 && (!(($parent_source = $statements_analyzer->getSource())
-                        instanceof \Psalm\Internal\Analyzer\FunctionLikeAnalyzer)
-                    || !$parent_source->getSource() instanceof \Psalm\Internal\Analyzer\TraitAnalyzer)
+                        instanceof FunctionLikeAnalyzer)
+                    || !$parent_source->getSource() instanceof TraitAnalyzer)
             ) {
                 $codebase->analyzer->incrementNonMixedCount($statements_analyzer->getFilePath());
             }
@@ -418,7 +439,7 @@ class AssignmentAnalyzer
                     $assign_value_type->ignore_falsable_issues
                 )
                 ) {
-                    if (IssueBuffer::accepts(
+                    IssueBuffer::maybeAdd(
                         new ReferenceConstraintViolation(
                             'Variable ' . $var_id . ' is limited to values of type '
                                 . $context->byref_constraints[$var_id]->type
@@ -427,9 +448,7 @@ class AssignmentAnalyzer
                             new CodeLocation($statements_analyzer->getSource(), $assign_var)
                         ),
                         $statements_analyzer->getSuppressedIssues()
-                    )) {
-                        // fall through
-                    }
+                    );
                 }
             }
         }
@@ -447,15 +466,13 @@ class AssignmentAnalyzer
         if (isset($context->protected_var_ids[$var_id])
             && $assign_value_type->hasLiteralInt()
         ) {
-            if (IssueBuffer::accepts(
+            IssueBuffer::maybeAdd(
                 new LoopInvalidation(
                     'Variable ' . $var_id . ' has already been assigned in a for/foreach loop',
                     new CodeLocation($statements_analyzer->getSource(), $assign_var)
                 ),
                 $statements_analyzer->getSuppressedIssues()
-            )) {
-                // fall through
-            }
+            );
         }
 
         if ($assign_var instanceof PhpParser\Node\Expr\Variable) {
@@ -527,21 +544,17 @@ class AssignmentAnalyzer
 
         if ($var_id && isset($context->vars_in_scope[$var_id])) {
             if ($context->vars_in_scope[$var_id]->isVoid()) {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new AssignmentToVoid(
                         'Cannot assign ' . $var_id . ' to type void',
                         new CodeLocation($statements_analyzer->getSource(), $assign_var)
                     ),
                     $statements_analyzer->getSuppressedIssues()
-                )) {
-                    // fall through
-                }
+                );
 
                 $context->vars_in_scope[$var_id] = Type::getNull();
 
-                if (!$was_in_assignment) {
-                    $context->inside_assignment = false;
-                }
+                $context->inside_assignment = $was_in_assignment;
 
                 return $context->vars_in_scope[$var_id];
             }
@@ -557,11 +570,9 @@ class AssignmentAnalyzer
                     return false;
                 }
 
-                $context->vars_in_scope[$var_id] = Type::getEmpty();
+                $context->vars_in_scope[$var_id] = Type::getNever();
 
-                if (!$was_in_assignment) {
-                    $context->inside_assignment = false;
-                }
+                $context->inside_assignment = $was_in_assignment;
 
                 return $context->vars_in_scope[$var_id];
             }
@@ -573,7 +584,7 @@ class AssignmentAnalyzer
                     $context->vars_in_scope[$var_id] = clone $context->vars_in_scope[$var_id];
 
                     if ($data_flow_graph instanceof TaintFlowGraph
-                        && \in_array('TaintedInput', $statements_analyzer->getSuppressedIssues())
+                        && in_array('TaintedInput', $statements_analyzer->getSuppressedIssues())
                     ) {
                         $context->vars_in_scope[$var_id]->parent_nodes = [];
                     } else {
@@ -582,7 +593,7 @@ class AssignmentAnalyzer
                         $event = new AddRemoveTaintsEvent($assign_var, $context, $statements_analyzer, $codebase);
 
                         $added_taints = $codebase->config->eventDispatcher->dispatchAddTaints($event);
-                        $removed_taints = \array_merge(
+                        $removed_taints = array_merge(
                             $removed_taints,
                             $codebase->config->eventDispatcher->dispatchRemoveTaints($event)
                         );
@@ -600,9 +611,7 @@ class AssignmentAnalyzer
             }
         }
 
-        if (!$was_in_assignment) {
-            $context->inside_assignment = false;
-        }
+        $context->inside_assignment = $was_in_assignment;
 
         return $assign_value_type;
     }
@@ -613,10 +622,10 @@ class AssignmentAnalyzer
         VarDocblockComment $var_comment,
         Context $context,
         ?string $var_id = null,
-        ?Type\Union &$comment_type = null,
-        ?CodeLocation\DocblockTypeLocation &$comment_type_location = null,
+        ?Union &$comment_type = null,
+        ?DocblockTypeLocation &$comment_type_location = null,
         array $not_ignored_docblock_var_ids = []
-    ) : void {
+    ): void {
         if (!$var_comment->type) {
             return;
         }
@@ -624,7 +633,7 @@ class AssignmentAnalyzer
         $codebase = $statements_analyzer->getCodebase();
 
         try {
-            $var_comment_type = \Psalm\Internal\Type\TypeExpander::expandUnion(
+            $var_comment_type = TypeExpander::expandUnion(
                 $codebase,
                 $var_comment->type,
                 $context->self,
@@ -651,7 +660,7 @@ class AssignmentAnalyzer
                 && $var_comment->type_end
                 && $var_comment->line_number
             ) {
-                $type_location = new CodeLocation\DocblockTypeLocation(
+                $type_location = new DocblockTypeLocation(
                     $statements_analyzer,
                     $var_comment->type_start,
                     $var_comment->type_end,
@@ -705,15 +714,13 @@ class AssignmentAnalyzer
             $var_comment_type->parent_nodes = $parent_nodes;
 
             $context->vars_in_scope[$var_comment->var_id] = $var_comment_type;
-        } catch (\UnexpectedValueException $e) {
-            if (IssueBuffer::accepts(
+        } catch (UnexpectedValueException $e) {
+            IssueBuffer::maybeAdd(
                 new InvalidDocblock(
                     $e->getMessage(),
                     new CodeLocation($statements_analyzer->getSource(), $stmt)
                 )
-            )) {
-                // fall through
-            }
+            );
         }
     }
 
@@ -722,27 +729,23 @@ class AssignmentAnalyzer
      * @param  array<string> $added_taints
      */
     private static function taintAssignment(
-        Type\Union $type,
-        \Psalm\Internal\Codebase\DataFlowGraph $data_flow_graph,
+        Union $type,
+        DataFlowGraph $data_flow_graph,
         string $var_id,
         CodeLocation $var_location,
         array $removed_taints,
         array $added_taints
-    ) : void {
+    ): void {
         $parent_nodes = $type->parent_nodes;
 
-        $unspecialized_parent_nodes = \array_filter(
+        $unspecialized_parent_nodes = array_filter(
             $parent_nodes,
-            static function ($parent_node) {
-                return !$parent_node->specialization_key;
-            }
+            static fn($parent_node): bool => !$parent_node->specialization_key
         );
 
-        $specialized_parent_nodes = \array_filter(
+        $specialized_parent_nodes = array_filter(
             $parent_nodes,
-            static function ($parent_node) {
-                return (bool) $parent_node->specialization_key;
-            }
+            static fn($parent_node): bool => (bool) $parent_node->specialization_key
         );
 
         $new_parent_nodes = [];
@@ -813,7 +816,7 @@ class AssignmentAnalyzer
         } elseif ($stmt instanceof PhpParser\Node\Expr\AssignOp\ShiftRight) {
             $operation = new VirtualShiftRight($stmt->var, $stmt->expr, $stmt->getAttributes());
         } else {
-            throw new \UnexpectedValueException('Unknown assign op');
+            throw new UnexpectedValueException('Unknown assign op');
         }
 
         $fake_assignment = new VirtualAssign(
@@ -844,7 +847,7 @@ class AssignmentAnalyzer
         StatementsAnalyzer $statements_analyzer,
         PhpParser\Node\Expr\AssignRef $stmt,
         Context $context
-    ) : bool {
+    ): bool {
         $assignment_type = self::analyze(
             $statements_analyzer,
             $stmt->var,
@@ -875,7 +878,7 @@ class AssignmentAnalyzer
         if ($lhs_var_id) {
             $context->vars_in_scope[$lhs_var_id] = $assignment_type;
             $context->hasVariable($lhs_var_id);
-            $context->byref_constraints[$lhs_var_id] = new \Psalm\Internal\ReferenceConstraint();
+            $context->byref_constraints[$lhs_var_id] = new ReferenceConstraint();
 
             if ($statements_analyzer->data_flow_graph instanceof VariableUseGraph) {
                 foreach ($context->vars_in_scope[$lhs_var_id]->parent_nodes as $parent_node) {
@@ -893,7 +896,7 @@ class AssignmentAnalyzer
                 $context->vars_in_scope[$rhs_var_id] = Type::getMixed();
             }
 
-            $context->byref_constraints[$rhs_var_id] = new \Psalm\Internal\ReferenceConstraint();
+            $context->byref_constraints[$rhs_var_id] = new ReferenceConstraint();
         }
 
         if ($statements_analyzer->data_flow_graph
@@ -920,8 +923,8 @@ class AssignmentAnalyzer
     public static function assignByRefParam(
         StatementsAnalyzer $statements_analyzer,
         PhpParser\Node\Expr $stmt,
-        Type\Union $by_ref_type,
-        Type\Union $by_ref_out_type,
+        Union $by_ref_type,
+        Union $by_ref_out_type,
         Context $context,
         bool $constrain_type = true,
         bool $prevent_null = false
@@ -951,7 +954,7 @@ class AssignmentAnalyzer
             $var_not_in_scope = false;
 
             if (!$by_ref_type->hasMixed() && $constrain_type) {
-                $context->byref_constraints[$var_id] = new \Psalm\Internal\ReferenceConstraint($by_ref_type);
+                $context->byref_constraints[$var_id] = new ReferenceConstraint($by_ref_type);
             }
 
             if (!$context->hasVariable($var_id)) {
@@ -967,15 +970,13 @@ class AssignmentAnalyzer
                         && !strpos($var_id, '->')
                         && !strpos($var_id, '::')
                     ) {
-                        if (IssueBuffer::accepts(
-                            new \Psalm\Issue\NullReference(
+                        IssueBuffer::maybeAdd(
+                            new NullReference(
                                 'Not expecting null argument passed by reference',
                                 $location
                             ),
                             $statements_analyzer->getSuppressedIssues()
-                        )) {
-                            // fall through
-                        }
+                        );
                     }
 
                     if ($stmt instanceof PhpParser\Node\Expr\Variable) {
@@ -1020,11 +1021,11 @@ class AssignmentAnalyzer
                     $by_ref_out_type->parent_nodes += $existing_type->parent_nodes;
                 }
 
-                if ($existing_type->getId() !== 'array<empty, empty>') {
+                if (!$existing_type->isEmptyArray()) {
                     $context->vars_in_scope[$var_id] = $by_ref_out_type;
 
                     if (!($stmt_type = $statements_analyzer->node_data->getType($stmt))
-                        || $stmt_type->isEmpty()
+                        || $stmt_type->isNever()
                     ) {
                         $statements_analyzer->node_data->setType($stmt, clone $by_ref_type);
                     }
@@ -1039,7 +1040,7 @@ class AssignmentAnalyzer
 
             $stmt_type = $statements_analyzer->node_data->getType($stmt);
 
-            if (!$stmt_type || $stmt_type->isEmpty()) {
+            if (!$stmt_type || $stmt_type->isNever()) {
                 $statements_analyzer->node_data->setType($stmt, clone $by_ref_type);
             }
 
@@ -1056,10 +1057,10 @@ class AssignmentAnalyzer
      */
     private static function analyzeDestructuringAssignment(
         StatementsAnalyzer $statements_analyzer,
-        \Psalm\Codebase $codebase,
+        Codebase $codebase,
         PhpParser\Node\Expr $assign_var,
         ?PhpParser\Node\Expr $assign_value,
-        Type\Union $assign_value_type,
+        Union $assign_value_type,
         Context $context,
         ?PhpParser\Comment\Doc $doc_comment,
         ?string $array_var_id,
@@ -1070,15 +1071,13 @@ class AssignmentAnalyzer
             && !$assign_value_type->isMixed()
             && !$assign_value_type->hasArrayAccessInterface($codebase)
         ) {
-            if (IssueBuffer::accepts(
+            IssueBuffer::maybeAdd(
                 new InvalidArrayOffset(
                     'Cannot destructure non-array of type ' . $assign_value_type->getId(),
                     new CodeLocation($statements_analyzer->getSource(), $assign_var)
                 ),
                 $statements_analyzer->getSuppressedIssues()
-            )) {
-                // fall through
-            }
+            );
         }
 
         $can_be_empty = true;
@@ -1125,7 +1124,7 @@ class AssignmentAnalyzer
             $has_null = false;
 
             foreach ($assign_value_type->getAtomicTypes() as $assign_value_atomic_type) {
-                if ($assign_value_atomic_type instanceof Type\Atomic\TKeyedArray
+                if ($assign_value_atomic_type instanceof TKeyedArray
                     && !$assign_var_item->key
                 ) {
                     // if object-like has int offsets
@@ -1135,15 +1134,13 @@ class AssignmentAnalyzer
                         $value_type = $assign_value_atomic_type->properties[$offset_value];
 
                         if ($value_type->possibly_undefined) {
-                            if (IssueBuffer::accepts(
+                            IssueBuffer::maybeAdd(
                                 new PossiblyUndefinedArrayOffset(
                                     'Possibly undefined array key',
                                     new CodeLocation($statements_analyzer->getSource(), $var)
                                 ),
                                 $statements_analyzer->getSuppressedIssues()
-                            )) {
-                                // fall through
-                            }
+                            );
 
                             $value_type = clone $value_type;
                             $value_type->possibly_undefined = false;
@@ -1188,52 +1185,33 @@ class AssignmentAnalyzer
                     }
 
                     if ($assign_value_atomic_type->sealed) {
-                        if (IssueBuffer::accepts(
+                        IssueBuffer::maybeAdd(
                             new InvalidArrayOffset(
                                 'Cannot access value with offset ' . $offset,
                                 new CodeLocation($statements_analyzer->getSource(), $var)
                             ),
                             $statements_analyzer->getSuppressedIssues()
-                        )) {
-                            // fall through
-                        }
+                        );
                     }
                 }
 
-                if ($assign_value_atomic_type instanceof Type\Atomic\TMixed) {
-                    if (IssueBuffer::accepts(
+                if ($assign_value_atomic_type instanceof TMixed) {
+                    IssueBuffer::maybeAdd(
                         new MixedArrayAccess(
                             'Cannot access array value on mixed variable ' . $array_var_id,
                             new CodeLocation($statements_analyzer->getSource(), $var)
                         ),
                         $statements_analyzer->getSuppressedIssues()
-                    )) {
-                        // fall through
-                    }
-                } elseif ($assign_value_atomic_type instanceof Type\Atomic\TNull) {
+                    );
+                } elseif ($assign_value_atomic_type instanceof TNull) {
                     $has_null = true;
-
-                    if (IssueBuffer::accepts(
-                        new PossiblyNullArrayAccess(
-                            'Cannot access array value on null variable ' . $array_var_id,
-                            new CodeLocation($statements_analyzer->getSource(), $var)
-                        ),
-                        $statements_analyzer->getSuppressedIssues()
-                    )
-                    ) {
-                        // do nothing
-                    }
-                } elseif (!$assign_value_atomic_type instanceof Type\Atomic\TArray
-                    && !$assign_value_atomic_type instanceof Type\Atomic\TKeyedArray
-                    && !$assign_value_atomic_type instanceof Type\Atomic\TList
+                } elseif (!$assign_value_atomic_type instanceof TArray
+                    && !$assign_value_atomic_type instanceof TKeyedArray
+                    && !$assign_value_atomic_type instanceof TList
                     && !$assign_value_type->hasArrayAccessInterface($codebase)
                 ) {
                     if ($assign_value_type->hasArray()) {
-                        if (($assign_value_atomic_type instanceof Type\Atomic\TFalse
-                                && $assign_value_type->ignore_falsable_issues)
-                            || ($assign_value_atomic_type instanceof Type\Atomic\TNull
-                                && $assign_value_type->ignore_nullable_issues)
-                        ) {
+                        if ($assign_value_atomic_type instanceof TFalse && $assign_value_type->ignore_falsable_issues) {
                             // do nothing
                         } elseif (IssueBuffer::accepts(
                             new PossiblyInvalidArrayAccess(
@@ -1264,18 +1242,18 @@ class AssignmentAnalyzer
                 if ($var instanceof PhpParser\Node\Expr\List_
                     || $var instanceof PhpParser\Node\Expr\Array_
                 ) {
-                    if ($assign_value_atomic_type instanceof Type\Atomic\TKeyedArray) {
+                    if ($assign_value_atomic_type instanceof TKeyedArray) {
                         $assign_value_atomic_type = $assign_value_atomic_type->getGenericArrayType();
                     }
 
-                    if ($assign_value_atomic_type instanceof Type\Atomic\TList) {
-                        $assign_value_atomic_type = new Type\Atomic\TArray([
+                    if ($assign_value_atomic_type instanceof TList) {
+                        $assign_value_atomic_type = new TArray([
                             Type::getInt(),
                             $assign_value_atomic_type->type_param
                         ]);
                     }
 
-                    $array_value_type = $assign_value_atomic_type instanceof Type\Atomic\TArray
+                    $array_value_type = $assign_value_atomic_type instanceof TArray
                         ? clone $assign_value_atomic_type->type_params[1]
                         : Type::getMixed();
 
@@ -1319,7 +1297,7 @@ class AssignmentAnalyzer
                         }
                     }
 
-                    if ($assign_value_atomic_type instanceof Type\Atomic\TArray) {
+                    if ($assign_value_atomic_type instanceof TArray) {
                         $new_assign_type = clone $assign_value_atomic_type->type_params[1];
 
                         if ($statements_analyzer->data_flow_graph
@@ -1334,8 +1312,8 @@ class AssignmentAnalyzer
                             );
                         }
 
-                        $can_be_empty = !$assign_value_atomic_type instanceof Type\Atomic\TNonEmptyArray;
-                    } elseif ($assign_value_atomic_type instanceof Type\Atomic\TList) {
+                        $can_be_empty = !$assign_value_atomic_type instanceof TNonEmptyArray;
+                    } elseif ($assign_value_atomic_type instanceof TList) {
                         $new_assign_type = clone $assign_value_atomic_type->type_param;
 
                         if ($statements_analyzer->data_flow_graph && $assign_value) {
@@ -1348,8 +1326,8 @@ class AssignmentAnalyzer
                             );
                         }
 
-                        $can_be_empty = !$assign_value_atomic_type instanceof Type\Atomic\TNonEmptyList;
-                    } elseif ($assign_value_atomic_type instanceof Type\Atomic\TKeyedArray) {
+                        $can_be_empty = !$assign_value_atomic_type instanceof TNonEmptyList;
+                    } elseif ($assign_value_atomic_type instanceof TKeyedArray) {
                         if (($assign_var_item->key instanceof PhpParser\Node\Scalar\String_
                             || $assign_var_item->key instanceof PhpParser\Node\Scalar\LNumber)
                             && isset($assign_value_atomic_type->properties[$assign_var_item->key->value])
@@ -1358,15 +1336,13 @@ class AssignmentAnalyzer
                                 clone $assign_value_atomic_type->properties[$assign_var_item->key->value];
 
                             if ($new_assign_type->possibly_undefined) {
-                                if (IssueBuffer::accepts(
+                                IssueBuffer::maybeAdd(
                                     new PossiblyUndefinedArrayOffset(
                                         'Possibly undefined array key',
                                         new CodeLocation($statements_analyzer->getSource(), $var)
                                     ),
                                     $statements_analyzer->getSuppressedIssues()
-                                )) {
-                                    // fall through
-                                }
+                                );
 
                                 $new_assign_type->possibly_undefined = false;
                             }
@@ -1406,7 +1382,19 @@ class AssignmentAnalyzer
                 }
             }
 
+
+
             if (!$assigned) {
+                if ($has_null) {
+                    IssueBuffer::maybeAdd(
+                        new PossiblyNullArrayAccess(
+                            'Cannot access array value on null variable ' . $array_var_id,
+                            new CodeLocation($statements_analyzer->getSource(), $var)
+                        ),
+                        $statements_analyzer->getSuppressedIssues()
+                    );
+                }
+
                 foreach ($var_comments as $var_comment) {
                     if (!$var_comment->type) {
                         continue;
@@ -1414,7 +1402,7 @@ class AssignmentAnalyzer
 
                     try {
                         if ($var_comment->var_id === $list_var_id) {
-                            $var_comment_type = \Psalm\Internal\Type\TypeExpander::expandUnion(
+                            $var_comment_type = TypeExpander::expandUnion(
                                 $codebase,
                                 $var_comment->type,
                                 $context->self,
@@ -1427,26 +1415,18 @@ class AssignmentAnalyzer
                             $new_assign_type = $var_comment_type;
                             break;
                         }
-                    } catch (\UnexpectedValueException $e) {
-                        if (IssueBuffer::accepts(
+                    } catch (UnexpectedValueException $e) {
+                        IssueBuffer::maybeAdd(
                             new InvalidDocblock(
                                 $e->getMessage(),
                                 new CodeLocation($statements_analyzer->getSource(), $assign_var)
                             )
-                        )) {
-                            // fall through
-                        }
+                        );
                     }
                 }
 
                 if ($list_var_id) {
                     $context->vars_in_scope[$list_var_id] = $new_assign_type ?: Type::getMixed();
-
-                    if (($context->error_suppressing && ($offset || $can_be_empty))
-                        || $has_null
-                    ) {
-                        $context->vars_in_scope[$list_var_id]->addType(new Type\Atomic\TNull);
-                    }
 
                     if ($statements_analyzer->data_flow_graph) {
                         $data_flow_graph = $statements_analyzer->data_flow_graph;
@@ -1464,14 +1444,14 @@ class AssignmentAnalyzer
                             ];
                         } else {
                             if ($statements_analyzer->data_flow_graph instanceof TaintFlowGraph
-                                && \in_array('TaintedInput', $statements_analyzer->getSuppressedIssues())
+                                && in_array('TaintedInput', $statements_analyzer->getSuppressedIssues())
                             ) {
                                 $context->vars_in_scope[$list_var_id]->parent_nodes = [];
                             } else {
                                 $event = new AddRemoveTaintsEvent($var, $context, $statements_analyzer, $codebase);
 
                                 $added_taints = $codebase->config->eventDispatcher->dispatchAddTaints($event);
-                                $removed_taints = \array_merge(
+                                $removed_taints = array_merge(
                                     $removed_taints,
                                     $codebase->config->eventDispatcher->dispatchRemoveTaints($event)
                                 );
@@ -1489,16 +1469,24 @@ class AssignmentAnalyzer
                     }
                 }
             }
+
+            if ($list_var_id) {
+                if (($context->error_suppressing && ($offset || $can_be_empty))
+                    || $has_null
+                ) {
+                    $context->vars_in_scope[$list_var_id]->addType(new TNull);
+                }
+            }
         }
     }
 
     private static function analyzePropertyAssignment(
         StatementsAnalyzer $statements_analyzer,
-        \Psalm\Codebase $codebase,
+        Codebase $codebase,
         PhpParser\Node\Expr\PropertyFetch $assign_var,
         Context $context,
         ?PhpParser\Node\Expr $assign_value,
-        Type\Union $assign_value_type,
+        Union $assign_value_type,
         ?string $var_id
     ): void {
         if (!$assign_var->name instanceof PhpParser\Node\Identifier) {
@@ -1508,10 +1496,14 @@ class AssignmentAnalyzer
             // this can happen when the user actually means to type $this-><autocompleted>, but there's
             // a variable on the next line
             if (ExpressionAnalyzer::analyze($statements_analyzer, $assign_var->var, $context) === false) {
+                $context->inside_general_use = $was_inside_general_use;
+
                 return;
             }
 
             if (ExpressionAnalyzer::analyze($statements_analyzer, $assign_var->name, $context) === false) {
+                $context->inside_general_use = $was_inside_general_use;
+
                 return;
             }
 
@@ -1549,7 +1541,7 @@ class AssignmentAnalyzer
 
                 if ($stmt_var_type->hasObjectType()) {
                     foreach ($stmt_var_type->getAtomicTypes() as $type) {
-                        if ($type instanceof Type\Atomic\TNamedObject) {
+                        if ($type instanceof TNamedObject) {
                             $codebase->analyzer->addMixedMemberName(
                                 strtolower($type->value) . '::$',
                                 $context->calling_method_id ?: $statements_analyzer->getFileName()
@@ -1572,16 +1564,14 @@ class AssignmentAnalyzer
             && !$context->collect_initializations
         ) {
             if ($context->mutation_free || $context->external_mutation_free) {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new ImpurePropertyAssignment(
                         'Cannot assign to a property from a mutation-free context',
                         new CodeLocation($statements_analyzer, $assign_var)
                     ),
                     $statements_analyzer->getSuppressedIssues()
-                )) {
-                    // fall through
-                }
-            } elseif ($statements_analyzer->getSource() instanceof \Psalm\Internal\Analyzer\FunctionLikeAnalyzer
+                );
+            } elseif ($statements_analyzer->getSource() instanceof FunctionLikeAnalyzer
                 && $statements_analyzer->getSource()->track_mutations
             ) {
                 if (!$assign_var->var instanceof PhpParser\Node\Expr\Variable
@@ -1597,10 +1587,10 @@ class AssignmentAnalyzer
 
     private static function analyzeAssignmentToVariable(
         StatementsAnalyzer $statements_analyzer,
-        \Psalm\Codebase $codebase,
+        Codebase $codebase,
         PhpParser\Node\Expr\Variable $assign_var,
         ?PhpParser\Node\Expr $assign_value,
-        Type\Union $assign_value_type,
+        Union $assign_value_type,
         ?string $var_id,
         Context $context
     ): void {
@@ -1671,10 +1661,10 @@ class AssignmentAnalyzer
                         || ($assign_value instanceof PhpParser\Node\Expr\BooleanNot
                             && $assign_value->expr instanceof PhpParser\Node\Expr\BinaryOp))
                 ) {
-                    $var_object_id = \spl_object_id($assign_var);
-                    $cond_object_id = \spl_object_id($assign_value);
+                    $var_object_id = spl_object_id($assign_var);
+                    $cond_object_id = spl_object_id($assign_value);
 
-                    $right_clauses = \Psalm\Internal\Algebra\FormulaGenerator::getFormula(
+                    $right_clauses = FormulaGenerator::getFormula(
                         $cond_object_id,
                         $cond_object_id,
                         $assign_value,
@@ -1688,13 +1678,13 @@ class AssignmentAnalyzer
                         $right_clauses
                     );
 
-                    $assignment_clauses = \Psalm\Internal\Algebra::combineOredClauses(
-                        [new \Psalm\Internal\Clause([$var_id => ['falsy']], $var_object_id, $var_object_id)],
+                    $assignment_clauses = Algebra::combineOredClauses(
+                        [new Clause([$var_id => [new Falsy()]], $var_object_id, $var_object_id)],
                         $right_clauses,
                         $cond_object_id
                     );
 
-                    $context->clauses = \array_merge($context->clauses, $assignment_clauses);
+                    $context->clauses = array_merge($context->clauses, $assignment_clauses);
                 }
             }
         } else {
@@ -1702,6 +1692,8 @@ class AssignmentAnalyzer
             $context->inside_general_use = true;
 
             if (ExpressionAnalyzer::analyze($statements_analyzer, $assign_var->name, $context) === false) {
+                $context->inside_general_use = $was_inside_general_use;
+
                 return;
             }
 

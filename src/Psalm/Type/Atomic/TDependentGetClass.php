@@ -1,6 +1,8 @@
 <?php
+
 namespace Psalm\Type\Atomic;
 
+use Psalm\Type\Atomic;
 use Psalm\Type\Union;
 
 /**
@@ -44,17 +46,17 @@ class TDependentGetClass extends TString implements DependentType
             . '>';
     }
 
-    public function getVarId() : string
+    public function getVarId(): string
     {
         return $this->typeof;
     }
 
-    public function getReplacement() : \Psalm\Type\Atomic
+    public function getReplacement(): Atomic
     {
         return new TClassString();
     }
 
-    public function canBeFullyExpressedInPhp(int $php_major_version, int $php_minor_version): bool
+    public function canBeFullyExpressedInPhp(int $analysis_php_version_id): bool
     {
         return false;
     }

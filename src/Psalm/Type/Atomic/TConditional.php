@@ -1,15 +1,17 @@
 <?php
+
 namespace Psalm\Type\Atomic;
 
 use Psalm\Codebase;
 use Psalm\Internal\Type\TemplateInferredTypeReplacer;
 use Psalm\Internal\Type\TemplateResult;
+use Psalm\Type\Atomic;
 use Psalm\Type\Union;
 
 /**
  * Internal representation of a conditional return type in phpdoc. For example ($param1 is int ? int : string)
  */
-class TConditional extends \Psalm\Type\Atomic
+class TConditional extends Atomic
 {
     /**
      * @var string
@@ -80,7 +82,7 @@ class TConditional extends \Psalm\Type\Atomic
         return $this->__toString();
     }
 
-    public function getAssertionString(bool $exact = false): string
+    public function getAssertionString(): string
     {
         return '';
     }
@@ -104,8 +106,7 @@ class TConditional extends \Psalm\Type\Atomic
         ?string $namespace,
         array $aliased_classes,
         ?string $this_class,
-        int $php_major_version,
-        int $php_minor_version
+        int $analysis_php_version_id
     ): ?string {
         return null;
     }
@@ -123,12 +124,12 @@ class TConditional extends \Psalm\Type\Atomic
         return '';
     }
 
-    public function getChildNodes() : array
+    public function getChildNodes(): array
     {
         return [$this->conditional_type, $this->if_type, $this->else_type];
     }
 
-    public function canBeFullyExpressedInPhp(int $php_major_version, int $php_minor_version): bool
+    public function canBeFullyExpressedInPhp(int $analysis_php_version_id): bool
     {
         return false;
     }
@@ -136,7 +137,7 @@ class TConditional extends \Psalm\Type\Atomic
     public function replaceTemplateTypesWithArgTypes(
         TemplateResult $template_result,
         ?Codebase $codebase
-    ) : void {
+    ): void {
         TemplateInferredTypeReplacer::replace(
             $this->conditional_type,
             $template_result,

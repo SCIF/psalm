@@ -6,6 +6,9 @@ use function microtime;
 use function strpos;
 use function strtolower;
 
+/**
+ * @internal
+ */
 class FakeFileProvider extends FileProvider
 {
     /**
@@ -49,9 +52,6 @@ class FakeFileProvider extends FileProvider
         return $this->fake_file_times[$file_path] ?? parent::getModifiedTime($file_path);
     }
 
-    /**
-     * @psalm-suppress InvalidPropertyAssignmentValue because microtime is needed for cache busting
-     */
     public function registerFile(string $file_path, string $file_contents): void
     {
         $this->fake_files[$file_path] = $file_contents;
@@ -60,12 +60,13 @@ class FakeFileProvider extends FileProvider
 
     /**
      * @param array<string> $file_extensions
+     * @param null|callable(string):bool $filter
      *
      * @return list<string>
      */
-    public function getFilesInDir(string $dir_path, array $file_extensions): array
+    public function getFilesInDir(string $dir_path, array $file_extensions, callable $filter = null): array
     {
-        $file_paths = parent::getFilesInDir($dir_path, $file_extensions);
+        $file_paths = parent::getFilesInDir($dir_path, $file_extensions, $filter);
 
         foreach ($this->fake_files as $file_path => $_) {
             if (strpos(strtolower($file_path), strtolower($dir_path)) === 0) {

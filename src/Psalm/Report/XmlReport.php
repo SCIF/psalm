@@ -1,4 +1,5 @@
 <?php
+
 namespace Psalm\Report;
 
 use LSS\Array2XML;
@@ -23,18 +24,14 @@ class XmlReport extends Report
 
                         if (null !== $issue_data['taint_trace']) {
                             $issue_data['taint_trace'] = array_map(
-                                static function ($trace): array {
-                                    return (array) $trace;
-                                },
+                                static fn($trace): array => (array) $trace,
                                 $issue_data['taint_trace']
                             );
                         }
 
                         if (null !== $issue_data['other_references']) {
                             $issue_data['other_references'] = array_map(
-                                static function (DataFlowNodeData $reference): array {
-                                    return (array) $reference;
-                                },
+                                static fn(DataFlowNodeData $reference): array => (array) $reference,
                                 $issue_data['other_references']
                             );
                         }

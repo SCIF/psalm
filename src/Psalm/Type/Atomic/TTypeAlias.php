@@ -1,10 +1,13 @@
 <?php
+
 namespace Psalm\Type\Atomic;
+
+use Psalm\Type\Atomic;
 
 use function array_map;
 use function implode;
 
-class TTypeAlias extends \Psalm\Type\Atomic
+class TTypeAlias extends Atomic
 {
     /**
      * @var array<string, TTypeAlias>|null
@@ -49,9 +52,7 @@ class TTypeAlias extends \Psalm\Type\Atomic
             return $this->getKey() . '&' . implode(
                 '&',
                 array_map(
-                    static function ($type) {
-                        return $type->getId(true);
-                    },
+                    static fn($type): string => $type->getId(true),
                     $this->extra_types
                 )
             );
@@ -67,18 +68,17 @@ class TTypeAlias extends \Psalm\Type\Atomic
         ?string $namespace,
         array $aliased_classes,
         ?string $this_class,
-        int $php_major_version,
-        int $php_minor_version
+        int $analysis_php_version_id
     ): ?string {
         return null;
     }
 
-    public function canBeFullyExpressedInPhp(int $php_major_version, int $php_minor_version): bool
+    public function canBeFullyExpressedInPhp(int $analysis_php_version_id): bool
     {
         return false;
     }
 
-    public function getAssertionString(bool $exact = false): string
+    public function getAssertionString(): string
     {
         return 'mixed';
     }

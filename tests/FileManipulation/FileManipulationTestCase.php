@@ -1,20 +1,24 @@
 <?php
+
 namespace Psalm\Tests\FileManipulation;
 
 use Psalm\Context;
+use Psalm\Internal\Analyzer\ProjectAnalyzer;
 use Psalm\Internal\Provider\FakeFileProvider;
+use Psalm\Internal\Provider\Providers;
 use Psalm\Internal\RuntimeCaches;
-use Psalm\Tests\Internal\Provider;
+use Psalm\Tests\Internal\Provider\FakeParserCacheProvider;
+use Psalm\Tests\TestCase;
 use Psalm\Tests\TestConfig;
 
 use function strpos;
 
-abstract class FileManipulationTestCase extends \Psalm\Tests\TestCase
+abstract class FileManipulationTestCase extends TestCase
 {
-    /** @var \Psalm\Internal\Analyzer\ProjectAnalyzer */
+    /** @var ProjectAnalyzer */
     protected $project_analyzer;
 
-    public function setUp() : void
+    public function setUp(): void
     {
         RuntimeCaches::clearAll();
 
@@ -24,19 +28,15 @@ abstract class FileManipulationTestCase extends \Psalm\Tests\TestCase
     /**
      * @dataProvider providerValidCodeParse
      *
-     * @param string $input_code
-     * @param string $output_code
-     * @param string $php_version
      * @param string[] $issues_to_fix
-     * @param bool $safe_types
      *
      */
     public function testValidCode(
-        $input_code,
-        $output_code,
-        $php_version,
+        string $input_code,
+        string $output_code,
+        string $php_version,
         array $issues_to_fix,
-        $safe_types,
+        bool $safe_types,
         bool $allow_backwards_incompatible_changes = true
     ): void {
         $test_name = $this->getTestName();
@@ -46,11 +46,11 @@ abstract class FileManipulationTestCase extends \Psalm\Tests\TestCase
 
         $config = new TestConfig();
 
-        $this->project_analyzer = new \Psalm\Internal\Analyzer\ProjectAnalyzer(
+        $this->project_analyzer = new ProjectAnalyzer(
             $config,
-            new \Psalm\Internal\Provider\Providers(
+            new Providers(
                 $this->file_provider,
-                new Provider\FakeParserCacheProvider()
+                new FakeParserCacheProvider()
             )
         );
 
@@ -68,7 +68,7 @@ abstract class FileManipulationTestCase extends \Psalm\Tests\TestCase
             $input_code
         );
 
-        $this->project_analyzer->setPhpVersion($php_version);
+        $this->project_analyzer->setPhpVersion($php_version, 'tests');
 
         $keyed_issues_to_fix = [];
 
@@ -96,7 +96,7 @@ abstract class FileManipulationTestCase extends \Psalm\Tests\TestCase
     }
 
     /**
-     * @return array<string,array{string,string,string,string[],bool}>
+     * @return array<string,array{input:string,output:string,php_version:string,issues_to_fix:string[],safe_types:bool}>
      */
     abstract public function providerValidCodeParse(): array;
 }

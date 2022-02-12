@@ -1,27 +1,38 @@
 <?php
+
 namespace Psalm\Internal\Provider\ReturnTypeProvider;
 
+use Psalm\Internal\Analyzer\StatementsAnalyzer;
 use Psalm\Internal\Type\Comparator\UnionTypeComparator;
 use Psalm\Plugin\EventHandler\Event\FunctionReturnTypeProviderEvent;
+use Psalm\Plugin\EventHandler\FunctionReturnTypeProviderInterface;
 use Psalm\Type;
+use Psalm\Type\Atomic\TBool;
+use Psalm\Type\Atomic\TLiteralInt;
+use Psalm\Type\Atomic\TLiteralString;
+use Psalm\Type\Atomic\TNull;
+use Psalm\Type\Union;
 
 use function count;
 
-class VersionCompareReturnTypeProvider implements \Psalm\Plugin\EventHandler\FunctionReturnTypeProviderInterface
+/**
+ * @internal
+ */
+class VersionCompareReturnTypeProvider implements FunctionReturnTypeProviderInterface
 {
     /**
      * @return array<lowercase-string>
      */
-    public static function getFunctionIds() : array
+    public static function getFunctionIds(): array
     {
         return ['version_compare'];
     }
 
-    public static function getFunctionReturnType(FunctionReturnTypeProviderEvent $event) : Type\Union
+    public static function getFunctionReturnType(FunctionReturnTypeProviderEvent $event): Union
     {
         $statements_source = $event->getStatementsSource();
         $call_args = $event->getCallArgs();
-        if (!$statements_source instanceof \Psalm\Internal\Analyzer\StatementsAnalyzer) {
+        if (!$statements_source instanceof StatementsAnalyzer) {
             return Type::getMixed();
         }
 
@@ -30,21 +41,21 @@ class VersionCompareReturnTypeProvider implements \Psalm\Plugin\EventHandler\Fun
 
             if ($operator_type) {
                 if (!$operator_type->hasMixed()) {
-                    $acceptable_operator_type = new Type\Union([
-                        new Type\Atomic\TLiteralString('<'),
-                        new Type\Atomic\TLiteralString('lt'),
-                        new Type\Atomic\TLiteralString('<='),
-                        new Type\Atomic\TLiteralString('le'),
-                        new Type\Atomic\TLiteralString('>'),
-                        new Type\Atomic\TLiteralString('gt'),
-                        new Type\Atomic\TLiteralString('>='),
-                        new Type\Atomic\TLiteralString('ge'),
-                        new Type\Atomic\TLiteralString('=='),
-                        new Type\Atomic\TLiteralString('='),
-                        new Type\Atomic\TLiteralString('eq'),
-                        new Type\Atomic\TLiteralString('!='),
-                        new Type\Atomic\TLiteralString('<>'),
-                        new Type\Atomic\TLiteralString('ne'),
+                    $acceptable_operator_type = new Union([
+                        new TLiteralString('<'),
+                        new TLiteralString('lt'),
+                        new TLiteralString('<='),
+                        new TLiteralString('le'),
+                        new TLiteralString('>'),
+                        new TLiteralString('gt'),
+                        new TLiteralString('>='),
+                        new TLiteralString('ge'),
+                        new TLiteralString('=='),
+                        new TLiteralString('='),
+                        new TLiteralString('eq'),
+                        new TLiteralString('!='),
+                        new TLiteralString('<>'),
+                        new TLiteralString('ne'),
                     ]);
 
                     $codebase = $statements_source->getCodebase();
@@ -59,16 +70,16 @@ class VersionCompareReturnTypeProvider implements \Psalm\Plugin\EventHandler\Fun
                 }
             }
 
-            return new Type\Union([
-                new Type\Atomic\TBool,
-                new Type\Atomic\TNull,
+            return new Union([
+                new TBool,
+                new TNull,
             ]);
         }
 
-        return new Type\Union([
-            new Type\Atomic\TLiteralInt(-1),
-            new Type\Atomic\TLiteralInt(0),
-            new Type\Atomic\TLiteralInt(1),
+        return new Union([
+            new TLiteralInt(-1),
+            new TLiteralInt(0),
+            new TLiteralInt(1),
         ]);
     }
 }

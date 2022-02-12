@@ -1,8 +1,10 @@
 <?php
+
 namespace Psalm\Internal\Scanner;
 
 use PhpParser;
 use PhpParser\NodeTraverser;
+use Psalm\Aliases;
 use Psalm\Codebase;
 use Psalm\FileSource;
 use Psalm\Internal\PhpVisitor\ReflectorVisitor;
@@ -57,7 +59,7 @@ class FileScanner implements FileSource
 
         $stmts = $codebase->statements_provider->getStatementsForFile(
             $file_storage->file_path,
-            $codebase->php_major_version . '.' . $codebase->php_minor_version,
+            $codebase->analysis_php_version_id,
             $progress
         );
 
@@ -108,8 +110,8 @@ class FileScanner implements FileSource
         return $this->file_name;
     }
 
-    public function getAliases(): \Psalm\Aliases
+    public function getAliases(): Aliases
     {
-        return new \Psalm\Aliases();
+        return new Aliases();
     }
 }

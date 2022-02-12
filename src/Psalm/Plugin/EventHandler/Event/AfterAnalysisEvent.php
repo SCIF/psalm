@@ -1,6 +1,5 @@
 <?php
 
-
 namespace Psalm\Plugin\EventHandler\Event;
 
 use Psalm\Codebase;
@@ -14,7 +13,7 @@ class AfterAnalysisEvent
      */
     private $codebase;
     /**
-     * @var \Psalm\Internal\Analyzer\IssueData[][]
+     * @var IssueData[][]
      */
     private $issues;
     /**
@@ -49,7 +48,7 @@ class AfterAnalysisEvent
     }
 
     /**
-     * @return \Psalm\Internal\Analyzer\IssueData[][]
+     * @return IssueData[][]
      */
     public function getIssues(): array
     {

@@ -1,16 +1,17 @@
 <?php
+
 namespace Psalm\Tests\FileManipulation;
 
 class UnnecessaryVarAnnotationManipulationTest extends FileManipulationTestCase
 {
     /**
-     * @return array<string,array{string,string,string,string[],bool}>
+     * @return array<string,array{input:string,output:string,php_version:string,issues_to_fix:string[],safe_types:bool}>
      */
     public function providerValidCodeParse(): array
     {
         return [
             'removeSingleLineVarAnnotation' => [
-                '<?php
+                'input' => '<?php
                     function foo() : string {
                         return "hello";
                     }
@@ -20,7 +21,7 @@ class UnnecessaryVarAnnotationManipulationTest extends FileManipulationTestCase
 
                     /** @var "a"|"b" */
                     $b = foo();',
-                '<?php
+                'output' => '<?php
                     function foo() : string {
                         return "hello";
                     }
@@ -29,12 +30,12 @@ class UnnecessaryVarAnnotationManipulationTest extends FileManipulationTestCase
 
                     /** @var "a"|"b" */
                     $b = foo();',
-                '5.6',
-                ['UnnecessaryVarAnnotation'],
-                true,
+                'php_version' => '5.6',
+                'issues_to_fix' => ['UnnecessaryVarAnnotation'],
+                'safe_types' => true,
             ],
             'removeSingleLineVarAnnotationFlipped' => [
-                '<?php
+                'input' => '<?php
                     function foo() : string {
                         return "hello";
                     }
@@ -44,7 +45,7 @@ class UnnecessaryVarAnnotationManipulationTest extends FileManipulationTestCase
 
                     /** @var string */
                     $a = foo();',
-                '<?php
+                'output' => '<?php
                     function foo() : string {
                         return "hello";
                     }
@@ -53,12 +54,12 @@ class UnnecessaryVarAnnotationManipulationTest extends FileManipulationTestCase
                     $b = foo();
 
                     $a = foo();',
-                '5.6',
-                ['UnnecessaryVarAnnotation'],
-                true,
+                'php_version' => '5.6',
+                'issues_to_fix' => ['UnnecessaryVarAnnotation'],
+                'safe_types' => true,
             ],
             'removeSingleLineVarAnnotationAndType' => [
-                '<?php
+                'input' => '<?php
                     function foo() : string {
                         return "hello";
                     }
@@ -68,7 +69,7 @@ class UnnecessaryVarAnnotationManipulationTest extends FileManipulationTestCase
 
                     /** @var "a"|"b" */
                     $b = foo();',
-                '<?php
+                'output' => '<?php
                     function foo() : string {
                         return "hello";
                     }
@@ -77,12 +78,12 @@ class UnnecessaryVarAnnotationManipulationTest extends FileManipulationTestCase
 
                     /** @var "a"|"b" */
                     $b = foo();',
-                '5.6',
-                ['UnnecessaryVarAnnotation'],
-                true,
+                'php_version' => '5.6',
+                'issues_to_fix' => ['UnnecessaryVarAnnotation'],
+                'safe_types' => true,
             ],
             'removeMultipleLineVarAnnotation' => [
-                '<?php
+                'input' => '<?php
                     function foo() : string {
                         return "hello";
                     }
@@ -94,7 +95,7 @@ class UnnecessaryVarAnnotationManipulationTest extends FileManipulationTestCase
 
                     /** @var "a"|"b" */
                     $b = foo();',
-                '<?php
+                'output' => '<?php
                     function foo() : string {
                         return "hello";
                     }
@@ -103,12 +104,12 @@ class UnnecessaryVarAnnotationManipulationTest extends FileManipulationTestCase
 
                     /** @var "a"|"b" */
                     $b = foo();',
-                '5.6',
-                ['UnnecessaryVarAnnotation'],
-                true,
+                'php_version' => '5.6',
+                'issues_to_fix' => ['UnnecessaryVarAnnotation'],
+                'safe_types' => true,
             ],
             'removeMultipleLineVarAnnotationKeepComment' => [
-                '<?php
+                'input' => '<?php
                     function foo() : string {
                         return "hello";
                     }
@@ -121,7 +122,7 @@ class UnnecessaryVarAnnotationManipulationTest extends FileManipulationTestCase
 
                     /** @var "a"|"b" */
                     $b = foo();',
-                '<?php
+                'output' => '<?php
                     function foo() : string {
                         return "hello";
                     }
@@ -133,12 +134,12 @@ class UnnecessaryVarAnnotationManipulationTest extends FileManipulationTestCase
 
                     /** @var "a"|"b" */
                     $b = foo();',
-                '5.6',
-                ['UnnecessaryVarAnnotation'],
-                true,
+                'php_version' => '5.6',
+                'issues_to_fix' => ['UnnecessaryVarAnnotation'],
+                'safe_types' => true,
             ],
             'removeMultipleLineVarAnnotationOnce' => [
-                '<?php
+                'input' => '<?php
                     /** @return string[] */
                     function foo() : array {
                         return ["hello"];
@@ -149,7 +150,7 @@ class UnnecessaryVarAnnotationManipulationTest extends FileManipulationTestCase
                      * @var string $v
                      */
                     foreach (foo() as $k => $v) {}',
-                '<?php
+                'output' => '<?php
                     /** @return string[] */
                     function foo() : array {
                         return ["hello"];
@@ -159,9 +160,9 @@ class UnnecessaryVarAnnotationManipulationTest extends FileManipulationTestCase
                      * @var int $k
                      */
                     foreach (foo() as $k => $v) {}',
-                '5.6',
-                ['UnnecessaryVarAnnotation'],
-                true,
+                'php_version' => '5.6',
+                'issues_to_fix' => ['UnnecessaryVarAnnotation'],
+                'safe_types' => true,
             ],
         ];
     }

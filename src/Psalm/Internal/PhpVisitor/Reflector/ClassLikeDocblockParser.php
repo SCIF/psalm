@@ -1,7 +1,12 @@
 <?php
+
 namespace Psalm\Internal\PhpVisitor\Reflector;
 
-use PhpParser;
+use Exception;
+use PhpParser\Comment\Doc;
+use PhpParser\Node;
+use PhpParser\Node\Stmt\ClassMethod;
+use PhpParser\Node\Stmt\Class_;
 use Psalm\Aliases;
 use Psalm\DocComment;
 use Psalm\Exception\DocblockParseException;
@@ -9,8 +14,11 @@ use Psalm\Exception\IncorrectDocblockException;
 use Psalm\Exception\TypeParseTreeException;
 use Psalm\Internal\Analyzer\CommentAnalyzer;
 use Psalm\Internal\Analyzer\ProjectAnalyzer;
+use Psalm\Internal\Provider\StatementsProvider;
 use Psalm\Internal\Scanner\ClassLikeDocblockComment;
-use Psalm\Internal\Type\ParseTree;
+use Psalm\Internal\Type\ParseTree\MethodParamTree;
+use Psalm\Internal\Type\ParseTree\MethodTree;
+use Psalm\Internal\Type\ParseTree\MethodWithReturnTypeTree;
 use Psalm\Internal\Type\ParseTreeCreator;
 use Psalm\Internal\Type\TypeParser;
 use Psalm\Internal\Type\TypeTokenizer;
@@ -18,6 +26,7 @@ use Psalm\Internal\Type\TypeTokenizer;
 use function array_key_first;
 use function array_shift;
 use function count;
+use function explode;
 use function implode;
 use function in_array;
 use function preg_match;
@@ -41,12 +50,10 @@ class ClassLikeDocblockParser
 {
     /**
      * @throws DocblockParseException if there was a problem parsing the docblock
-     *
-     * @psalm-suppress MixedArrayAccess
      */
     public static function parse(
-        \PhpParser\Node $node,
-        PhpParser\Comment\Doc $comment,
+        Node $node,
+        Doc $comment,
         Aliases $aliases
     ): ClassLikeDocblockComment {
         $parsed_docblock = DocComment::parsePreservingLength($comment);
@@ -179,8 +186,7 @@ class ClassLikeDocblockParser
             }
         }
 
-        if (isset($parsed_docblock->tags['psalm-yield'])
-        ) {
+        if (isset($parsed_docblock->tags['psalm-yield'])) {
             $yield = reset($parsed_docblock->tags['psalm-yield']);
 
             $info->yield = trim(preg_replace('@^[ \t]*\*@m', '', $yield));
@@ -207,13 +213,13 @@ class ClassLikeDocblockParser
         }
 
         if (isset($parsed_docblock->tags['psalm-internal'])) {
-            $psalm_internal = reset($parsed_docblock->tags['psalm-internal']);
-            if ($psalm_internal) {
-                $info->psalm_internal = $psalm_internal;
-            } else {
+            $psalm_internal = trim(reset($parsed_docblock->tags['psalm-internal']));
+
+            if (!$psalm_internal) {
                 throw new DocblockParseException('psalm-internal annotation used without specifying namespace');
             }
 
+            $info->psalm_internal = $psalm_internal;
             $info->internal = true;
         }
 
@@ -325,7 +331,7 @@ class ClassLikeDocblockParser
                 $end_of_method_regex = '/(?<!array\()\) ?(\: ?(\??[\\\\a-zA-Z0-9_]+))?/';
 
                 if (preg_match($end_of_method_regex, $method_entry, $matches, PREG_OFFSET_CAPTURE)) {
-                    $method_entry = substr($method_entry, 0, (int) $matches[0][1] + strlen((string) $matches[0][0]));
+                    $method_entry = substr($method_entry, 0, $matches[0][1] + strlen($matches[0][0]));
                 }
 
                 $method_entry = str_replace([', ', '( '], [',', '('], $method_entry);
@@ -352,12 +358,12 @@ class ClassLikeDocblockParser
                     throw new DocblockParseException($method_entry . ' is not a valid method');
                 }
 
-                if (!$method_tree instanceof ParseTree\MethodWithReturnTypeTree
-                    && !$method_tree instanceof ParseTree\MethodTree) {
+                if (!$method_tree instanceof MethodWithReturnTypeTree
+                    && !$method_tree instanceof MethodTree) {
                     throw new DocblockParseException($method_entry . ' is not a valid method');
                 }
 
-                if ($method_tree instanceof ParseTree\MethodWithReturnTypeTree) {
+                if ($method_tree instanceof MethodWithReturnTypeTree) {
                     if (!$has_return) {
                         $docblock_lines[] = '@return ' . TypeParser::getTypeFromTree(
                             $method_tree->children[1],
@@ -368,14 +374,14 @@ class ClassLikeDocblockParser
                     $method_tree = $method_tree->children[0];
                 }
 
-                if (!$method_tree instanceof ParseTree\MethodTree) {
+                if (!$method_tree instanceof MethodTree) {
                     throw new DocblockParseException($method_entry . ' is not a valid method');
                 }
 
                 $args = [];
 
                 foreach ($method_tree->children as $method_tree_child) {
-                    if (!$method_tree_child instanceof ParseTree\MethodParamTree) {
+                    if (!$method_tree_child instanceof MethodParamTree) {
                         throw new DocblockParseException($method_entry . ' is not a valid method');
                     }
 
@@ -388,7 +394,7 @@ class ClassLikeDocblockParser
                     if ($method_tree_child->children) {
                         try {
                             $param_type = TypeParser::getTypeFromTree($method_tree_child->children[0], $codebase);
-                        } catch (\Exception $e) {
+                        } catch (Exception $e) {
                             throw new DocblockParseException(
                                 'Badly-formatted @method string ' . $method_entry . ' - ' . $e
                             );
@@ -414,33 +420,35 @@ class ClassLikeDocblockParser
                 try {
                     $has_errors = false;
 
-                    $statements = \Psalm\Internal\Provider\StatementsProvider::parseStatements(
+                    $statements = StatementsProvider::parseStatements(
                         $php_string,
-                        $codebase->php_major_version . '.' . $codebase->php_minor_version,
+                        $codebase->analysis_php_version_id,
                         $has_errors
                     );
-                } catch (\Exception $e) {
+                } catch (Exception $e) {
                     throw new DocblockParseException('Badly-formatted @method string ' . $method_entry);
                 }
 
                 if (!$statements
-                    || !$statements[0] instanceof \PhpParser\Node\Stmt\Class_
+                    || !$statements[0] instanceof Class_
                     || !isset($statements[0]->stmts[0])
-                    || !$statements[0]->stmts[0] instanceof \PhpParser\Node\Stmt\ClassMethod
+                    || !$statements[0]->stmts[0] instanceof ClassMethod
                 ) {
                     throw new DocblockParseException('Badly-formatted @method string ' . $method_entry);
                 }
 
-                /** @var \PhpParser\Comment\Doc */
+                /** @var Doc */
                 $node_doc_comment = $node->getDocComment();
 
-                $statements[0]->stmts[0]->setAttribute('startLine', $node_doc_comment->getStartLine());
+                $method_offset = self::getMethodOffset($comment, $method_entry);
+
+                $statements[0]->stmts[0]->setAttribute('startLine', $node_doc_comment->getStartLine() + $method_offset);
                 $statements[0]->stmts[0]->setAttribute('startFilePos', $node_doc_comment->getStartFilePos());
                 $statements[0]->stmts[0]->setAttribute('endFilePos', $node->getAttribute('startFilePos'));
 
                 if ($doc_comment = $statements[0]->stmts[0]->getDocComment()) {
                     $statements[0]->stmts[0]->setDocComment(
-                        new \PhpParser\Comment\Doc(
+                        new Doc(
                             $doc_comment->getText(),
                             $comment->getStartLine() + substr_count(
                                 $comment->getText(),
@@ -484,11 +492,11 @@ class ClassLikeDocblockParser
      *
      */
     protected static function addMagicPropertyToInfo(
-        PhpParser\Comment\Doc $comment,
+        Doc $comment,
         ClassLikeDocblockComment $info,
         array $specials,
         string $property_tag
-    ) : void {
+    ): void {
         $magic_property_comments = $specials[$property_tag] ?? [];
 
         foreach ($magic_property_comments as $offset => $property) {
@@ -541,5 +549,20 @@ class ClassLikeDocblockParser
                 throw new DocblockParseException('Badly-formatted @property');
             }
         }
+    }
+
+    private static function getMethodOffset(Doc $comment, string $method_entry): int
+    {
+        $lines = explode("\n", $comment->getText());
+        $method_offset = 0;
+
+        foreach ($lines as $i => $line) {
+            if (strpos($line, $method_entry) !== false) {
+                $method_offset = $i;
+                break;
+            }
+        }
+
+        return $method_offset;
     }
 }

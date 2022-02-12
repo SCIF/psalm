@@ -7,32 +7,46 @@ use DOMDocument;
 use DOMXPath;
 use PHPUnit\Framework\Constraint\Constraint;
 use Psalm\Config;
+use Psalm\Config\IssueHandler;
 use Psalm\Context;
 use Psalm\DocComment;
+use Psalm\Exception\CodeException;
+use Psalm\Internal\Analyzer\ProjectAnalyzer;
 use Psalm\Internal\Provider\FakeFileProvider;
+use Psalm\Internal\Provider\Providers;
 use Psalm\Internal\RuntimeCaches;
-use Psalm\Tests\Internal\Provider;
+use Psalm\Tests\Internal\Provider\FakeParserCacheProvider;
+use UnexpectedValueException;
 
+use function array_diff;
 use function array_filter;
 use function array_keys;
+use function array_map;
 use function array_shift;
 use function count;
 use function dirname;
 use function explode;
+use function file;
 use function file_exists;
 use function file_get_contents;
 use function glob;
 use function implode;
 use function in_array;
+use function preg_match;
 use function preg_quote;
+use function scandir;
 use function sort;
 use function str_replace;
+use function strlen;
 use function strpos;
 use function substr;
 use function trim;
+use function usort;
 use function var_export;
 
 use const DIRECTORY_SEPARATOR;
+use const FILE_IGNORE_NEW_LINES;
+use const FILE_SKIP_EMPTY_LINES;
 use const LIBXML_NONET;
 
 class DocumentationTest extends TestCase
@@ -51,7 +65,7 @@ class DocumentationTest extends TestCase
      * annotations that we don’t want documented
      */
     private const INTENTIONALLY_UNDOCUMENTED_ANNOTATIONS = [
-        '@psalm-self-out', // I'm fairly sure it's intentionally undocumented, but can't find the reference
+        '@psalm-self-out', // Not documented as it's a legacy alias of @psalm-this-out
         '@psalm-variadic',
     ];
 
@@ -74,7 +88,7 @@ class DocumentationTest extends TestCase
         '@psalm-yield',
     ];
 
-    /** @var \Psalm\Internal\Analyzer\ProjectAnalyzer */
+    /** @var ProjectAnalyzer */
     protected $project_analyzer;
 
     /** @var string */
@@ -85,10 +99,10 @@ class DocumentationTest extends TestCase
      */
     private static function getCodeBlocksFromDocs(): array
     {
-        $issues_dir = dirname(dirname(__FILE__)) . DIRECTORY_SEPARATOR . 'docs' . DIRECTORY_SEPARATOR . 'running_psalm' . DIRECTORY_SEPARATOR . 'issues';
+        $issues_dir = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'docs' . DIRECTORY_SEPARATOR . 'running_psalm' . DIRECTORY_SEPARATOR . 'issues';
 
         if (!file_exists($issues_dir)) {
-            throw new \UnexpectedValueException('docs not found');
+            throw new UnexpectedValueException('docs not found');
         }
 
         $issue_code = [];
@@ -122,26 +136,26 @@ class DocumentationTest extends TestCase
         return $issue_code;
     }
 
-    public function setUp() : void
+    public function setUp(): void
     {
         RuntimeCaches::clearAll();
 
         $this->file_provider = new FakeFileProvider();
 
-        $this->project_analyzer = new \Psalm\Internal\Analyzer\ProjectAnalyzer(
+        $this->project_analyzer = new ProjectAnalyzer(
             new TestConfig(),
-            new \Psalm\Internal\Provider\Providers(
+            new Providers(
                 $this->file_provider,
-                new Provider\FakeParserCacheProvider()
+                new FakeParserCacheProvider()
             )
         );
 
-        $this->project_analyzer->setPhpVersion('8.0');
+        $this->project_analyzer->setPhpVersion('8.0', 'tests');
     }
 
     public function testAllIssuesCoveredInConfigSchema(): void
     {
-        $all_issues = \Psalm\Config\IssueHandler::getAllIssueTypes();
+        $all_issues = IssueHandler::getAllIssueTypes();
         $all_issues[] = 'PluginIssue'; // not an ordinary issue
         sort($all_issues);
 
@@ -164,7 +178,7 @@ class DocumentationTest extends TestCase
 
     public function testAllIssuesCovered(): void
     {
-        $all_issues = \Psalm\Config\IssueHandler::getAllIssueTypes();
+        $all_issues = IssueHandler::getAllIssueTypes();
         $all_issues[] = 'ParseError';
         $all_issues[] = 'PluginIssue';
 
@@ -204,7 +218,7 @@ class DocumentationTest extends TestCase
             $this->markTestSkipped();
         }
 
-        $this->project_analyzer->setPhpVersion($php_version);
+        $this->project_analyzer->setPhpVersion($php_version, 'tests');
 
         if ($check_references) {
             $this->project_analyzer->getCodebase()->reportUnusedCode();
@@ -222,7 +236,7 @@ class DocumentationTest extends TestCase
             $this->project_analyzer->getCodebase()->config->setCustomErrorLevel($error_level, Config::REPORT_SUPPRESS);
         }
 
-        $this->expectException(\Psalm\Exception\CodeException::class);
+        $this->expectException(CodeException::class);
         $this->expectExceptionMessageRegExp('/\b' . preg_quote($error_message, '/') . '\b/');
 
         $codebase = $this->project_analyzer->getCodebase();
@@ -261,9 +275,6 @@ class DocumentationTest extends TestCase
                     continue 2;
 
                 case 'InvalidStringClass':
-                    continue 2;
-
-                case 'ForbiddenEcho':
                     continue 2;
 
                 case 'PluginClass':
@@ -308,6 +319,8 @@ class DocumentationTest extends TestCase
                 case 'InvalidEnumCaseValue':
                 case 'DuplicateEnumCase':
                 case 'DuplicateEnumCaseValue':
+                case 'NoEnumProperties':
+                case 'DeprecatedConstant':
                     $php_version = '8.1';
                     break;
             }
@@ -328,7 +341,7 @@ class DocumentationTest extends TestCase
 
     public function testShortcodesAreUnique(): void
     {
-        $all_issues = \Psalm\Config\IssueHandler::getAllIssueTypes();
+        $all_issues = IssueHandler::getAllIssueTypes();
         $all_shortcodes = [];
 
         foreach ($all_issues as $issue_type) {
@@ -340,9 +353,7 @@ class DocumentationTest extends TestCase
 
         $duplicate_shortcodes = array_filter(
             $all_shortcodes,
-            function ($issues): bool {
-                return count($issues) > 1;
-            }
+            fn($issues): bool => count($issues) > 1
         );
 
         $this->assertEquals(
@@ -414,5 +425,53 @@ class DocumentationTest extends TestCase
                 return $this->exporter()->shortenedExport($other) . ' ' . $this->toString();
             }
         };
+    }
+
+    /**
+     * Tests that issues.md contains the expected links to issue documentation.
+     * issues.md can be generated automatically with bin/generate_documentation_issues_list.php.
+     */
+    public function testIssuesIndex(): void
+    {
+        $docs_dir = dirname(__DIR__) . DIRECTORY_SEPARATOR . "docs" . DIRECTORY_SEPARATOR . "running_psalm" . DIRECTORY_SEPARATOR;
+        $issues_index = "{$docs_dir}issues.md";
+        $issues_dir = "{$docs_dir}issues";
+
+        if (!file_exists($issues_dir)) {
+            throw new UnexpectedValueException("Issues documentation not found");
+        }
+
+        if (!file_exists($issues_index)) {
+            throw new UnexpectedValueException("Issues index not found");
+        }
+
+        $issues_index_contents = file($issues_index, FILE_IGNORE_NEW_LINES|FILE_SKIP_EMPTY_LINES);
+        array_shift($issues_index_contents); // Remove title
+
+        $issues_index_list = array_map(function (string $issues_line) {
+            preg_match('/^ - \[([^\]]*)\]\(issues\/\1\.md\)$/', $issues_line, $matches);
+            $this->assertCount(2, $matches, "Invalid format in issues index: $issues_line");
+            return $matches[1];
+        }, $issues_index_contents);
+
+        $issue_files = array_filter(array_map(function (string $issue_file) {
+            if ($issue_file === "." || $issue_file === "..") {
+                return false;
+            }
+            $this->assertStringEndsWith(".md", $issue_file, "Invalid file in issues documentation: $issue_file");
+            return substr($issue_file, 0, strlen($issue_file) - 3);
+        }, scandir($issues_dir)));
+
+        $unlisted_issues = array_diff($issue_files, $issues_index_list);
+        $this->assertEmpty($unlisted_issues, "Issue documentation missing from issues.md: " . implode(", ", $unlisted_issues));
+
+        $missing_documentation = array_diff($issues_index_list, $issue_files);
+        $this->assertEmpty($missing_documentation, "issues.md has link to non-existent documentation for: " . implode(", ", $missing_documentation));
+
+        $sorted = $issues_index_list;
+        usort($sorted, "strcasecmp");
+        for ($i = 0; $i < count($sorted); ++$i) {
+            $this->assertEquals($sorted[$i], $issues_index_list[$i], "issues.md out of order, expected {$sorted[$i]} before {$issues_index_list[$i]}");
+        }
     }
 }
