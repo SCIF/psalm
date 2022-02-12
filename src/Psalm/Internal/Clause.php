@@ -3,6 +3,7 @@
 namespace Psalm\Internal;
 
 use Psalm\Storage\Assertion;
+use Psalm\Storage\Possibilities;
 use Psalm\Type\Atomic\TClassConstant;
 use Psalm\Type\Atomic\TEnumCase;
 use Psalm\Type\Atomic\TLiteralFloat;
@@ -114,8 +115,8 @@ class Clause
             }
 
             $possibility_strings = array_map(
-                fn($possibility_map) => array_map(
-                    fn($possibility) => (string)$possibility,
+                static fn(array $possibility_map): array => array_map(
+                    static fn(Assertion $possibility): string => (string) $possibility,
                     $possibility_map
                 ),
                 $possibilities
