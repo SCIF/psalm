@@ -114,16 +114,13 @@ class Clause
                 sort($possibilities[$i]);
             }
 
-            $possibility_strings = array_map(
-                static fn(array $possibility_map): array => array_map(
-                    static fn(Assertion $possibility): string => (string) $possibility,
-                    $possibility_map
-                ),
-                $possibilities
-            );
+            foreach ($possibilities as $key1 => $possibility_map) {
+                foreach ($possibility_map as $possibility) {
+                    $this->possibility_strings[$key1][] = (string) $possibility;
+                }
+            }
 
-            $this->hash = md5(json_encode($possibility_strings, JSON_THROW_ON_ERROR));
-            $this->possibility_strings = $possibility_strings;
+            $this->hash = md5(json_encode($this->possibility_strings, JSON_THROW_ON_ERROR));
         }
 
         $this->possibilities = $possibilities;

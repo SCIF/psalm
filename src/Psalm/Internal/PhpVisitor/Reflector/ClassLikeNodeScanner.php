@@ -794,13 +794,20 @@ class ClassLikeNodeScanner
             }
         }
 
-        $converted_aliases = array_map(
-            [$this, 'convertClassAliases'],
-            $this->classlike_type_aliases
-        );
+        $converted_aliases = [];
+        foreach ($this->classlike_type_aliases as $key => $type) {
+            try {
+                $union = TypeParser::parseTokens(
+                    $type->replacement_tokens,
+                    null,
+                    [],
+                    $this->type_aliases
+                );
 
-        foreach ($converted_aliases as $key => $type) {
-            if (!$type) {
+                $union->setFromDocblock();
+
+                $converted_aliases[$key] = new ClassTypeAlias(array_values($union->getAtomicTypes()));
+            } catch (Exception $e) {
                 $classlike_storage->docblock_issues[] = new InvalidDocblock(
                     '@psalm-type ' . $key . ' contains invalid references',
                     new CodeLocation($this->file_scanner, $node, null, true)
@@ -972,7 +979,7 @@ class ClassLikeNodeScanner
             $extended_type_parameters = [];
 
             $storage->template_type_extends_count[$atomic_type->value] = count($atomic_type->type_params);
-            
+
             foreach ($atomic_type->type_params as $type_param) {
                 $extended_type_parameters[] = $type_param;
             }
@@ -1875,24 +1882,5 @@ class ClassLikeNodeScanner
         }
 
         return $type_alias_tokens;
-    }
-
-    private function convertClassAliases(TypeAlias\InlineTypeAlias $t): ?TypeAlias\ClassTypeAlias {
-        try {
-            $union = TypeParser::parseTokens(
-                $t->replacement_tokens,
-                null,
-                [],
-                $this->type_aliases
-            );
-
-            $union->setFromDocblock();
-
-            return new ClassTypeAlias(
-                array_values($union->getAtomicTypes())
-            );
-        } catch (Exception $e) {
-            return null;
-        }
     }
 }
